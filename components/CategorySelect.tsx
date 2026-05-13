@@ -30,6 +30,14 @@ interface BeancountAccountsResponse {
 
 const EXTERNAL_ACCOUNT_ROOTS = ['Assets', 'Liabilities'] as const
 
+interface CategoryOptionsCache {
+  categories: string[]
+  externalAccounts: string[]
+  categoryStats: Record<string, CategoryStat>
+}
+
+let categoryOptionsCache: CategoryOptionsCache | null = null
+
 function categoryStatsByName(stats: CategoryStat[], externalAccounts: string[]): Record<string, CategoryStat> {
   const byName = Object.fromEntries(stats.map(stat => [stat.name, stat]))
   for (const account of externalAccounts) {
@@ -89,9 +97,11 @@ function CategorySelectInner({
   value, onChange, placeholder = '-- Select category --',
   className = '', autoFocus, onBlur, searchable = false,
 }: Props) {
-  const [categories, setCategories] = useState<string[]>([])
-  const [externalAccounts, setExternalAccounts] = useState<string[]>([])
-  const [categoryStats, setCategoryStats] = useState<Record<string, CategoryStat>>({})
+  const [categories, setCategories] = useState<string[]>(() => categoryOptionsCache?.categories ?? [])
+  const [externalAccounts, setExternalAccounts] = useState<string[]>(() => categoryOptionsCache?.externalAccounts ?? [])
+  const [categoryStats, setCategoryStats] = useState<Record<string, CategoryStat>>(
+    () => categoryOptionsCache?.categoryStats ?? {},
+  )
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [open, setOpen] = useState(false)
@@ -127,9 +137,15 @@ function CategorySelectInner({
           .map(account => account.account),
       )).sort((a, b) => a.localeCompare(b))
 
+      const nextStats = categoryStatsByName(categoryData.stats ?? [], accountNames)
+      categoryOptionsCache = {
+        categories: categoryData.categories,
+        externalAccounts: accountNames,
+        categoryStats: nextStats,
+      }
       setCategories(categoryData.categories)
       setExternalAccounts(accountNames)
-      setCategoryStats(categoryStatsByName(categoryData.stats ?? [], accountNames))
+      setCategoryStats(nextStats)
     }
 
     loadOptions().catch(() => {
@@ -162,8 +178,14 @@ function CategorySelectInner({
       body: JSON.stringify({ name: trimmed }),
     })
     const data = (await res.json()) as { categories: string[]; stats?: CategoryStat[] }
+    const nextStats = categoryStatsByName(data.stats ?? [], externalAccounts)
+    categoryOptionsCache = {
+      categories: data.categories,
+      externalAccounts,
+      categoryStats: nextStats,
+    }
     setCategories(data.categories)
-    setCategoryStats(categoryStatsByName(data.stats ?? [], externalAccounts))
+    setCategoryStats(nextStats)
     onChange(trimmed)
     setNewName('')
     setAdding(false)

@@ -97,21 +97,27 @@ function defaultForm(group: ReviewGroup): ApplyForm {
 export default function ReviewPage() {
   const [payload, setPayload] = useState<ReviewPayload | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [scope, setScope] = useState<Scope>('all')
   const [forms, setForms] = useState<Record<string, ApplyForm>>({})
   const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const loadReview = useCallback(async () => {
-    setLoading(true)
-    const res = await fetch('/api/review')
-    const data = (await res.json()) as ReviewPayload
-    setPayload(data)
-    setLoading(false)
+  const loadReview = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true)
+    else setRefreshing(true)
+    try {
+      const res = await fetch('/api/review')
+      const data = (await res.json()) as ReviewPayload
+      setPayload(data)
+    } finally {
+      if (showLoading) setLoading(false)
+      setRefreshing(false)
+    }
   }, [])
 
-  useEffect(() => { loadReview() }, [loadReview])
+  useEffect(() => { loadReview(true) }, [loadReview])
 
   const groups = useMemo(() => {
     const all = payload?.groups ?? []
@@ -167,7 +173,7 @@ export default function ReviewPage() {
         delete next[group.key]
         return next
       })
-      await loadReview()
+      await loadReview(false)
     } finally {
       setSaving(prev => ({ ...prev, [group.key]: false }))
     }
@@ -185,11 +191,11 @@ export default function ReviewPage() {
           </p>
         </div>
         <button
-          onClick={loadReview}
-          disabled={loading}
+          onClick={() => loadReview(false)}
+          disabled={loading || refreshing}
           className="self-start rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-60"
         >
-          {loading ? 'Refreshing...' : 'Refresh'}
+          {loading || refreshing ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
