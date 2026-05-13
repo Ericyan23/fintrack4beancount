@@ -16,6 +16,28 @@ The project is designed for people who want to keep financial data under their o
 - Writes a Beancount handoff package to a shared directory without writing to the Beancount repository directly.
 - Runs as a standalone Next.js app in Docker.
 
+## User Guide
+
+For the full day-to-day manual, see [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
+
+Typical workflow:
+
+1. Configure SimpleFIN and optional AI keys on the Settings page.
+2. Click Sync to import accounts, transactions, balances, and net worth snapshots.
+3. Review new transactions on the Transactions and Review pages.
+4. Assign categories manually, with rules, or with optional AI suggestions.
+5. Review transfer matches before treating account-to-account movement as final.
+6. Use Reports to inspect spending, income, cash flow, and account activity.
+7. Export CSV/JSON backups or generate Beancount drafts after review.
+8. Back up the SQLite database regularly and keep exported files private.
+
+Important operating notes:
+
+- FinTrack is a private personal finance tool, not a bank, broker, tax tool, or accounting authority.
+- Imported and AI-suggested data should be reviewed before making financial decisions.
+- The SQLite database, exports, backups, and Beancount handoff files contain sensitive financial data.
+- If Beancount handoff is enabled, FinTrack should write only to the handoff directory, not directly to the Beancount ledger repository.
+
 ## Architecture
 
 ```text
@@ -297,10 +319,6 @@ git status --ignored
 ```
 
 Run a secret scan if you have stored real financial data in the working tree.
-
-## User Manual
-
-See [docs/USER_MANUAL.md](docs/USER_MANUAL.md) for day-to-day usage.
 
 ## License
 
