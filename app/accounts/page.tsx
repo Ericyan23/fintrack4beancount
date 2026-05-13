@@ -59,7 +59,12 @@ export default function AccountsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Accounts</h1>
+        <div>
+          <h1 className="text-xl font-bold">Account Mapping</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Map imported institution accounts to Beancount accounts before export.
+          </p>
+        </div>
         {lastSync && (
           <span className="text-xs text-slate-400">
             Last sync: {formatTimeAgo(lastSync.syncedAt)}
@@ -70,11 +75,11 @@ export default function AccountsPage() {
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-emerald-950 border border-emerald-800 rounded-xl p-4">
-          <p className="text-xs text-emerald-400">Total assets</p>
+          <p className="text-xs text-emerald-400">Imported assets</p>
           <p className="text-2xl font-bold text-emerald-300 mt-1">{formatCurrency(totalAssets)}</p>
         </div>
         <div className="bg-red-950 border border-red-800 rounded-xl p-4">
-          <p className="text-xs text-red-400">Total liabilities</p>
+          <p className="text-xs text-red-400">Imported liabilities</p>
           <p className="text-2xl font-bold text-red-300 mt-1">{formatCurrency(totalLiabilities)}</p>
         </div>
       </div>
@@ -83,7 +88,7 @@ export default function AccountsPage() {
       {assets.length > 0 && (
         <div>
           <h2 className="text-sm font-medium text-emerald-400 mb-3 flex items-center gap-2">
-            <span>● Assets</span>
+            <span>● Asset source accounts</span>
             <span className="text-slate-500">{formatCurrency(totalAssets)}</span>
           </h2>
           <div className="space-y-4">
@@ -107,7 +112,7 @@ export default function AccountsPage() {
       {liabilities.length > 0 && (
         <div>
           <h2 className="text-sm font-medium text-red-400 mb-3 flex items-center gap-2">
-            <span>● Liabilities</span>
+            <span>● Liability source accounts</span>
             <span className="text-slate-500">{formatCurrency(totalLiabilities)}</span>
           </h2>
           <div className="space-y-4">
@@ -129,20 +134,20 @@ export default function AccountsPage() {
 
       {allAccounts.length === 0 && (
         <div className="bg-slate-800 rounded-xl p-8 text-center text-slate-500 border border-slate-700">
-          No account data yet. Configure SimpleFIN and sync first.
+          No source account data yet. Configure SimpleFIN and sync before mapping.
         </div>
       )}
 
       {allAccounts.length > 0 && (
         <div>
-          <h2 className="text-sm font-medium text-slate-400 mb-3">Account mapping</h2>
+          <h2 className="text-sm font-medium text-slate-400 mb-3">Beancount account mapping</h2>
           <AccountMappingTable accounts={allAccounts} />
         </div>
       )}
 
       {/* Sync log */}
       <div>
-        <h2 className="text-sm font-medium text-slate-400 mb-3">Sync log</h2>
+        <h2 className="text-sm font-medium text-slate-400 mb-3">Ingestion sync log</h2>
         {syncHistory.length === 0 ? (
           <p className="text-slate-500 text-sm">No sync records yet</p>
         ) : (

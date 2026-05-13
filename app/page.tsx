@@ -158,7 +158,7 @@ function AccountSection({
   )
 }
 
-export default function Dashboard() {
+export default function CommandCenter() {
   const allAccounts = db.select().from(accounts).all()
   const snapshots = db
     .select()
@@ -235,50 +235,57 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Net worth summary */}
+      <div>
+        <h1 className="text-xl font-bold">Command Center</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Monitor imported data quality and ledger-prep blockers before Beancount export.
+        </p>
+      </div>
+
+      {/* Balance summary */}
       <div className="space-y-2">
         <div className="bg-slate-800 rounded-xl p-4 border border-blue-800">
-          <p className="text-slate-400 text-xs">Net worth</p>
+          <p className="text-slate-400 text-xs">Net position snapshot</p>
           <p className={`text-3xl font-bold mt-1 truncate ${netWorth >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
             {formatCurrency(netWorth)}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
-            <p className="text-slate-400 text-xs">Total assets</p>
+            <p className="text-slate-400 text-xs">Imported assets</p>
             <p className="text-lg font-bold mt-1 text-emerald-400 truncate">{formatCurrency(totalAssets)}</p>
           </div>
           <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
-            <p className="text-slate-400 text-xs">Total liabilities</p>
+            <p className="text-slate-400 text-xs">Imported liabilities</p>
             <p className="text-lg font-bold mt-1 text-red-400 truncate">{formatCurrency(totalLiabilities)}</p>
           </div>
         </div>
       </div>
 
-      {/* Net worth chart */}
+      {/* Balance chart */}
       {snapshots.length > 0 && (
         <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-          <h2 className="text-sm font-medium text-slate-400 mb-3">Net worth trend (last 6 months)</h2>
+          <h2 className="text-sm font-medium text-slate-400 mb-3">Imported balance trend (last 6 months)</h2>
           <NetWorthChart snapshots={snapshots} />
         </div>
       )}
 
-      {/* Spending charts */}
+      {/* Category cleanup charts */}
       {chartData.length > 0 && (
         <div>
           <div className="flex items-baseline justify-between gap-3 mb-3">
-            <h2 className="text-sm font-medium text-slate-400">This month&apos;s spending</h2>
+            <h2 className="text-sm font-medium text-slate-400">This month&apos;s outflow classifications</h2>
             <p className="text-sm font-semibold text-red-300 tabular-nums">
-              Total {formatCurrency(monthlySpendingTotal)}
+              Outflow total {formatCurrency(monthlySpendingTotal)}
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-              <p className="text-xs text-slate-500 mb-2">By category (bar chart)</p>
+              <p className="text-xs text-slate-500 mb-2">Category cleanup volume</p>
               <BarSpendingChart data={chartData} />
             </div>
             <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-              <p className="text-xs text-slate-500 mb-2">Spending share (pie chart)</p>
+              <p className="text-xs text-slate-500 mb-2">Category distribution</p>
               <PieSpendingChart data={chartData} />
             </div>
           </div>
@@ -289,15 +296,15 @@ export default function Dashboard() {
       {allAccounts.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-medium text-slate-400">Account balances</h2>
+            <h2 className="text-sm font-medium text-slate-400">Account mapping inputs</h2>
             <Link href="/accounts" className="text-xs text-blue-400 hover:text-blue-300">
-              Manage accounts →
+              Open account mapping →
             </Link>
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {cashAccounts.length > 0 && (
               <AccountSection
-                title="Cash accounts"
+                title="Cash account inputs"
                 total={formatCurrency(cashTotal)}
                 accounts={cashAccounts}
                 tone="emerald"
@@ -305,7 +312,7 @@ export default function Dashboard() {
             )}
             {activeCreditAccounts.length > 0 && (
               <AccountSection
-                title="Credit card liabilities"
+                title="Credit liability inputs"
                 total={formatCurrency(activeCreditTotal)}
                 accounts={activeCreditAccounts}
                 tone="red"
@@ -313,7 +320,7 @@ export default function Dashboard() {
             )}
             {investmentAccounts.length > 0 && (
               <AccountSection
-                title="Investment accounts"
+                title="Investment account inputs"
                 total={formatCurrency(investmentTotal)}
                 accounts={investmentAccounts}
                 tone="blue"
@@ -321,7 +328,7 @@ export default function Dashboard() {
             )}
             {loanAccounts.length > 0 && (
               <AccountSection
-                title="Loans"
+                title="Loan inputs"
                 total={formatCurrency(loanTotal)}
                 accounts={loanAccounts}
                 tone="red"
@@ -331,7 +338,7 @@ export default function Dashboard() {
           {zeroCreditAccounts.length > 0 && (
             <details className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/60">
               <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-400 hover:bg-slate-700/40">
-                Zero-balance credit cards ({zeroCreditAccounts.length})
+                Zero-balance credit inputs ({zeroCreditAccounts.length})
               </summary>
               <div className="divide-y divide-slate-700 border-t border-slate-700">
                 {zeroCreditAccounts.map(account => (
@@ -343,28 +350,28 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Recent transactions */}
+      {/* Recent transaction intake */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-slate-400">Recent transactions</h2>
+          <h2 className="text-sm font-medium text-slate-400">Recent transaction intake</h2>
           <div className="flex items-center gap-3">
             {reviewCount > 0 && (
               <Link
                 href="/review"
                 className="flex items-center gap-1 text-xs bg-red-900/50 text-red-300 border border-red-800 px-2 py-1 rounded-full hover:bg-red-900"
               >
-                ⚠ {reviewCount} to review
+                ⚠ {reviewCount} prep items
               </Link>
             )}
             <Link href="/transactions" className="text-xs text-blue-400 hover:text-blue-300">
-              View all →
+              Open transactions →
             </Link>
           </div>
         </div>
 
         {recentTxns.length === 0 ? (
           <div className="bg-slate-800 rounded-xl p-8 text-center text-slate-500 border border-slate-700">
-            No transactions yet. Click the Sync button in the top right to fetch data.
+            No imported transactions yet. Use Sync to fetch data for ledger preparation.
           </div>
         ) : (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
@@ -386,7 +393,7 @@ export default function Dashboard() {
                     {txn.category ? (
                       <span className="text-xs text-slate-400">{txn.category}</span>
                     ) : (
-                      <span className="text-xs text-red-400">⚠ Uncategorized</span>
+                      <span className="text-xs text-red-400">⚠ Needs category</span>
                     )}
                     <span className={`text-sm font-medium ${positive ? 'text-emerald-400' : 'text-red-400'}`}>
                       {positive ? '+' : '-'}{text}

@@ -29,6 +29,12 @@ backups/
 *.tar.gz
 *.tgz
 
+# Versioned test fixtures
+!fixtures/
+!fixtures/**/
+!fixtures/**/*.csv
+!fixtures/**/*.bean
+
 # Local environment
 .env
 .env.*

@@ -191,7 +191,12 @@ export default function ReportsPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">Reports</h1>
+        <div>
+          <h1 className="text-xl font-bold">Transaction Diagnostics</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Ad hoc posted-transaction views retained outside the primary ledger prep flow.
+          </p>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-[220px_180px] lg:grid-cols-[240px_180px_150px_150px] gap-2">
           <select
             value={accountId}

@@ -627,9 +627,9 @@ export default function BeancountPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-xl font-bold">Beancount Handoff</h1>
+          <h1 className="text-xl font-bold">Export Center</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {loading ? `Checking ${period}` : result ? `${result.dateRange.start} to ${result.dateRange.end}` : 'Select a month to check handoff-ready transactions'}
+            {loading ? `Checking ${period}` : result ? `${result.dateRange.start} to ${result.dateRange.end}` : 'Select a month to preflight Beancount export readiness'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -963,7 +963,7 @@ export default function BeancountPage() {
             )}
             {result.ok && result.summary.reviewItems > 0 && (
               <div className="mt-3 rounded-lg border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-xs text-amber-300">
-                {result.summary.reviewItems} review items remain. Review them before downloading.
+                {result.summary.reviewItems} ledger prep items remain. Resolve them before downloading.
               </div>
             )}
             {draftError && (
@@ -990,7 +990,7 @@ export default function BeancountPage() {
               <SummaryCard label="Merged" value={summary.mergedTransfers} tone="blue" />
               <SummaryCard label="Skipped" value={summary.skipped} />
               <SummaryCard label="Blockers" value={summary.blockers} tone="red" />
-              <SummaryCard label="Review" value={summary.reviewItems} tone="amber" />
+              <SummaryCard label="Prep" value={summary.reviewItems} tone="amber" />
               <SummaryCard label="Duplicates" value={summary.duplicateCandidates} tone="violet" />
             </div>
           )}
@@ -1009,7 +1009,7 @@ export default function BeancountPage() {
 
           <div className="grid gap-5 xl:grid-cols-2">
             <IssueList title="Blockers" items={result.blockers} tone="red" />
-            <IssueList title="Review Items" items={result.reviewItems} tone="amber" />
+            <IssueList title="Ledger Prep Items" items={result.reviewItems} tone="amber" />
           </div>
 
           <IssueList title="Duplicate Candidates" items={result.duplicateCandidates} tone="violet" />

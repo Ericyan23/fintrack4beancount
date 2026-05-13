@@ -80,7 +80,7 @@ function kindLabel(kind: string): string {
 function statusLabel(status: TransferMatch['status']): string {
   switch (status) {
     case 'suggested':
-      return 'Pending review'
+      return 'Needs review'
     case 'confirmed':
       return 'Confirmed'
     case 'ignored':
@@ -212,20 +212,25 @@ export default function TransfersPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">Transfer matching</h1>
+        <div>
+          <h1 className="text-xl font-bold">Transfer Review</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Confirm inferred transfer pairs and map external legs before export.
+          </p>
+        </div>
         <button
           onClick={scan}
           disabled={scanning}
           className="rounded-md bg-blue-700 px-3 py-1.5 text-sm text-white hover:bg-blue-600 disabled:opacity-50"
         >
-          {scanning ? 'Scanning...' : 'Scan matches'}
+          {scanning ? 'Scanning...' : 'Scan transfers'}
         </button>
       </div>
 
       {summary && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-lg border border-blue-900/60 bg-blue-950/30 p-3">
-            <p className="text-xs text-blue-300">Pending review</p>
+            <p className="text-xs text-blue-300">Needs review</p>
             <p className="mt-1 text-2xl font-semibold text-blue-200">{summary.suggested}</p>
           </div>
           <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/30 p-3">
@@ -263,7 +268,7 @@ export default function TransfersPage() {
         <div className="py-12 text-center text-slate-500">Loading...</div>
       ) : matches.length === 0 ? (
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-8 text-center text-slate-500">
-          No matches found
+          No transfer matches found
         </div>
       ) : (
         <div className="space-y-3">
@@ -313,7 +318,7 @@ export default function TransfersPage() {
 
       {unmatched.length > 0 && (
         <div>
-          <h2 className="mb-3 text-sm font-medium text-slate-400">Unmatched transfers</h2>
+          <h2 className="mb-3 text-sm font-medium text-slate-400">Unmatched transfer candidates</h2>
           {externalAccountError && (
             <p className="mb-3 rounded-md border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
               {externalAccountError}
@@ -346,7 +351,7 @@ export default function TransfersPage() {
                       className="w-64 max-w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-100 disabled:opacity-50"
                     >
                       <option value="">
-                        {externalAccounts.length === 0 ? 'No external accounts available' : 'Select external account'}
+                        {externalAccounts.length === 0 ? 'No Beancount accounts available' : 'Select Beancount account'}
                       </option>
                       {externalAccounts.map(account => (
                         <option key={account.account} value={account.account}>{account.account}</option>
@@ -358,7 +363,7 @@ export default function TransfersPage() {
                       disabled={!externalAccountByTxn[txn.id] || savingExternalTxnId === txn.id}
                       className="rounded bg-slate-700 px-3 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-50"
                     >
-                      {savingExternalTxnId === txn.id ? 'Saving...' : 'Mark'}
+                      {savingExternalTxnId === txn.id ? 'Saving...' : 'Map'}
                     </button>
                   </div>
                 </div>

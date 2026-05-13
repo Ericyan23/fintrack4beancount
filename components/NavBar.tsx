@@ -6,14 +6,12 @@ import LanguageSwitcher from './LanguageSwitcher'
 import SyncButton from './SyncButton'
 
 const tabs = [
-  { href: '/', label: 'Home', icon: '🏠' },
-  { href: '/review', label: 'Review', icon: '✓' },
+  { href: '/', label: 'Command Center', icon: '🏠' },
+  { href: '/review', label: 'Ledger Prep', icon: '✓' },
   { href: '/transactions', label: 'Transactions', icon: '💳' },
-  { href: '/transfers', label: 'Transfers', icon: '↔' },
-  { href: '/reports', label: 'Reports', icon: '📊' },
-  { href: '/beancount', label: 'Ledger', icon: 'B' },
-  { href: '/categories', label: 'Categories', icon: '🏷️' },
-  { href: '/accounts', label: 'Accounts', icon: '🏦' },
+  { href: '/transfers', label: 'Transfer Review', icon: '↔' },
+  { href: '/beancount', label: 'Export Center', icon: 'B' },
+  { href: '/accounts', label: 'Account Mapping', icon: '🏦' },
   { href: '/rules', label: 'Rules', icon: '📋' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ]
@@ -55,14 +53,14 @@ export default function NavBar() {
           <Link
             key={tab.href}
             href={tab.href}
-            className={`flex min-h-14 min-w-16 shrink-0 flex-col items-center justify-center px-2 py-2 text-xs font-medium transition-colors ${
+            className={`flex min-h-14 min-w-20 shrink-0 flex-col items-center justify-center px-2 py-2 text-xs font-medium transition-colors ${
               pathname === tab.href
                 ? 'text-blue-400'
                 : 'text-slate-400'
             }`}
           >
             <span className="text-lg">{tab.icon}</span>
-            {tab.label}
+            <span className="text-center leading-tight">{tab.label}</span>
           </Link>
         ))}
       </nav>

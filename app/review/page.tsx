@@ -75,13 +75,13 @@ function formatSignedAmount(amount: string): { text: string; positive: boolean }
 
 function reasonLabel(reason: ReviewGroup['reason']): string {
   if (reason === 'uncategorized') return 'Uncategorized'
-  if (reason === 'review_category') return 'Review category'
+  if (reason === 'review_category') return 'Marked for review'
   return 'Mixed'
 }
 
 function directionLabel(direction: ReviewGroup['direction']): string {
-  if (direction === 'spending') return 'Spending'
-  if (direction === 'income') return 'Income'
+  if (direction === 'spending') return 'Outflow'
+  if (direction === 'income') return 'Inflow'
   return 'Zero amount'
 }
 
@@ -179,7 +179,10 @@ export default function ReviewPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-xl font-bold">Category Review</h1>
+          <h1 className="text-xl font-bold">Ledger Prep</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Resolve category gaps and review markers before Beancount export.
+          </p>
         </div>
         <button
           onClick={loadReview}
@@ -193,19 +196,19 @@ export default function ReviewPage() {
       {summary && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Transactions to review</p>
+            <p className="text-xs text-slate-400">Transactions needing prep</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-amber-300">{summary.transactions}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Groups</p>
+            <p className="text-xs text-slate-400">Prep groups</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-blue-300">{summary.groups}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Uncategorized</p>
+            <p className="text-xs text-slate-400">Missing category</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-red-300">{summary.uncategorized}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Review category</p>
+            <p className="text-xs text-slate-400">Review markers</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-violet-300">{summary.reviewCategory}</p>
           </div>
         </div>
@@ -214,10 +217,10 @@ export default function ReviewPage() {
       <div className="flex flex-wrap gap-2">
         {[
           ['all', 'All'],
-          ['spending', 'Spending'],
-          ['income', 'Income'],
+          ['spending', 'Outflows'],
+          ['income', 'Inflows'],
           ['uncategorized', 'Uncategorized'],
-          ['review', 'Review category'],
+          ['review', 'Marked for review'],
         ].map(([value, label]) => (
           <button
             key={value}
@@ -248,7 +251,7 @@ export default function ReviewPage() {
         <div className="py-12 text-center text-slate-500">Loading...</div>
       ) : groups.length === 0 ? (
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-10 text-center text-slate-400">
-          No transactions need review for the current filter
+          No ledger prep items for the current filter
         </div>
       ) : (
         <div className="space-y-3">
