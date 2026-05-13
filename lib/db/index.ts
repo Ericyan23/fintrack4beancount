@@ -27,6 +27,7 @@ const sqlite: Database.Database =
   global.__sqlite ??
   (() => {
     const db = new Database(DB_PATH)
+    db.pragma('busy_timeout = 5000')
     db.pragma('journal_mode = WAL')
     db.pragma('foreign_keys = ON')
     db.pragma('synchronous = NORMAL')
@@ -149,6 +150,52 @@ addColumnIfMissing(`ALTER TABLE accounts ADD COLUMN org_domain TEXT`)
 addColumnIfMissing(`ALTER TABLE accounts ADD COLUMN account_type_override TEXT`)
 addColumnIfMissing(`ALTER TABLE accounts ADD COLUMN beancount_account TEXT`)
 
+function ensurePerformanceIndexes(): void {
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS transactions_posted_idx
+    ON transactions(posted DESC);
+
+    CREATE INDEX IF NOT EXISTS transactions_status_posted_idx
+    ON transactions(status, posted DESC);
+
+    CREATE INDEX IF NOT EXISTS transactions_account_posted_idx
+    ON transactions(account_id, posted DESC);
+
+    CREATE INDEX IF NOT EXISTS transactions_account_status_posted_idx
+    ON transactions(account_id, status, posted DESC);
+
+    CREATE INDEX IF NOT EXISTS transactions_category_status_idx
+    ON transactions(category, status);
+
+    CREATE INDEX IF NOT EXISTS transactions_suggested_status_idx
+    ON transactions(suggested_cat, status);
+
+    CREATE INDEX IF NOT EXISTS transactions_pending_cleanup_idx
+    ON transactions(account_id, status, created_at);
+
+    CREATE INDEX IF NOT EXISTS transfer_matches_status_idx
+    ON transfer_matches(status);
+
+    CREATE INDEX IF NOT EXISTS transfer_matches_outflow_idx
+    ON transfer_matches(outflow_transaction_id);
+
+    CREATE INDEX IF NOT EXISTS transfer_matches_inflow_idx
+    ON transfer_matches(inflow_transaction_id);
+
+    CREATE INDEX IF NOT EXISTS sync_log_synced_at_idx
+    ON sync_log(synced_at DESC);
+
+    CREATE INDEX IF NOT EXISTS net_worth_snapshots_snapshot_idx
+    ON net_worth_snapshots(snapshot_at DESC);
+
+    CREATE INDEX IF NOT EXISTS rules_priority_idx
+    ON rules(priority DESC);
+
+    CREATE INDEX IF NOT EXISTS rules_category_idx
+    ON rules(category);
+  `)
+}
+
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS transfer_matches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,6 +232,8 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS balance_assertions_date_idx
   ON balance_assertions(assertion_date);
 `)
+
+ensurePerformanceIndexes()
 
 const accountTypeRows = sqlite.prepare(`
   SELECT id, name, org_name AS orgName, account_type AS accountType,

@@ -59,6 +59,15 @@ function groupByDescription(rows: BatchTransaction[]): DescriptionGroup[] {
   return Array.from(groups.values()).sort((a, b) => b.transactions.length - a.transactions.length)
 }
 
+function countRemainingUnclassified(): number {
+  const row = sqlite.prepare(`
+    SELECT COUNT(*) AS total
+    FROM transactions
+    WHERE category IS NULL AND status = 'posted'
+  `).get() as { total: number }
+  return row.total
+}
+
 export async function POST(): Promise<Response> {
   const geminiKey = getSetting('gemini_api_key') ?? process.env.GEMINI_API_KEY
   const claudeKey = getSetting('claude_api_key') ?? process.env.CLAUDE_API_KEY
@@ -85,9 +94,7 @@ export async function POST(): Promise<Response> {
         .all()
 
       if (unclassified.length === 0) {
-        const remaining = db.select().from(transactions)
-          .where(and(isNull(transactions.category), eq(transactions.status, 'posted')))
-          .all().length
+        const remaining = countRemainingUnclassified()
         send(controller, { type: 'done', suggested: 0, remaining, info: 'All uncategorized transactions already have AI suggestions' })
         controller.close()
         return
@@ -138,9 +145,7 @@ export async function POST(): Promise<Response> {
         if (i < groups.length - 1) await new Promise(r => setTimeout(r, AI_BATCH_DELAY_MS))
       }
 
-      const remaining = db.select().from(transactions)
-        .where(and(isNull(transactions.category), eq(transactions.status, 'posted')))
-        .all().length
+      const remaining = countRemainingUnclassified()
 
       send(controller, { type: 'done', suggested, remaining })
       controller.close()

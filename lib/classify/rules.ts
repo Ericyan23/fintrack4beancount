@@ -1,6 +1,6 @@
-import { db } from '@/lib/db'
+import { db, sqlite } from '@/lib/db'
 import { rules, transactions } from '@/lib/db/schema'
-import { eq, isNull, and } from 'drizzle-orm'
+import { isNull, and, eq } from 'drizzle-orm'
 import type { Rule } from '@/lib/db/schema'
 import { reviewCategoryForAmount } from '@/lib/classify/defaults'
 
@@ -27,20 +27,33 @@ export async function classifyNewTransactions(ids: string[]): Promise<void> {
   if (ids.length === 0) return
 
   const ruleList = db.select().from(rules).orderBy(rules.priority).all()
+  const updateCategory = sqlite.prepare('UPDATE transactions SET category = ? WHERE id = ?')
+  const chunkSize = 500
 
-  for (const id of ids) {
-    const [txn] = db.select().from(transactions).where(eq(transactions.id, id)).all()
-    if (!txn || txn.category) continue
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize)
+    const rows = sqlite.prepare(`
+      SELECT id, description, amount, status, category
+      FROM transactions
+      WHERE id IN (${chunk.map(() => '?').join(', ')})
+    `).all(...chunk) as Array<{
+      id: string
+      description: string
+      amount: string
+      status: string
+      category: string | null
+    }>
 
-    const category =
-      classifyByRules(txn.description, ruleList) ??
-      fallbackReviewCategoryForPosted(txn.amount, txn.status)
-    if (category) {
-      db.update(transactions)
-        .set({ category })
-        .where(eq(transactions.id, id))
-        .run()
-    }
+    sqlite.transaction(() => {
+      for (const txn of rows) {
+        if (txn.category) continue
+
+        const category =
+          classifyByRules(txn.description, ruleList) ??
+          fallbackReviewCategoryForPosted(txn.amount, txn.status)
+        if (category) updateCategory.run(category, txn.id)
+      }
+    })()
   }
 }
 
@@ -54,16 +67,16 @@ export async function reclassifyUnmatched(): Promise<void> {
   if (unclassified.length === 0) return
 
   const ruleList = db.select().from(rules).orderBy(rules.priority).all()
+  const updateCategory = sqlite.prepare('UPDATE transactions SET category = ? WHERE id = ?')
 
-  for (const txn of unclassified) {
-    const category =
-      classifyByRules(txn.description, ruleList) ??
-      fallbackReviewCategoryForPosted(txn.amount, txn.status)
-    if (category) {
-      db.update(transactions)
-        .set({ category })
-        .where(eq(transactions.id, txn.id))
-        .run()
+  sqlite.transaction(() => {
+    for (const txn of unclassified) {
+      const category =
+        classifyByRules(txn.description, ruleList) ??
+        fallbackReviewCategoryForPosted(txn.amount, txn.status)
+      if (category) {
+        updateCategory.run(category, txn.id)
+      }
     }
-  }
+  })()
 }

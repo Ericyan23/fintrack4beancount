@@ -1,8 +1,8 @@
 export const dynamic = 'force-dynamic'
 
-import { db } from '@/lib/db'
+import { db, sqlite } from '@/lib/db'
 import { accounts, transactions, netWorthSnapshots, type Account } from '@/lib/db/schema'
-import { desc, isNull, and, gte, eq, ne, or, inArray } from 'drizzle-orm'
+import { desc, ne } from 'drizzle-orm'
 import NetWorthChart from '@/components/NetWorthChart'
 import { BarSpendingChart, PieSpendingChart } from '@/components/SpendingChart'
 import {
@@ -64,6 +64,17 @@ function formatAccountBalance(account: Account): string {
 
 function accountSortName(account: Account): string {
   return `${accountInstitution(account)} ${accountDisplayName(account)} ${accountLast4(account) ?? ''}`
+}
+
+function countReviewTransactions(): number {
+  const placeholders = REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')
+  const row = sqlite.prepare(`
+    SELECT COUNT(*) AS total
+    FROM transactions
+    WHERE status = 'posted'
+      AND (category IS NULL OR category IN (${placeholders}))
+  `).get(...REVIEW_CATEGORY_NAMES) as { total: number }
+  return row.total
 }
 
 function sortAssets(a: Account, b: Account): number {
@@ -196,33 +207,23 @@ export default function Dashboard() {
     .limit(10)
     .all()
 
-  const reviewCount = db
-    .select()
-    .from(transactions)
-    .where(and(
-      eq(transactions.status, 'posted'),
-      or(
-        isNull(transactions.category),
-        inArray(transactions.category, REVIEW_CATEGORY_NAMES),
-      ),
-    ))
-    .all()
-    .length
+  const reviewCount = countReviewTransactions()
 
   const monthStart = getMonthStart()
-  const monthlyTxns = db
-    .select()
-    .from(transactions)
-    .where(and(gte(transactions.posted, monthStart), eq(transactions.status, 'posted')))
-    .all()
-
   const categoryTotals = new Map<string, number>()
-  for (const txn of monthlyTxns) {
-    const amt = parseFloat(txn.amount)
-    if (amt >= 0) continue
-    if (txn.category?.startsWith('Transfer:')) continue
-    const cat = txn.category ? categoryGroupName(txn.category) : 'Uncategorized'
-    categoryTotals.set(cat, (categoryTotals.get(cat) ?? 0) + Math.abs(amt))
+  const monthlyCategoryRows = sqlite.prepare(`
+    SELECT category, SUM(ABS(CAST(amount AS REAL))) AS amount
+    FROM transactions
+    WHERE posted >= ?
+      AND status = 'posted'
+      AND CAST(amount AS REAL) < 0
+      AND (category IS NULL OR category NOT LIKE 'Transfer:%')
+    GROUP BY category
+  `).all(monthStart) as Array<{ category: string | null; amount: number | null }>
+
+  for (const row of monthlyCategoryRows) {
+    const cat = row.category ? categoryGroupName(row.category) : 'Uncategorized'
+    categoryTotals.set(cat, (categoryTotals.get(cat) ?? 0) + (row.amount ?? 0))
   }
   const chartData = Array.from(categoryTotals.entries())
     .map(([category, amount]) => ({ category, amount }))

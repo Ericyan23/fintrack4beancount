@@ -42,6 +42,20 @@ interface ExistingAccountSettings {
   beancountAccount: string | null
 }
 
+interface NetWorthHistoryTxn {
+  accountId: string
+  amount: string
+  posted: number
+}
+
+interface NetWorthAccountHistory {
+  currentBalance: number
+  isLiability: boolean
+  posted: number[]
+  prefix: number[]
+  total: number
+}
+
 function mapAccount(
   acct: SimpleFINAccount,
   connId: string,
@@ -94,14 +108,31 @@ function mapTransaction(accountId: string) {
   }
 }
 
+function parseAmount(value: string): number {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function sumBeforePosted(history: NetWorthAccountHistory, cutoff: number): number {
+  let low = 0
+  let high = history.posted.length
+
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2)
+    if (history.posted[mid] < cutoff) low = mid + 1
+    else high = mid
+  }
+
+  return history.prefix[low] ?? 0
+}
+
 async function recordNetWorthSnapshot(): Promise<void> {
   const allAccounts = db.select().from(accounts).all()
   let assets = 0
   let liabilities = 0
 
   for (const acct of allAccounts) {
-    const bal = parseFloat(acct.balance)
-    if (isNaN(bal)) continue
+    const bal = parseAmount(acct.balance)
     if (isLiabilityAccount(acct)) {
       liabilities += Math.abs(bal)
     } else {
@@ -121,49 +152,95 @@ export async function backfillNetWorthHistory(): Promise<void> {
   const allAccounts = db.select().from(accounts).all()
   if (allAccounts.length === 0) return
 
-  // Find earliest transaction we have
-  const allTxns = sqlite.prepare(
-    'SELECT account_id, amount, posted FROM transactions WHERE posted > 0 ORDER BY posted ASC'
-  ).all() as { account_id: string; amount: string; posted: number }[]
+  const earliestRow = sqlite.prepare(
+    'SELECT MIN(posted) AS earliest FROM transactions WHERE posted > 0'
+  ).get() as { earliest: number | null }
+  if (!earliestRow.earliest) return
 
-  if (allTxns.length === 0) return
+  const allTxns = sqlite.prepare(`
+    SELECT account_id AS accountId, amount, posted
+    FROM transactions
+    WHERE posted > 0
+    ORDER BY account_id, posted ASC
+  `).all() as NetWorthHistoryTxn[]
 
-  const earliest = allTxns[0].posted
+  const histories = new Map<string, NetWorthAccountHistory>()
+  for (const acct of allAccounts) {
+    histories.set(acct.id, {
+      currentBalance: parseAmount(acct.balance),
+      isLiability: isLiabilityAccount(acct),
+      posted: [],
+      prefix: [0],
+      total: 0,
+    })
+  }
+
+  for (const txn of allTxns) {
+    const history = histories.get(txn.accountId)
+    if (!history) continue
+    const amount = parseAmount(txn.amount)
+    history.posted.push(txn.posted)
+    history.total += amount
+    history.prefix.push(history.total)
+  }
+
+  const existingSnapshots = sqlite.prepare(`
+    SELECT snapshot_at AS snapshotAt
+    FROM net_worth_snapshots
+    ORDER BY snapshot_at ASC
+  `).all() as Array<{ snapshotAt: number }>
+  let existingSnapshotIndex = 0
+
+  const insertSnapshot = sqlite.prepare(`
+    INSERT INTO net_worth_snapshots (snapshot_at, assets, liabilities, net_worth)
+    VALUES (?, ?, ?, ?)
+  `)
+
+  const earliest = earliestRow.earliest
   const todayStart = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000)
 
-  // For each day from earliest to yesterday, calculate net worth
-  for (let dayStart = earliest; dayStart < todayStart; dayStart += 86400) {
-    const dayEnd = dayStart + 86400
+  sqlite.transaction(() => {
+    // For each day from earliest to yesterday, calculate net worth
+    for (let dayStart = earliest; dayStart < todayStart; dayStart += 86400) {
+      const dayEnd = dayStart + 86400
 
-    // Check if we already have a snapshot for this day
-    const existing = sqlite.prepare(
-      'SELECT id FROM net_worth_snapshots WHERE snapshot_at >= ? AND snapshot_at < ?'
-    ).get(dayStart, dayEnd)
-    if (existing) continue
-
-    let assets = 0
-    let liabilities = 0
-
-    for (const acct of allAccounts) {
-      const currentBal = parseFloat(acct.balance)
-      if (isNaN(currentBal)) continue
-
-      // Sum transactions that occurred AFTER this day (to subtract from current balance)
-      const laterTxns = allTxns.filter(t => t.account_id === acct.id && t.posted >= dayEnd)
-      const laterSum = laterTxns.reduce((s, t) => s + parseFloat(t.amount), 0)
-      const balAtDay = currentBal - laterSum
-
-      if (isLiabilityAccount(acct)) {
-        liabilities += Math.abs(balAtDay)
-      } else {
-        assets += Math.max(0, balAtDay)
+      while (
+        existingSnapshotIndex < existingSnapshots.length &&
+        existingSnapshots[existingSnapshotIndex].snapshotAt < dayStart
+      ) {
+        existingSnapshotIndex++
       }
-    }
 
-    sqlite.prepare(
-      'INSERT INTO net_worth_snapshots (snapshot_at, assets, liabilities, net_worth) VALUES (?, ?, ?, ?)'
-    ).run(dayStart + 43200, assets.toFixed(2), liabilities.toFixed(2), (assets - liabilities).toFixed(2))
-  }
+      if (
+        existingSnapshotIndex < existingSnapshots.length &&
+        existingSnapshots[existingSnapshotIndex].snapshotAt < dayEnd
+      ) {
+        continue
+      }
+
+      let assets = 0
+      let liabilities = 0
+
+      for (const history of histories.values()) {
+        // Sum transactions that occurred after this day to subtract from the current balance.
+        const laterSum = history.total - sumBeforePosted(history, dayEnd)
+        const balAtDay = history.currentBalance - laterSum
+
+        if (history.isLiability) {
+          liabilities += Math.abs(balAtDay)
+        } else {
+          assets += Math.max(0, balAtDay)
+        }
+      }
+
+      insertSnapshot.run(
+        dayStart + 43200,
+        assets.toFixed(2),
+        liabilities.toFixed(2),
+        (assets - liabilities).toFixed(2),
+      )
+    }
+  })()
 }
 
 export async function syncSimpleFin(): Promise<{ newCount: number; error?: string }> {
@@ -236,69 +313,72 @@ export async function syncSimpleFin(): Promise<{ newCount: number; error?: strin
     UPDATE transactions SET pending = 0, status = 'cancelled'
     WHERE status = 'pending' AND created_at < ?
   `)
+  const existingAccountStmt = sqlite.prepare(`
+    SELECT org_name AS orgName, org_domain AS orgDomain,
+           account_type_override AS accountTypeOverride,
+           beancount_account AS beancountAccount
+    FROM accounts
+    WHERE id = ?
+  `)
 
-  for (const acct of data.accounts ?? []) {
-    const existing = sqlite.prepare(`
-      SELECT org_name AS orgName, org_domain AS orgDomain,
-             account_type_override AS accountTypeOverride,
-             beancount_account AS beancountAccount
-      FROM accounts
-      WHERE id = ?
-    `).get(acct.id) as ExistingAccountSettings | undefined
-    const mappedAccount = mapAccount(acct, connId, existing)
+  const newIds: string[] = []
 
-    db.insert(accounts)
-      .values(mappedAccount)
-      .onConflictDoUpdate({
-        target: accounts.id,
-        set: {
-          balance: acct.balance,
-          balanceDate: acct['balance-date'],
-          orgName: mappedAccount.orgName,
-          orgDomain: mappedAccount.orgDomain,
-          accountType: mappedAccount.accountType,
-          updatedAt: now(),
-        },
-      })
-      .run()
+  sqlite.transaction(() => {
+    for (const acct of data.accounts ?? []) {
+      const existing = existingAccountStmt.get(acct.id) as ExistingAccountSettings | undefined
+      const mappedAccount = mapAccount(acct, connId, existing)
 
-    const rows = (acct.transactions ?? []).map(mapTransaction(acct.id))
+      db.insert(accounts)
+        .values(mappedAccount)
+        .onConflictDoUpdate({
+          target: accounts.id,
+          set: {
+            balance: acct.balance,
+            balanceDate: acct['balance-date'],
+            orgName: mappedAccount.orgName,
+            orgDomain: mappedAccount.orgDomain,
+            accountType: mappedAccount.accountType,
+            updatedAt: now(),
+          },
+        })
+        .run()
 
-    // IDs of transactions SimpleFIN currently reports as pending for this account
-    const currentPendingIds = (acct.transactions ?? [])
-      .filter(t => t.pending)
-      .map(t => t.id)
+      const rows = (acct.transactions ?? []).map(mapTransaction(acct.id))
 
-    const newIds: string[] = []
+      // IDs of transactions SimpleFIN currently reports as pending for this account
+      const currentPendingIds = (acct.transactions ?? [])
+        .filter(t => t.pending)
+        .map(t => t.id)
 
-    for (const row of rows) {
-      const status = row.pending ? 'pending' : 'posted'
-      const result = insertStmt.run(
-        row.id, row.accountId, row.source, row.posted, row.transactedAt,
-        row.amount, row.description, row.pending ? 1 : 0, status,
-        null, null, null, JSON.stringify(row.tags), row.createdAt,
-      )
-      if (result.changes > 0) {
-        newIds.push(row.id)
-        newCount++
-      } else {
-        // Existing record: sync status, pending flag, amount, posted date, description
-        // (category/notes/tags are intentionally left alone)
-        updateStmt.run(row.pending ? 1 : 0, status, row.posted, row.amount, row.description, row.id)
+      for (const row of rows) {
+        const status = row.pending ? 'pending' : 'posted'
+        const result = insertStmt.run(
+          row.id, row.accountId, row.source, row.posted, row.transactedAt,
+          row.amount, row.description, row.pending ? 1 : 0, status,
+          null, null, null, JSON.stringify(row.tags), row.createdAt,
+        )
+        if (result.changes > 0) {
+          newIds.push(row.id)
+          newCount++
+        } else {
+          // Existing record: sync status, pending flag, amount, posted date, description
+          // (category/notes/tags are intentionally left alone)
+          updateStmt.run(row.pending ? 1 : 0, status, row.posted, row.amount, row.description, row.id)
+        }
       }
+
+      // Pending transactions within the sync window that SimpleFIN no longer returns
+      // have settled or been cancelled, so mark them cancelled either way.
+      cancelDisappearedStmt.run(acct.id, startDate, JSON.stringify(currentPendingIds))
     }
 
-    // Pending transactions within the sync window that SimpleFIN no longer returns
-    // have settled or been cancelled — mark them cancelled either way
-    cancelDisappearedStmt.run(acct.id, startDate, JSON.stringify(currentPendingIds))
+    // Global stale-pending cleanup
+    cancelStaleStmt.run(pendingStaleCutoff)
+  })()
 
-    if (newIds.length > 0) {
-      await classifyNewTransactions(newIds)
-    }
+  if (newIds.length > 0) {
+    await classifyNewTransactions(newIds)
   }
-
-  // Global stale-pending cleanup
-  cancelStaleStmt.run(pendingStaleCutoff)
   await reclassifyUnmatched()
 
   await recordNetWorthSnapshot()

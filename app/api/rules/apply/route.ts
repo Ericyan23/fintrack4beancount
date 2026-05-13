@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server'
 import { reclassifyUnmatched } from '@/lib/classify/rules'
-import { db } from '@/lib/db'
-import { transactions } from '@/lib/db/schema'
-import { isNull, eq, and } from 'drizzle-orm'
+import { sqlite } from '@/lib/db'
 
 function countUnclassified() {
-  return db.select().from(transactions)
-    .where(and(isNull(transactions.category), eq(transactions.status, 'posted')))
-    .all().length
+  const row = sqlite.prepare(`
+    SELECT COUNT(*) AS total
+    FROM transactions
+    WHERE category IS NULL AND status = 'posted'
+  `).get() as { total: number }
+  return row.total
 }
 
 export async function POST(): Promise<NextResponse> {
