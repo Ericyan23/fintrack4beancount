@@ -1,0 +1,39 @@
+node_modules/
+.next/
+out/
+dist/
+
+# Local data and generated files
+data/
+/handoff/
+exports/
+backups/
+*.db
+*.db-*
+*.wal
+*.shm
+*.sqlite
+*.sqlite3
+*.csv
+*.tsv
+*.jsonl
+*.log
+*.bean
+*.beancount
+*.ledger
+*.bak
+*.backup
+*.dump
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# OS/editor and build cache
+.DS_Store
+tsconfig.tsbuildinfo
