@@ -65,6 +65,91 @@ SimpleFIN / CSV / future APIs
 - [ ] Keep AI categorization optional and behind rules/manual review.
 - [ ] Do not build a Fava-like ledger viewer.
 
+## Existing Feature Disposition
+
+Use this as the cleanup rule: first rename and hide from primary navigation,
+then freeze, then remove only after the new prep workflow is stable.
+
+| Area | Decision | v2 Role |
+| --- | --- | --- |
+| `/beancount` | Keep + rename | Export Center. Core Beancount preflight, draft download, handoff, balance assertions. |
+| `/review` | Keep + rename | Staging Review / Ledger Prep. Core cleaning and rule workflow. |
+| `/transactions` | Keep + rename | Staged Transactions / Prep Queue. Work queue, not ledger viewer. |
+| `/transactions/[id]` | Keep + expand | Manual edit, ignore/delete, split editor. |
+| `/transfers` | Keep + rename | Transfer Review. Confirmed transfers feed merged ledger intents. |
+| `/accounts` | Keep + rename | Source Account Mapping. Mapping first, balances secondary. |
+| `/import` | Keep + rename | Sources / Import. CSV profile and import-run entry point. |
+| SimpleFIN sync | Keep + split | Source adapter plus generic ingestion/reconciliation. |
+| `/rules` | Keep + rename | Ledger Account Rules. Rules first, AI suggestions optional. |
+| `/categories` | Hide standalone | Keep tables/API for compatibility; fold UI into ledger accounts/rules. |
+| `/reports` | Hide + freeze | Diagnostics/legacy only. Do not expand cashflow/spending reports. |
+| Home dashboard | Rename + rebuild | Command Center with import health, review counts, export readiness, blockers. |
+| Net worth | Hide + freeze | Compatibility only; later stop sync side effect and remove from UI. |
+| Charts/Recharts | Freeze -> later delete | Not core to Beancount prep. |
+| PWA/service worker | Freeze | Keep low-maintenance only; not a v2 investment area. |
+| AI categorization | Later/optional | Suggestion helper after manual/rule workflow is reliable. |
+
+### Safe To Remove From Primary Navigation
+
+- [ ] Reports.
+- [ ] Standalone Categories.
+- [ ] Net worth views and CSV export.
+- [ ] Spending charts.
+- [ ] Account balance dashboard sections.
+- [ ] PWA install-oriented surfaces.
+
+### Do Not Delete Yet
+
+These are tied to Beancount preparation or migration compatibility:
+
+- [ ] `accounts` and `accounts.beancount_account`.
+- [ ] `transactions`.
+- [ ] `transactions.category`, `status`, `suggested_cat` until ledger-account migration exists.
+- [ ] `categories`.
+- [ ] `rules`.
+- [ ] `transfer_matches`.
+- [ ] `balance_assertions`.
+- [ ] `settings`.
+- [ ] `sync_log`.
+- [ ] `net_worth_snapshots` until existing exports/backups and migrations are handled.
+
+Keep these APIs during v2 migration:
+
+- [ ] `/api/sync`.
+- [ ] `/api/import/transactions*`.
+- [ ] `/api/accounts*`.
+- [ ] `/api/beancount/accounts`.
+- [ ] `/api/transactions*`.
+- [ ] `/api/review`.
+- [ ] `/api/rules*`.
+- [ ] `/api/transfers*`.
+- [ ] `/api/beancount/balance-assertions`.
+- [ ] `/api/export/beancount/*`.
+- [ ] `/api/export/backup`.
+
+Freeze these APIs:
+
+- [ ] `/api/reports`.
+- [ ] `/api/networth*`.
+- [ ] `/api/export/networth`.
+
+### Low-Risk Cleanup Order
+
+1. Rename navigation and page headings:
+   - Home -> Command Center.
+   - Ledger -> Export Center.
+   - Review -> Ledger Prep.
+   - Accounts -> Account Mapping.
+   - Transfers -> Transfer Review.
+2. Hide Reports and standalone Categories from primary navigation.
+3. Rebuild Home into readiness/status view without schema changes.
+4. Move account mapping to the top of Accounts; collapse balance cards into diagnostics.
+5. Freeze Reports in diagnostics/legacy; keep code and API temporarily.
+6. Hide net worth and spending charts from primary UI.
+7. Stop net worth sync side effects only after ingestion pipeline is stable.
+8. Fold Categories into Ledger Accounts & Rules after `ledger_account` migration.
+9. Remove chart dependencies, reports code, and PWA service worker only after no routes depend on them.
+
 ## v2.0 MVP
 
 Goal: make FinTrack a reliable, replayable cash-transaction ingestion and
