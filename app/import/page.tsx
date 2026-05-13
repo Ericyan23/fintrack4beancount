@@ -142,9 +142,17 @@ export default function ImportPage() {
         </div>
       )}
       {result && (
-        <div className="bg-emerald-900/30 border border-emerald-800 text-emerald-200 rounded-md px-3 py-2 text-sm">
-          Staged {result.staged}, archived {result.rawInserted} raw rows, skipped {result.duplicates} duplicates,
-          {' '}{result.errors.length} errors. Import run {result.importRunId}
+        <div className="flex flex-col gap-2 rounded-md border border-emerald-800 bg-emerald-900/30 px-3 py-2 text-sm text-emerald-200 md:flex-row md:items-center md:justify-between">
+          <span>
+            Staged {result.staged}, archived {result.rawInserted} raw rows, skipped {result.duplicates} duplicates,
+            {' '}{result.errors.length} errors. Import run {result.importRunId} is ready for review.
+          </span>
+          <Link
+            href={`/import/runs/${encodeURIComponent(result.importRunId)}`}
+            className="self-start rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-600 md:self-auto"
+          >
+            Review staged rows
+          </Link>
         </div>
       )}
 
