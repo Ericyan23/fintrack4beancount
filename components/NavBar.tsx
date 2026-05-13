@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import LanguageSwitcher from './LanguageSwitcher'
 import SyncButton from './SyncButton'
 
 const tabs = [
@@ -42,7 +43,8 @@ export default function NavBar() {
           ))}
           </div>
         </div>
-        <div className="shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
+          <LanguageSwitcher />
           <SyncButton />
         </div>
       </nav>
@@ -66,9 +68,12 @@ export default function NavBar() {
       </nav>
 
       {/* Mobile top bar */}
-      <div className="md:hidden flex items-center justify-between bg-slate-800 border-b border-slate-700 px-4 py-3">
+      <div className="md:hidden flex items-center justify-between gap-3 bg-slate-800 border-b border-slate-700 px-4 py-3">
         <span className="font-bold text-lg text-blue-400">FinTrack</span>
-        <SyncButton />
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher />
+          <SyncButton />
+        </div>
       </div>
     </>
   )
