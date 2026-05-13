@@ -23,7 +23,7 @@ Read the full manual in your preferred language:
 | Language | Manual |
 | --- | --- |
 | English | [User manual](docs/USER_MANUAL.md) |
-| Chinese (Simplified) | [Chinese user manual](docs/USER_MANUAL.zh-CN.md) |
+| 简体中文 | [Chinese user manual](docs/USER_MANUAL.zh-CN.md) |
 
 Typical workflow:
 
