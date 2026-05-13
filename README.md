@@ -18,7 +18,7 @@ The project is designed for people who want to keep financial data under their o
 
 ## User Guide
 
-For the full day-to-day manual, see [docs/USER_MANUAL.md](docs/USER_MANUAL.md).
+For the full day-to-day manual, see [docs/USER_MANUAL.md](docs/USER_MANUAL.md). A Chinese translation is available at [docs/USER_MANUAL.zh-CN.md](docs/USER_MANUAL.zh-CN.md).
 
 Typical workflow:
 
