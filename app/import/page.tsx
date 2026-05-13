@@ -41,9 +41,12 @@ interface PreviewResult {
   errorRows: number
 }
 
-interface ImportResult {
-  imported: number
-  skipped: number
+interface StageImportResult {
+  importRunId: string
+  totalRows: number
+  rawInserted: number
+  staged: number
+  duplicates: number
   errors: Array<{ rowNumber: number; error: string }>
 }
 
@@ -66,7 +69,7 @@ export default function ImportPage() {
   const [defaultAccountId, setDefaultAccountId] = useState('')
   const [mapping, setMapping] = useState<ImportMapping>({})
   const [preview, setPreview] = useState<PreviewResult | null>(null)
-  const [result, setResult] = useState<ImportResult | null>(null)
+  const [result, setResult] = useState<StageImportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -76,11 +79,15 @@ export default function ImportPage() {
       .then((payload: { accounts?: AccountInfo[] }) => setAccounts(payload.accounts ?? []))
   }, [])
 
-  async function runPreview(nextMapping = mapping, nextDefaultAccountId = defaultAccountId) {
+  async function runPreview(
+    nextMapping = mapping,
+    nextDefaultAccountId = defaultAccountId,
+    clearResult = true,
+  ) {
     if (!csv.trim()) return
     setLoading(true)
     setError(null)
-    setResult(null)
+    if (clearResult) setResult(null)
     try {
       const res = await fetch('/api/import/transactions/preview', {
         method: 'POST',
@@ -100,23 +107,23 @@ export default function ImportPage() {
     }
   }
 
-  async function importRows() {
+  async function stageRows() {
     if (!csv.trim()) return
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/import/transactions', {
+      const res = await fetch('/api/import/transactions/stage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ csv, mapping, defaultAccountId: defaultAccountId || undefined }),
       })
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string }
-        setError(payload.error ?? 'Import failed')
+        setError(payload.error ?? 'Staging failed')
         return
       }
-      setResult((await res.json()) as ImportResult)
-      await runPreview(mapping, defaultAccountId)
+      setResult((await res.json()) as StageImportResult)
+      await runPreview(mapping, defaultAccountId, false)
     } finally {
       setLoading(false)
     }
@@ -136,7 +143,8 @@ export default function ImportPage() {
       )}
       {result && (
         <div className="bg-emerald-900/30 border border-emerald-800 text-emerald-200 rounded-md px-3 py-2 text-sm">
-          Imported {result.imported}, skipped {result.skipped} duplicates, {result.errors.length} errors
+          Staged {result.staged}, archived {result.rawInserted} raw rows, skipped {result.duplicates} duplicates,
+          {' '}{result.errors.length} errors. Import run {result.importRunId}
         </div>
       )}
 
@@ -199,7 +207,7 @@ export default function ImportPage() {
                 <p className="text-xl font-bold text-slate-100 mt-1">{preview.totalRows}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Importable</p>
+                <p className="text-xs text-slate-400">Stageable</p>
                 <p className="text-xl font-bold text-emerald-400 mt-1">{preview.validRows}</p>
               </div>
               <div>
@@ -263,11 +271,11 @@ export default function ImportPage() {
 
           <div className="flex justify-end">
             <button
-              onClick={importRows}
+              onClick={stageRows}
               disabled={loading || !mapping.date || !mapping.amount || !mapping.description}
               className="px-5 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm rounded-md"
             >
-              {loading ? 'Importing...' : 'Confirm import'}
+              {loading ? 'Staging...' : 'Stage import'}
             </button>
           </div>
         </>

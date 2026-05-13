@@ -1,0 +1,206 @@
+import assert from 'node:assert/strict'
+import { after, beforeEach, test } from 'node:test'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { readFixture } from './helpers/fixtures'
+
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-csv-stage-'))
+process.env.DB_PATH = path.join(tempDir, 'fintrack.db')
+
+const { sqlite } = require('../lib/db') as typeof import('../lib/db')
+const { stageTransactionsCsv } = require('../lib/ingest/csv-import') as typeof import('../lib/ingest/csv-import')
+
+function resetDb(): void {
+  sqlite.exec(`
+    DELETE FROM staged_transactions;
+    DELETE FROM raw_import_items;
+    DELETE FROM import_runs;
+    DELETE FROM import_profile_mappings;
+    DELETE FROM import_profiles;
+    DELETE FROM source_accounts;
+    DELETE FROM source_connections;
+    DELETE FROM sources;
+    DELETE FROM transfer_matches;
+    DELETE FROM transactions;
+    DELETE FROM accounts;
+  `)
+
+  sqlite.prepare(`
+    INSERT INTO accounts (
+      id, name, currency, balance, balance_date, conn_id, org_name, org_domain,
+      account_type, account_type_override, beancount_account, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'acct-checking',
+    'Main Checking',
+    'USD',
+    '0.00',
+    1775001600,
+    'test-fixtures',
+    'Example Bank',
+    'examplebank.test',
+    'depository',
+    null,
+    'Assets:US:Banks:MainChecking',
+    1775001600,
+  )
+}
+
+function countRows(table: string): number {
+  const row = sqlite.prepare(`SELECT COUNT(*) AS value FROM ${table}`).get() as { value: number }
+  return row.value
+}
+
+beforeEach(() => {
+  resetDb()
+})
+
+after(() => {
+  sqlite.close()
+  ;(globalThis as { __sqlite?: unknown }).__sqlite = undefined
+  fs.rmSync(tempDir, { recursive: true, force: true })
+})
+
+test('stages a generic CSV into raw and staged ingestion tables without writing canonical transactions', () => {
+  const result = stageTransactionsCsv(readFixture('csv', 'generic-bank.csv'), {})
+
+  assert.equal(result.totalRows, 3)
+  assert.equal(result.rawInserted, 3)
+  assert.equal(result.staged, 3)
+  assert.equal(result.duplicates, 0)
+  assert.deepEqual(result.errors, [])
+
+  assert.equal(countRows('sources'), 1)
+  assert.equal(countRows('source_connections'), 1)
+  assert.equal(countRows('source_accounts'), 1)
+  assert.equal(countRows('import_runs'), 1)
+  assert.equal(countRows('raw_import_items'), 3)
+  assert.equal(countRows('staged_transactions'), 3)
+  assert.equal(countRows('transactions'), 0)
+
+  const run = sqlite.prepare(`
+    SELECT status, item_count AS itemCount
+    FROM import_runs
+    WHERE id = ?
+  `).get(result.importRunId) as { status: string; itemCount: number }
+  assert.deepEqual(run, { status: 'completed', itemCount: 3 })
+
+  const first = sqlite.prepare(`
+    SELECT amount, category, notes, tags, status, source_account_id AS sourceAccountId
+    FROM staged_transactions
+    ORDER BY posted ASC, id ASC
+    LIMIT 1
+  `).get() as {
+    amount: string
+    category: string | null
+    notes: string | null
+    tags: string
+    status: string
+    sourceAccountId: string
+  }
+
+  assert.equal(first.amount, '-4.75')
+  assert.equal(first.category, 'Expenses:Food:Coffee')
+  assert.equal(first.notes, 'Morning coffee')
+  assert.deepEqual(JSON.parse(first.tags), ['coffee', 'work'])
+  assert.equal(first.status, 'staged')
+  assert.ok(first.sourceAccountId)
+})
+
+test('skips duplicate CSV rows by source item key within an import run', () => {
+  const result = stageTransactionsCsv(readFixture('csv', 'duplicate-import.csv'), {})
+
+  assert.equal(result.totalRows, 2)
+  assert.equal(result.rawInserted, 1)
+  assert.equal(result.staged, 1)
+  assert.equal(result.duplicates, 1)
+  assert.deepEqual(result.errors, [])
+  assert.equal(countRows('raw_import_items'), 1)
+  assert.equal(countRows('staged_transactions'), 1)
+  assert.equal(countRows('transactions'), 0)
+})
+
+test('keeps no-external-id fallback keys stable across editable CSV fields', () => {
+  const csv = [
+    'Date,Description,Amount,Account,Category,Notes,Tags,Status',
+    '2026-05-01,Coffee Shop,-3.50,Main Checking,Expenses:Food:Coffee,Morning,coffee,posted',
+    '2026-05-01,Coffee Shop,-3.50,Main Checking,Expenses:Reviewed,Edited,reviewed;tax,posted',
+  ].join('\n')
+  const result = stageTransactionsCsv(csv, {})
+
+  assert.equal(result.totalRows, 2)
+  assert.equal(result.rawInserted, 1)
+  assert.equal(result.staged, 1)
+  assert.equal(result.duplicates, 1)
+  assert.deepEqual(result.errors, [])
+  assert.equal(countRows('raw_import_items'), 1)
+  assert.equal(countRows('staged_transactions'), 1)
+  assert.equal(countRows('transactions'), 0)
+})
+
+test('archives invalid rows and stages them with validation errors', () => {
+  const csv = [
+    'Date,Description,Amount,Account,Category,Status',
+    '2026-05-01,Coffee Shop,-3.50,Unknown Account,Expenses:Food:Coffee,posted',
+  ].join('\n')
+  const result = stageTransactionsCsv(csv, {})
+
+  assert.equal(result.totalRows, 1)
+  assert.equal(result.rawInserted, 1)
+  assert.equal(result.staged, 0)
+  assert.equal(result.duplicates, 0)
+  assert.deepEqual(result.errors, [{ rowNumber: 2, error: 'Unable to match account' }])
+  assert.equal(countRows('raw_import_items'), 1)
+  assert.equal(countRows('staged_transactions'), 1)
+  assert.equal(countRows('transactions'), 0)
+
+  const staged = sqlite.prepare(`
+    SELECT status, validation_errors AS validationErrors, source_account_id AS sourceAccountId
+    FROM staged_transactions
+    LIMIT 1
+  `).get() as {
+    status: string
+    validationErrors: string
+    sourceAccountId: string | null
+  }
+
+  assert.equal(staged.status, 'error')
+  assert.deepEqual(JSON.parse(staged.validationErrors), ['Unable to match account'])
+  assert.equal(staged.sourceAccountId, null)
+})
+
+test('uses the default account when the CSV has no account column', () => {
+  const csv = [
+    'Date,Description,Amount,Category,Status,External ID',
+    '2026-05-01,Coffee Shop,-3.50,Expenses:Food:Coffee,posted,no-account-001',
+  ].join('\n')
+  const result = stageTransactionsCsv(csv, {}, 'acct-checking')
+
+  assert.equal(result.totalRows, 1)
+  assert.equal(result.rawInserted, 1)
+  assert.equal(result.staged, 1)
+  assert.equal(result.duplicates, 0)
+  assert.deepEqual(result.errors, [])
+  assert.equal(countRows('transactions'), 0)
+
+  const staged = sqlite.prepare(`
+    SELECT account_id AS accountId,
+           source_account_id AS sourceAccountId,
+           source_item_key AS sourceItemKey,
+           status
+    FROM staged_transactions
+    LIMIT 1
+  `).get() as {
+    accountId: string
+    sourceAccountId: string
+    sourceItemKey: string
+    status: string
+  }
+
+  assert.equal(staged.accountId, 'acct-checking')
+  assert.ok(staged.sourceAccountId)
+  assert.equal(staged.sourceItemKey, `source-account:${encodeURIComponent(staged.sourceAccountId)}:external:no-account-001`)
+  assert.equal(staged.status, 'staged')
+})
