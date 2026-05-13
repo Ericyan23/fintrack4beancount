@@ -32,15 +32,15 @@ function formatAmount(amount: string): { text: string; positive: boolean } {
 }
 
 function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+  return new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function formatTimeAgo(ts: number): string {
   const diff = Date.now() / 1000 - ts
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`
-  return `${Math.floor(diff / 86400)}天前`
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`
+  return `${Math.floor(diff / 86400)} days ago`
 }
 
 function accountBalance(account: Account): number {
@@ -67,12 +67,12 @@ function accountSortName(account: Account): string {
 }
 
 function sortAssets(a: Account, b: Account): number {
-  return accountBalance(b) - accountBalance(a) || accountSortName(a).localeCompare(accountSortName(b), 'zh-CN')
+  return accountBalance(b) - accountBalance(a) || accountSortName(a).localeCompare(accountSortName(b), 'en-US')
 }
 
 function sortLiabilities(a: Account, b: Account): number {
   return Math.abs(accountBalance(b)) - Math.abs(accountBalance(a))
-    || accountSortName(a).localeCompare(accountSortName(b), 'zh-CN')
+    || accountSortName(a).localeCompare(accountSortName(b), 'en-US')
 }
 
 function AccountBalanceRow({ account }: { account: Account }) {
@@ -98,7 +98,7 @@ function AccountBalanceRow({ account }: { account: Account }) {
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
           <span>{accountInstitution(account)}</span>
           <span>{accountTypeLabel(type)}</span>
-          <span>更新于 {formatTimeAgo(account.balanceDate)}</span>
+          <span>Updated {formatTimeAgo(account.balanceDate)}</span>
         </div>
       </div>
       <div className="text-right">
@@ -179,7 +179,7 @@ export default function Dashboard() {
     .sort(sortLiabilities)
   const zeroCreditAccounts = creditAccounts
     .filter(isZeroBalance)
-    .sort((a, b) => accountSortName(a).localeCompare(accountSortName(b), 'zh-CN'))
+    .sort((a, b) => accountSortName(a).localeCompare(accountSortName(b), 'en-US'))
   const loanAccounts = allAccounts
     .filter(a => effectiveAccountType(a) === 'loan')
     .sort(sortLiabilities)
@@ -221,7 +221,7 @@ export default function Dashboard() {
     const amt = parseFloat(txn.amount)
     if (amt >= 0) continue
     if (txn.category?.startsWith('Transfer:')) continue
-    const cat = txn.category ? categoryGroupName(txn.category) : '未分类'
+    const cat = txn.category ? categoryGroupName(txn.category) : 'Uncategorized'
     categoryTotals.set(cat, (categoryTotals.get(cat) ?? 0) + Math.abs(amt))
   }
   const chartData = Array.from(categoryTotals.entries())
@@ -237,18 +237,18 @@ export default function Dashboard() {
       {/* Net worth summary */}
       <div className="space-y-2">
         <div className="bg-slate-800 rounded-xl p-4 border border-blue-800">
-          <p className="text-slate-400 text-xs">净资产</p>
+          <p className="text-slate-400 text-xs">Net worth</p>
           <p className={`text-3xl font-bold mt-1 truncate ${netWorth >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
             {formatCurrency(netWorth)}
           </p>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
-            <p className="text-slate-400 text-xs">总资产</p>
+            <p className="text-slate-400 text-xs">Total assets</p>
             <p className="text-lg font-bold mt-1 text-emerald-400 truncate">{formatCurrency(totalAssets)}</p>
           </div>
           <div className="bg-slate-800 rounded-xl p-3 border border-slate-700">
-            <p className="text-slate-400 text-xs">总负债</p>
+            <p className="text-slate-400 text-xs">Total liabilities</p>
             <p className="text-lg font-bold mt-1 text-red-400 truncate">{formatCurrency(totalLiabilities)}</p>
           </div>
         </div>
@@ -257,7 +257,7 @@ export default function Dashboard() {
       {/* Net worth chart */}
       {snapshots.length > 0 && (
         <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-          <h2 className="text-sm font-medium text-slate-400 mb-3">净资产走势（最近6个月）</h2>
+          <h2 className="text-sm font-medium text-slate-400 mb-3">Net worth trend (last 6 months)</h2>
           <NetWorthChart snapshots={snapshots} />
         </div>
       )}
@@ -266,18 +266,18 @@ export default function Dashboard() {
       {chartData.length > 0 && (
         <div>
           <div className="flex items-baseline justify-between gap-3 mb-3">
-            <h2 className="text-sm font-medium text-slate-400">本月支出</h2>
+            <h2 className="text-sm font-medium text-slate-400">This month&apos;s spending</h2>
             <p className="text-sm font-semibold text-red-300 tabular-nums">
-              合计 {formatCurrency(monthlySpendingTotal)}
+              Total {formatCurrency(monthlySpendingTotal)}
             </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-              <p className="text-xs text-slate-500 mb-2">按分类（柱状图）</p>
+              <p className="text-xs text-slate-500 mb-2">By category (bar chart)</p>
               <BarSpendingChart data={chartData} />
             </div>
             <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
-              <p className="text-xs text-slate-500 mb-2">支出占比（饼图）</p>
+              <p className="text-xs text-slate-500 mb-2">Spending share (pie chart)</p>
               <PieSpendingChart data={chartData} />
             </div>
           </div>
@@ -288,15 +288,15 @@ export default function Dashboard() {
       {allAccounts.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-medium text-slate-400">账户余额</h2>
+            <h2 className="text-sm font-medium text-slate-400">Account balances</h2>
             <Link href="/accounts" className="text-xs text-blue-400 hover:text-blue-300">
-              管理账户 →
+              Manage accounts →
             </Link>
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             {cashAccounts.length > 0 && (
               <AccountSection
-                title="现金账户"
+                title="Cash accounts"
                 total={formatCurrency(cashTotal)}
                 accounts={cashAccounts}
                 tone="emerald"
@@ -304,7 +304,7 @@ export default function Dashboard() {
             )}
             {activeCreditAccounts.length > 0 && (
               <AccountSection
-                title="信用卡负债"
+                title="Credit card liabilities"
                 total={formatCurrency(activeCreditTotal)}
                 accounts={activeCreditAccounts}
                 tone="red"
@@ -312,7 +312,7 @@ export default function Dashboard() {
             )}
             {investmentAccounts.length > 0 && (
               <AccountSection
-                title="投资账户"
+                title="Investment accounts"
                 total={formatCurrency(investmentTotal)}
                 accounts={investmentAccounts}
                 tone="blue"
@@ -320,7 +320,7 @@ export default function Dashboard() {
             )}
             {loanAccounts.length > 0 && (
               <AccountSection
-                title="贷款"
+                title="Loans"
                 total={formatCurrency(loanTotal)}
                 accounts={loanAccounts}
                 tone="red"
@@ -330,7 +330,7 @@ export default function Dashboard() {
           {zeroCreditAccounts.length > 0 && (
             <details className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800/60">
               <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-slate-400 hover:bg-slate-700/40">
-                零余额信用卡 {zeroCreditAccounts.length} 张
+                Zero-balance credit cards ({zeroCreditAccounts.length})
               </summary>
               <div className="divide-y divide-slate-700 border-t border-slate-700">
                 {zeroCreditAccounts.map(account => (
@@ -345,25 +345,25 @@ export default function Dashboard() {
       {/* Recent transactions */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-slate-400">最近交易</h2>
+          <h2 className="text-sm font-medium text-slate-400">Recent transactions</h2>
           <div className="flex items-center gap-3">
             {reviewCount > 0 && (
               <Link
                 href="/review"
                 className="flex items-center gap-1 text-xs bg-red-900/50 text-red-300 border border-red-800 px-2 py-1 rounded-full hover:bg-red-900"
               >
-                ⚠ {reviewCount} 条待审核
+                ⚠ {reviewCount} to review
               </Link>
             )}
             <Link href="/transactions" className="text-xs text-blue-400 hover:text-blue-300">
-              查看全部 →
+              View all →
             </Link>
           </div>
         </div>
 
         {recentTxns.length === 0 ? (
           <div className="bg-slate-800 rounded-xl p-8 text-center text-slate-500 border border-slate-700">
-            暂无交易记录，点击右上角「同步」按钮获取数据
+            No transactions yet. Click the Sync button in the top right to fetch data.
           </div>
         ) : (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
@@ -385,7 +385,7 @@ export default function Dashboard() {
                     {txn.category ? (
                       <span className="text-xs text-slate-400">{txn.category}</span>
                     ) : (
-                      <span className="text-xs text-red-400">⚠ 未分类</span>
+                      <span className="text-xs text-red-400">⚠ Uncategorized</span>
                     )}
                     <span className={`text-sm font-medium ${positive ? 'text-emerald-400' : 'text-red-400'}`}>
                       {positive ? '+' : '-'}{text}

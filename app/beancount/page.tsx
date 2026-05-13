@@ -271,7 +271,7 @@ function IssueList({ title, items, tone }: { title: string; items: PreflightIssu
         </span>
       </div>
       {items.length === 0 ? (
-        <EmptyState>无项目</EmptyState>
+        <EmptyState>No items</EmptyState>
       ) : (
         <div className="space-y-2">
           {items.map((item, index) => (
@@ -316,8 +316,8 @@ function TransactionRow({ txn }: { txn: PreflightTransaction }) {
           </div>
           <p className="mt-1 truncate text-sm font-medium text-slate-100">{txn.description}</p>
           <div className="mt-2 grid gap-1 text-xs md:grid-cols-2">
-            <DetailLine label="account" value={txn.beancountAccount ?? '未映射'} />
-            <DetailLine label="category" value={txn.category ?? '未分类'} />
+            <DetailLine label="account" value={txn.beancountAccount ?? 'Unmapped'} />
+            <DetailLine label="category" value={txn.category ?? 'Uncategorized'} />
             <DetailLine label="sourceId" value={<span className="font-mono">{txn.sourceId}</span>} />
           </div>
         </div>
@@ -343,7 +343,7 @@ function TransferSide({ label, txn }: { label: string; txn: PreflightTransaction
       <div className="mt-2 space-y-1 text-xs">
         <DetailLine label="transactionId" value={<TransactionId id={txn.id} />} />
         <DetailLine label="date" value={txn.date} />
-        <DetailLine label="account" value={txn.beancountAccount ?? '未映射'} />
+        <DetailLine label="account" value={txn.beancountAccount ?? 'Unmapped'} />
         <DetailLine label="sourceId" value={<span className="font-mono">{txn.sourceId}</span>} />
       </div>
     </div>
@@ -360,7 +360,7 @@ function TransferList({ transfers }: { transfers: PreflightTransfer[] }) {
         </span>
       </div>
       {transfers.length === 0 ? (
-        <EmptyState>无合并转账</EmptyState>
+        <EmptyState>No merged transfers</EmptyState>
       ) : (
         <div className="space-y-2">
           {transfers.map(transfer => (
@@ -399,7 +399,7 @@ function SkippedList({ skipped }: { skipped: PreflightSkipped[] }) {
         </span>
       </div>
       {skipped.length === 0 ? (
-        <EmptyState>无跳过交易</EmptyState>
+        <EmptyState>No skipped transactions</EmptyState>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="divide-y divide-slate-700">
@@ -473,7 +473,7 @@ export default function BeancountPage() {
       setResult(data as BeancountPreflightResult)
     } catch {
       setResult(null)
-      setError('Preflight 请求失败')
+      setError('Preflight request failed')
     } finally {
       setLoading(false)
     }
@@ -489,16 +489,16 @@ export default function BeancountPage() {
       if (!res.ok) {
         try {
           const data = JSON.parse(text) as ApiError
-          setDraftError(data.error ?? '草稿生成失败')
+          setDraftError(data.error ?? 'Draft generation failed')
         } catch {
-          setDraftError(text || '草稿生成失败')
+          setDraftError(text || 'Draft generation failed')
         }
         setDraftText(null)
         return
       }
       setDraftText(text)
     } catch {
-      setDraftError('草稿请求失败')
+      setDraftError('Draft request failed')
       setDraftText(null)
     } finally {
       setDraftLoading(false)
@@ -521,13 +521,13 @@ export default function BeancountPage() {
       const data = (await res.json().catch(() => ({}))) as HandoffManifest | ApiError
       if (!res.ok || !('schemaVersion' in data)) {
         setManifest(null)
-        setManifestError('error' in data ? data.error ?? 'Manifest 生成失败' : 'Manifest 生成失败')
+        setManifestError('error' in data ? data.error ?? 'Manifest generation failed' : 'Manifest generation failed')
         return
       }
       setManifest(data as HandoffManifest)
     } catch {
       setManifest(null)
-      setManifestError('Manifest 请求失败')
+      setManifestError('Manifest request failed')
     } finally {
       setManifestLoading(false)
     }
@@ -556,14 +556,14 @@ export default function BeancountPage() {
       }
       if (!res.ok || data.ok !== true) {
         if (data.manifest) setManifest(data.manifest)
-        setHandoffError(data.error ?? 'Handoff 写入失败')
+        setHandoffError(data.error ?? 'Handoff write failed')
         return
       }
       setManifest(data.manifest ?? null)
       setHandoffResult(data as HandoffWriteResult)
       await loadHandoffReviewState()
     } catch {
-      setHandoffError('Handoff 请求失败')
+      setHandoffError('Handoff request failed')
     } finally {
       setHandoffLoading(false)
     }
@@ -577,13 +577,13 @@ export default function BeancountPage() {
       const data = (await res.json().catch(() => ({}))) as HandoffReviewState | ApiError
       if (!res.ok || !('exists' in data)) {
         setReviewState(null)
-        setReviewError('error' in data ? data.error ?? 'Handoff 状态读取失败' : 'Handoff 状态读取失败')
+        setReviewError('error' in data ? data.error ?? 'Failed to read handoff status' : 'Failed to read handoff status')
         return
       }
       setReviewState(data as HandoffReviewState)
     } catch {
       setReviewState(null)
-      setReviewError('Handoff 状态请求失败')
+      setReviewError('Handoff status request failed')
     } finally {
       setReviewLoading(false)
     }
@@ -604,13 +604,13 @@ export default function BeancountPage() {
       })
       const data = (await res.json().catch(() => ({}))) as HandoffReviewState | ApiError
       if (!res.ok || !('exists' in data)) {
-        setReviewError('error' in data ? data.error ?? '审批提交失败' : '审批提交失败')
+        setReviewError('error' in data ? data.error ?? 'Review decision failed' : 'Review decision failed')
         return
       }
       setReviewState(data as HandoffReviewState)
       setDecisionNote('')
     } catch {
-      setReviewError('审批请求失败')
+      setReviewError('Review request failed')
     } finally {
       setDecisionLoading(null)
     }
@@ -627,9 +627,9 @@ export default function BeancountPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-xl font-bold">Beancount 交接</h1>
+          <h1 className="text-xl font-bold">Beancount Handoff</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {loading ? `正在检查 ${period}` : result ? `${result.dateRange.start} 至 ${result.dateRange.end}` : '选择月份后检查可交接交易'}
+            {loading ? `Checking ${period}` : result ? `${result.dateRange.start} to ${result.dateRange.end}` : 'Select a month to check handoff-ready transactions'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -657,7 +657,7 @@ export default function BeancountPage() {
             disabled={loading}
             className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-60"
           >
-            {loading ? '刷新中...' : '刷新'}
+            {loading ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
       </div>
@@ -674,7 +674,7 @@ export default function BeancountPage() {
             ? 'border-emerald-800 bg-emerald-950/30 text-emerald-300'
             : 'border-red-800 bg-red-950/30 text-red-300'
         }`}>
-          <div>{result.ok ? 'Preflight 通过，可以生成草稿。' : 'Preflight 存在 blocker，不能生成草稿。'}</div>
+          <div>{result.ok ? 'Preflight passed. You can generate a draft.' : 'Preflight has blockers, so a draft cannot be generated.'}</div>
           <div className="mt-1 break-all font-mono text-xs text-slate-400">
             staging: {result.proposedStaging}
           </div>
@@ -695,7 +695,7 @@ export default function BeancountPage() {
               )}
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              FinTrack to Beancount container contract preview; 不写 repo。
+              FinTrack to Beancount container contract preview; does not write to the repo.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -704,34 +704,34 @@ export default function BeancountPage() {
               disabled={manifestLoading}
               className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
-              {manifestLoading ? '生成中...' : '预览 manifest'}
+              {manifestLoading ? 'Generating...' : 'Preview manifest'}
             </button>
             <a
               href={manifestHref}
               className="rounded-md bg-slate-700 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-slate-600"
             >
-              下载 JSON
+              Download JSON
             </a>
             <button
               onClick={copyManifest}
               disabled={!manifest}
               className="rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {manifestCopied ? '已复制' : '复制'}
+              {manifestCopied ? 'Copied' : 'Copy'}
             </button>
             <button
               onClick={writeHandoff}
               disabled={handoffLoading || !result?.ok || manifest?.ok === false}
               className="rounded-md border border-emerald-800 bg-emerald-950/60 px-3 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-900/70 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {handoffLoading ? '写入中...' : '写入 handoff'}
+              {handoffLoading ? 'Writing...' : 'Write handoff'}
             </button>
             <button
               onClick={loadHandoffReviewState}
               disabled={reviewLoading}
               className="rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {reviewLoading ? '读取中...' : '刷新状态'}
+              {reviewLoading ? 'Reading...' : 'Refresh status'}
             </button>
           </div>
         </div>
@@ -750,7 +750,7 @@ export default function BeancountPage() {
 
         {handoffResult && (
           <div className="mt-3 rounded-lg border border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200">
-            <div className="font-medium">Handoff 已写入</div>
+            <div className="font-medium">Handoff written</div>
             <div className="mt-1 break-all font-mono text-emerald-100">{handoffResult.directory}</div>
             <div className="mt-2 grid gap-1 text-slate-400 md:grid-cols-2">
               {handoffResult.files.map(file => (
@@ -822,7 +822,7 @@ export default function BeancountPage() {
                 )}
                 {reviewState.status?.status === 'merged' && (
                   <p className="mt-2 text-amber-300">
-                    已成功写入 Beancount，并通过检查。
+                    Successfully written to Beancount and passed checks.
                   </p>
                 )}
               </div>
@@ -832,14 +832,14 @@ export default function BeancountPage() {
                   disabled={reviewState.exists.decision || !reviewState.readyForApproval || decisionLoading !== null}
                   className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {decisionLoading === 'approve' ? '提交中...' : '批准交接'}
+                  {decisionLoading === 'approve' ? 'Submitting...' : 'Approve handoff'}
                 </button>
                 <button
                   onClick={() => submitHandoffDecision('reject')}
                   disabled={reviewState.exists.decision || !reviewState.canReject || decisionLoading !== null}
                   className="rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm font-medium text-red-200 hover:bg-red-900/60 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {decisionLoading === 'reject' ? '提交中...' : '拒绝'}
+                  {decisionLoading === 'reject' ? 'Submitting...' : 'Reject'}
                 </button>
               </div>
             </div>
@@ -847,7 +847,7 @@ export default function BeancountPage() {
               <input
                 value={decisionNote}
                 onChange={event => setDecisionNote(event.target.value)}
-                placeholder="审批备注，可选"
+                placeholder="Review note, optional"
                 className="rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600"
               />
               <div className="grid grid-cols-4 gap-1 text-slate-500">
@@ -863,7 +863,7 @@ export default function BeancountPage() {
                 <span className="ml-2">{reviewState.decision.requestedAt}</span>
                 {reviewState.decision.decision === 'approve'
                   && !['merged', 'failed', 'rejected'].includes(reviewState.status?.status ?? '') && (
-                  <span className="ml-2 text-amber-300">等待 Beancount worker</span>
+                  <span className="ml-2 text-amber-300">Waiting for Beancount worker</span>
                 )}
                 {reviewState.decision.decision === 'approve' && reviewState.status?.status === 'failed' && (
                   <span className="ml-2 text-red-300">worker failed</span>
@@ -914,15 +914,15 @@ export default function BeancountPage() {
       <BalanceAssertionPanel period={period} />
 
       {loading && !result ? (
-        <div className="py-12 text-center text-slate-500">加载中...</div>
+        <div className="py-12 text-center text-slate-500">Loading...</div>
       ) : result ? (
         <>
           <section className="rounded-xl border border-slate-700 bg-slate-800 p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-slate-200">草稿</h2>
+                <h2 className="text-sm font-semibold text-slate-200">Draft</h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  只生成内容或下载文件，不写入 Beancount repo。
+                  Generate content or download files only. This does not write to the Beancount repo.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -931,7 +931,7 @@ export default function BeancountPage() {
                   disabled={!result.ok || draftLoading}
                   className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {draftLoading ? '生成中...' : '预览草稿'}
+                  {draftLoading ? 'Generating...' : 'Preview draft'}
                 </button>
                 <a
                   href={result.ok ? draftHref : undefined}
@@ -945,25 +945,25 @@ export default function BeancountPage() {
                     if (!result.ok) event.preventDefault()
                   }}
                 >
-                  下载 .bean
+                  Download .bean
                 </a>
                 <button
                   onClick={copyDraft}
                   disabled={!draftText}
                   className="rounded-md border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {copied ? '已复制' : '复制'}
+                  {copied ? 'Copied' : 'Copy'}
                 </button>
               </div>
             </div>
             {!result.ok && (
               <div className="mt-3 rounded-lg border border-red-900/60 bg-red-950/20 px-3 py-2 text-xs text-red-300">
-                需先解决 {result.summary.blockers} 个 blocker，才能生成草稿。
+                Resolve {result.summary.blockers} blockers before generating a draft.
               </div>
             )}
             {result.ok && result.summary.reviewItems > 0 && (
               <div className="mt-3 rounded-lg border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-xs text-amber-300">
-                仍有 {result.summary.reviewItems} 个 review item，下载前请人工确认。
+                {result.summary.reviewItems} review items remain. Review them before downloading.
               </div>
             )}
             {draftError && (
@@ -1022,7 +1022,7 @@ export default function BeancountPage() {
               </span>
             </div>
             {visibleTransactions.length === 0 ? (
-              <EmptyState>无可导出普通交易</EmptyState>
+              <EmptyState>No exportable regular transactions</EmptyState>
             ) : (
               <div className="space-y-2">
                 {visibleTransactions.map(txn => <TransactionRow key={txn.id} txn={txn} />)}

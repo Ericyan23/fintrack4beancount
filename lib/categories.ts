@@ -181,9 +181,9 @@ export function getCategoryImpact(name: string): CategoryImpact {
 }
 
 function validateName(name: string): string | null {
-  if (!name.trim()) return '分类名称不能为空'
-  if (name.includes('\n') || name.includes('\r')) return '分类名称不能包含换行'
-  if (name.length > 80) return '分类名称过长'
+  if (!name.trim()) return 'Category name is required'
+  if (name.includes('\n') || name.includes('\r')) return 'Category name cannot contain line breaks'
+  if (name.length > 80) return 'Category name is too long'
   return null
 }
 
@@ -194,32 +194,32 @@ function categoryExists(name: string): boolean {
 export function addCategory(name: string): { error?: string } {
   const err = validateName(name)
   if (err) return { error: err }
-  if (name === 'Uncategorized') return { error: 'Uncategorized 是系统虚拟分类，不能手动创建' }
-  if (categoryExists(name)) return { error: `分类 "${name}" 已存在` }
+  if (name === 'Uncategorized') return { error: 'Uncategorized is a system virtual category and cannot be created manually' }
+  if (categoryExists(name)) return { error: `Category "${name}" already exists` }
 
   sqlite.prepare('INSERT INTO categories (name, is_default) VALUES (?, 0)').run(name)
   return {}
 }
 
 export function deleteCategory(name: string): { error?: string } {
-  if (isRequiredCategory(name)) return { error: `${name} 是系统保留分类，不能删除` }
-  if (!categoryExists(name)) return { error: `分类 "${name}" 不存在` }
+  if (isRequiredCategory(name)) return { error: `${name} is a system-reserved category and cannot be deleted` }
+  if (!categoryExists(name)) return { error: `Category "${name}" does not exist` }
   const impact = getCategoryImpact(name)
-  if (impact.transactions > 0) return { error: `${impact.transactions} 条交易正在使用此分类，无法删除；请先合并` }
-  if (impact.suggestions > 0) return { error: `${impact.suggestions} 条 AI 建议正在使用此分类，无法删除；请先合并` }
-  if (impact.rules > 0) return { error: `${impact.rules} 条规则正在使用此分类，无法删除；请先合并` }
+  if (impact.transactions > 0) return { error: `${impact.transactions} transactions use this category; merge it first` }
+  if (impact.suggestions > 0) return { error: `${impact.suggestions} AI suggestions use this category; merge it first` }
+  if (impact.rules > 0) return { error: `${impact.rules} rules use this category; merge it first` }
   sqlite.prepare('DELETE FROM categories WHERE name = ?').run(name)
   return {}
 }
 
 export function renameCategory(from: string, to: string): { error?: string } {
-  if (isRequiredCategory(from)) return { error: `${from} 是系统保留分类，不能改名` }
+  if (isRequiredCategory(from)) return { error: `${from} is a system-reserved category and cannot be renamed` }
   const err = validateName(to)
   if (err) return { error: err }
-  if (isRequiredCategory(to)) return { error: `${to} 是系统保留分类，不能作为改名目标` }
-  if (!categoryExists(from)) return { error: `分类 "${from}" 不存在` }
+  if (isRequiredCategory(to)) return { error: `${to} is a system-reserved category and cannot be used as a rename target` }
+  if (!categoryExists(from)) return { error: `Category "${from}" does not exist` }
   if (from === to) return {}
-  if (categoryExists(to)) return { error: `分类 "${to}" 已存在，如需合并请使用合并功能` }
+  if (categoryExists(to)) return { error: `Category "${to}" already exists. Use merge if you want to combine them` }
 
   sqlite.transaction(() => {
     sqlite.prepare('INSERT OR IGNORE INTO categories (name, is_default) VALUES (?, 0)').run(to)
@@ -232,10 +232,10 @@ export function renameCategory(from: string, to: string): { error?: string } {
 }
 
 export function mergeCategories(source: string, target: string): { count: number; error?: string } {
-  if (isRequiredCategory(source)) return { count: 0, error: `${source} 是系统保留分类，不能合并` }
-  if (target === 'Uncategorized') return { count: 0, error: '不能合并到 Uncategorized；请使用具体分类或 Other' }
-  if (!categoryExists(source)) return { count: 0, error: `源分类 "${source}" 不存在` }
-  if (!categoryExists(target)) return { count: 0, error: `目标分类 "${target}" 不存在` }
+  if (isRequiredCategory(source)) return { count: 0, error: `${source} is a system-reserved category and cannot be merged` }
+  if (target === 'Uncategorized') return { count: 0, error: 'Cannot merge into Uncategorized; use a specific category or Other' }
+  if (!categoryExists(source)) return { count: 0, error: `Source category "${source}" does not exist` }
+  if (!categoryExists(target)) return { count: 0, error: `Target category "${target}" does not exist` }
 
   let count = 0
   sqlite.transaction(() => {

@@ -66,14 +66,14 @@ export async function POST(): Promise<Response> {
   const stream = new ReadableStream({
     async start(controller) {
       if (!geminiKey && !claudeKey) {
-        send(controller, { type: 'error', error: '未配置 Gemini 或 Claude API Key' })
+        send(controller, { type: 'error', error: 'Gemini or Claude API key is not configured' })
         controller.close()
         return
       }
 
       const cats = loadCategories()
       if (cats.length === 0) {
-        send(controller, { type: 'error', error: '分类列表为空，请先添加分类' })
+        send(controller, { type: 'error', error: 'The category list is empty. Add categories first' })
         controller.close()
         return
       }
@@ -88,7 +88,7 @@ export async function POST(): Promise<Response> {
         const remaining = db.select().from(transactions)
           .where(and(isNull(transactions.category), eq(transactions.status, 'posted')))
           .all().length
-        send(controller, { type: 'done', suggested: 0, remaining, info: '所有未分类交易已有 AI 建议' })
+        send(controller, { type: 'done', suggested: 0, remaining, info: 'All uncategorized transactions already have AI suggestions' })
         controller.close()
         return
       }
@@ -119,7 +119,7 @@ export async function POST(): Promise<Response> {
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          send(controller, { type: 'error', error: `AI 请求失败：${msg}`, suggested })
+          send(controller, { type: 'error', error: `AI request failed: ${msg}`, suggested })
           controller.close()
           return
         }

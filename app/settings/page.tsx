@@ -59,7 +59,7 @@ export default function SettingsPage() {
 
       if (!saveRes.ok) {
         const data = (await saveRes.json().catch(() => ({}))) as { error?: string }
-        setError(data.error ?? '保存失败，请检查设置后重试')
+        setError(data.error ?? 'Save failed. Check your settings and try again')
         return
       }
 
@@ -71,15 +71,15 @@ export default function SettingsPage() {
       setSettings(data)
       setForm(prev => ({ ...prev, simplefin_access_url: '', gemini_api_key: '', claude_api_key: '' }))
     } catch {
-      setError('保存失败，请检查服务状态后重试')
+      setError('Save failed. Check service status and try again')
     }
   }
 
-  if (loading) return <div className="text-center py-12 text-slate-500">加载中...</div>
+  if (loading) return <div className="text-center py-12 text-slate-500">Loading...</div>
 
   return (
     <div className="max-w-xl mx-auto space-y-6">
-      <h1 className="text-xl font-bold">设置</h1>
+      <h1 className="text-xl font-bold">Settings</h1>
       {error && (
         <div className="bg-red-900/40 border border-red-800 text-red-200 rounded-md px-3 py-2 text-sm">
           {error}
@@ -90,14 +90,14 @@ export default function SettingsPage() {
         {/* SimpleFIN */}
         <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
           <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-slate-300">SimpleFIN 配置</h2>
+          <h2 className="text-sm font-medium text-slate-300">SimpleFIN configuration</h2>
           <a
             href="https://beta-bridge.simplefin.org/my-account"
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs text-blue-400 hover:text-blue-300"
           >
-            管理账户 →
+            Manage accounts →
           </a>
         </div>
 
@@ -105,7 +105,7 @@ export default function SettingsPage() {
             <label className="text-xs text-slate-400 block mb-1">Access URL</label>
             {settings.simplefin_access_url && (
               <p className="text-xs text-green-400 mb-1">
-                ✓ 已配置
+                ✓ Configured
               </p>
             )}
               <input
@@ -116,12 +116,12 @@ export default function SettingsPage() {
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
             />
             <p className="text-xs text-slate-500 mt-1">
-              留空则保持现有配置不变
+              Leave blank to keep the existing configuration
             </p>
           </div>
 
           <div>
-            <label className="text-xs text-slate-400 block mb-1">每日同步时间（小时，0-23）</label>
+            <label className="text-xs text-slate-400 block mb-1">Daily sync hour (0-23)</label>
             <input
               type="number"
               min={0}
@@ -136,17 +136,17 @@ export default function SettingsPage() {
         {/* AI Classification */}
         <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
           <div>
-            <h2 className="text-sm font-medium text-slate-300">AI 分类（可选）</h2>
-            <p className="text-xs text-slate-500 mt-0.5">配置任意一个即可，Gemini 优先，Claude 作为备用</p>
+            <h2 className="text-sm font-medium text-slate-300">AI categorization (optional)</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Configure either one. Gemini is preferred and Claude is the fallback.</p>
           </div>
 
           <div>
             <label className="text-xs text-slate-400 block mb-1">
               Gemini API Key
-              <span className="ml-2 text-emerald-500">免费 tier 可用</span>
+              <span className="ml-2 text-emerald-500">Free tier available</span>
             </label>
             {settings.gemini_api_key && (
-              <p className="text-xs text-green-400 mb-1">✓ 已配置</p>
+              <p className="text-xs text-green-400 mb-1">✓ Configured</p>
             )}
               <input
                 type="password"
@@ -158,9 +158,9 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label className="text-xs text-slate-400 block mb-1">Claude API Key（备用）</label>
+            <label className="text-xs text-slate-400 block mb-1">Claude API Key (fallback)</label>
             {settings.claude_api_key && (
-              <p className="text-xs text-green-400 mb-1">✓ 已配置</p>
+              <p className="text-xs text-green-400 mb-1">✓ Configured</p>
             )}
               <input
                 type="password"
@@ -171,45 +171,45 @@ export default function SettingsPage() {
             />
           </div>
 
-          <p className="text-xs text-slate-500">两个都留空则跳过 AI 分类</p>
+          <p className="text-xs text-slate-500">Leave both blank to skip AI categorization</p>
         </div>
 
         <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
           <div>
-            <h2 className="text-sm font-medium text-slate-300">数据导入 / 导出</h2>
-            <p className="text-xs text-slate-500 mt-0.5">导出不会包含 SimpleFIN URL 或 API keys</p>
+            <h2 className="text-sm font-medium text-slate-300">Data import / export</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Exports do not include the SimpleFIN URL or API keys</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <a
               href="/api/export/transactions"
               className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-md text-center"
             >
-              交易 CSV
+              Transactions CSV
             </a>
             <a
               href="/api/export/accounts"
               className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-md text-center"
             >
-              账户 CSV
+              Accounts CSV
             </a>
             <a
               href="/api/export/networth"
               className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm rounded-md text-center"
             >
-              净资产 CSV
+              Net worth CSV
             </a>
             <a
               href="/api/export/backup"
               className="px-3 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm rounded-md text-center"
             >
-              JSON 备份
+              JSON backup
             </a>
           </div>
           <a
             href="/import"
             className="block w-full px-3 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-sm rounded-md text-center"
           >
-            导入 CSV
+            Import CSV
           </a>
         </div>
 
@@ -217,7 +217,7 @@ export default function SettingsPage() {
           type="submit"
           className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-md"
         >
-          {saved ? '✓ 已保存' : '保存设置'}
+          {saved ? '✓ Saved' : 'Save settings'}
         </button>
       </form>
     </div>

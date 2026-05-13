@@ -16,7 +16,7 @@ function formatAmount(amount: string): { text: string; positive: boolean } {
 }
 
 function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString('zh-CN', {
+  return new Date(ts * 1000).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   })
@@ -86,7 +86,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
       const res = await fetch(`/api/transactions/${encodeURIComponent(id)}/classify`, { method: 'POST' })
       if (!res.ok) {
         const data = (await res.json()) as { error?: string }
-        alert(data.error ?? 'AI 请求失败')
+        alert(data.error ?? 'AI request failed')
         return
       }
       onUpdate?.()
@@ -131,7 +131,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
         ),
       )
       const failed = responses.filter(res => !res.ok).length
-      if (failed > 0) alert(`${failed} 条交易更新失败`)
+      if (failed > 0) alert(`${failed} transaction updates failed`)
       setSelected(new Set())
       setBulkCategory('')
       onUpdate?.()
@@ -146,7 +146,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
 
   const acceptSelectedSuggestions = async () => {
     if (selectedSuggestedTxns.length === 0) return
-    const confirmed = window.confirm(`确认接受 ${selectedSuggestedTxns.length} 条 AI 建议？`)
+    const confirmed = window.confirm(`Accept ${selectedSuggestedTxns.length} AI suggestions?`)
     if (!confirmed) return
 
     const ids = selectedSuggestedTxns.map(txn => txn.id)
@@ -167,7 +167,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
         ),
       )
       const failed = responses.filter(res => !res.ok).length
-      if (failed > 0) alert(`${failed} 条 AI 建议确认失败`)
+      if (failed > 0) alert(`${failed} AI suggestions failed to apply`)
       setSelected(prev => {
         const next = new Set(prev)
         ids.forEach(id => next.delete(id))
@@ -187,7 +187,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
   if (txns.length === 0) {
     return (
       <div className="text-center py-12 text-slate-500">
-        暂无交易记录
+        No transactions yet
       </div>
     )
   }
@@ -197,13 +197,13 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
       {visibleSuggestedTxns.length > 0 && (
         <div className="mb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-blue-900/60 bg-blue-950/30 px-3 py-2">
           <span className="text-xs text-blue-200">
-            本页有 {visibleSuggestedTxns.length} 条 AI 建议待确认
+            This page has {visibleSuggestedTxns.length} AI suggestions to review
           </span>
           <button
             onClick={selectVisibleSuggestions}
             className="px-2.5 py-1 bg-blue-700 hover:bg-blue-600 text-white text-xs rounded"
           >
-            选择本页 AI 建议
+            Select page suggestions
           </button>
         </div>
       )}
@@ -244,10 +244,10 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
                           <span className="ml-2 text-slate-500">· {accountName}</span>
                         )}
                         {txn.status === 'pending' && (
-                          <span className="ml-2 text-amber-400">待结算</span>
+                          <span className="ml-2 text-amber-400">Pending</span>
                         )}
                         {txn.status === 'cancelled' && (
-                          <span className="ml-2 text-slate-500">已取消</span>
+                          <span className="ml-2 text-slate-500">Cancelled</span>
                         )}
                       </p>
                     </div>
@@ -281,21 +281,21 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
 
                     {!txn.category && txn.suggestedCat && (
                       <div className="flex items-center gap-1 text-xs">
-                        <span className="text-slate-400">AI建议:</span>
+                        <span className="text-slate-400">AI suggestion:</span>
                         <span className="text-blue-300">{txn.suggestedCat}</span>
                         <button
                           onClick={() => confirmSuggested(txn)}
                           disabled={loading[txn.id]}
                           className="px-1.5 py-0.5 bg-green-700 hover:bg-green-600 text-white rounded text-xs ml-1"
                         >
-                          ✓确认
+                          ✓ Accept
                         </button>
                         <button
                           onClick={() => ignoreSuggested(txn)}
                           disabled={loading[txn.id]}
                           className="px-1.5 py-0.5 bg-slate-600 hover:bg-slate-500 text-white rounded text-xs"
                         >
-                          ✗忽略
+                          ✗ Ignore
                         </button>
                       </div>
                     )}
@@ -311,7 +311,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
                     )}
 
                     {loading[txn.id] && (
-                      <span className="text-xs text-slate-400 animate-pulse">保存中...</span>
+                      <span className="text-xs text-slate-400 animate-pulse">Saving...</span>
                     )}
                   </div>
 
@@ -329,9 +329,9 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
       {selected.size > 0 && (
         <div className="fixed bottom-20 md:bottom-6 left-4 right-4 bg-slate-700 border border-slate-600 rounded-xl p-3 shadow-2xl flex flex-col sm:flex-row sm:items-center gap-3 z-40">
           <span className="text-sm text-slate-300 shrink-0">
-            已选 {selected.size} 条
+            {selected.size} selected
             {selectedSuggestedTxns.length > 0 && (
-              <span className="text-blue-300"> · {selectedSuggestedTxns.length} 条有 AI 建议</span>
+              <span className="text-blue-300"> · {selectedSuggestedTxns.length} with AI suggestions</span>
             )}
           </span>
           {selectedSuggestedTxns.length > 0 && (
@@ -340,13 +340,13 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
               disabled={bulkAccepting}
               className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm rounded shrink-0"
             >
-              {bulkAccepting ? '确认中...' : '接受 AI 建议'}
+              {bulkAccepting ? 'Accepting...' : 'Accept AI suggestions'}
             </button>
           )}
           <CategorySelect
             value={bulkCategory}
             onChange={setBulkCategory}
-            placeholder="-- 批量设置分类 --"
+            placeholder="-- Set category in bulk --"
             className="flex-1 min-w-0 py-1.5"
           />
           <button
@@ -354,13 +354,13 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
             disabled={!bulkCategory}
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded shrink-0"
           >
-            应用
+            Apply
           </button>
           <button
             onClick={() => setSelected(new Set())}
             className="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-white text-sm rounded shrink-0"
           >
-            取消
+            Cancel
           </button>
         </div>
       )}

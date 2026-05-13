@@ -58,7 +58,7 @@ function formatCurrency(value: number): string {
 }
 
 function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString('zh-CN', {
+  return new Date(ts * 1000).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   })
@@ -74,15 +74,15 @@ function formatSignedAmount(amount: string): { text: string; positive: boolean }
 }
 
 function reasonLabel(reason: ReviewGroup['reason']): string {
-  if (reason === 'uncategorized') return '未分类'
-  if (reason === 'review_category') return 'Review 类别'
-  return '混合'
+  if (reason === 'uncategorized') return 'Uncategorized'
+  if (reason === 'review_category') return 'Review category'
+  return 'Mixed'
 }
 
 function directionLabel(direction: ReviewGroup['direction']): string {
-  if (direction === 'spending') return '支出'
-  if (direction === 'income') return '收入'
-  return '零金额'
+  if (direction === 'spending') return 'Spending'
+  if (direction === 'income') return 'Income'
+  return 'Zero amount'
 }
 
 function defaultForm(group: ReviewGroup): ApplyForm {
@@ -156,11 +156,11 @@ export default function ReviewPage() {
       })
       const data = (await res.json()) as { changed?: number; ruleCreated?: boolean; error?: string }
       if (!res.ok) {
-        setError(data.error ?? '更新失败')
+        setError(data.error ?? 'Update failed')
         return
       }
       setMessage(
-        `已分类 ${data.changed ?? 0} 条交易${data.ruleCreated ? '，并保存规则' : ''}`,
+        `Categorized ${data.changed ?? 0} transactions${data.ruleCreated ? ' and saved a rule' : ''}`,
       )
       setForms(prev => {
         const next = { ...prev }
@@ -179,33 +179,33 @@ export default function ReviewPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-xl font-bold">分类审核</h1>
+          <h1 className="text-xl font-bold">Category Review</h1>
         </div>
         <button
           onClick={loadReview}
           disabled={loading}
           className="self-start rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-60"
         >
-          {loading ? '刷新中...' : '刷新'}
+          {loading ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
       {summary && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">待审核交易</p>
+            <p className="text-xs text-slate-400">Transactions to review</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-amber-300">{summary.transactions}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">归组</p>
+            <p className="text-xs text-slate-400">Groups</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-blue-300">{summary.groups}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">未分类</p>
+            <p className="text-xs text-slate-400">Uncategorized</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-red-300">{summary.uncategorized}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Review 类别</p>
+            <p className="text-xs text-slate-400">Review category</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-violet-300">{summary.reviewCategory}</p>
           </div>
         </div>
@@ -213,11 +213,11 @@ export default function ReviewPage() {
 
       <div className="flex flex-wrap gap-2">
         {[
-          ['all', '全部'],
-          ['spending', '支出'],
-          ['income', '收入'],
-          ['uncategorized', '未分类'],
-          ['review', 'Review 类别'],
+          ['all', 'All'],
+          ['spending', 'Spending'],
+          ['income', 'Income'],
+          ['uncategorized', 'Uncategorized'],
+          ['review', 'Review category'],
         ].map(([value, label]) => (
           <button
             key={value}
@@ -245,10 +245,10 @@ export default function ReviewPage() {
       )}
 
       {loading ? (
-        <div className="py-12 text-center text-slate-500">加载中...</div>
+        <div className="py-12 text-center text-slate-500">Loading...</div>
       ) : groups.length === 0 ? (
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-10 text-center text-slate-400">
-          当前筛选下没有待审核交易
+          No transactions need review for the current filter
         </div>
       ) : (
         <div className="space-y-3">
@@ -274,7 +274,7 @@ export default function ReviewPage() {
                         <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-300">
                           {reasonLabel(group.reason)}
                         </span>
-                        <span className="text-xs text-slate-500">最近 {formatDate(group.latestPosted)}</span>
+                        <span className="text-xs text-slate-500">Latest {formatDate(group.latestPosted)}</span>
                       </div>
                       <h2 className="mt-2 truncate text-base font-semibold text-slate-100">
                         {group.sampleDescription}
@@ -283,17 +283,17 @@ export default function ReviewPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-right text-xs lg:min-w-72">
                       <div>
-                        <p className="text-slate-500">次数</p>
+                        <p className="text-slate-500">Count</p>
                         <p className="mt-1 text-sm font-semibold tabular-nums text-slate-200">{group.count}</p>
                       </div>
                       <div>
-                        <p className="text-slate-500">合计</p>
+                        <p className="text-slate-500">Total</p>
                         <p className="mt-1 text-sm font-semibold tabular-nums text-slate-200">
                           {formatCurrency(group.totalAbs)}
                         </p>
                       </div>
                       <div>
-                        <p className="text-slate-500">范围</p>
+                        <p className="text-slate-500">Range</p>
                         <p className="mt-1 text-sm font-semibold tabular-nums text-slate-200">
                           {formatCurrency(group.minAbs)}-{formatCurrency(group.maxAbs)}
                         </p>
@@ -323,7 +323,7 @@ export default function ReviewPage() {
                         onClick={() => updateForm(group, { category: item.category })}
                         className="rounded-full bg-blue-950 px-2 py-0.5 text-xs text-blue-300 hover:bg-blue-900"
                       >
-                        建议 {item.category} × {item.count}
+                        Suggested {item.category} x {item.count}
                       </button>
                     ))}
                   </div>
@@ -333,7 +333,7 @@ export default function ReviewPage() {
                   <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
                     <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_minmax(260px,1fr)]">
                       <div>
-                        <label className="mb-1 block text-xs text-slate-400">目标分类</label>
+                        <label className="mb-1 block text-xs text-slate-400">Target category</label>
                         <CategorySelect
                           value={form.category}
                           onChange={category => updateForm(group, { category })}
@@ -343,7 +343,7 @@ export default function ReviewPage() {
                       </div>
                       <div>
                         <div className="mb-1 flex items-center justify-between gap-2">
-                          <label className="text-xs text-slate-400">规则模式</label>
+                          <label className="text-xs text-slate-400">Rule pattern</label>
                           <label className="flex items-center gap-1.5 text-xs text-slate-400">
                             <input
                               type="checkbox"
@@ -351,7 +351,7 @@ export default function ReviewPage() {
                               onChange={event => updateForm(group, { createRule: event.target.checked })}
                               className="rounded"
                             />
-                            保存规则
+                            Save rule
                           </label>
                         </div>
                         <input
@@ -368,13 +368,13 @@ export default function ReviewPage() {
                       disabled={!form.category || isSaving}
                       className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
                     >
-                      {isSaving ? '应用中...' : `应用到 ${group.count} 条`}
+                      {isSaving ? 'Applying...' : `Apply to ${group.count}`}
                     </button>
                   </div>
 
                   <details className="rounded-lg border border-slate-700 bg-slate-900/40">
                     <summary className="cursor-pointer px-3 py-2 text-xs text-slate-400 hover:text-slate-200">
-                      查看样本交易（最多 20 条）
+                      View sample transactions, up to 20
                     </summary>
                     <div className="divide-y divide-slate-800 border-t border-slate-700">
                       {group.transactions.map(txn => {

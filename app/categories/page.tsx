@@ -10,12 +10,12 @@ export default function CategoriesPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">分类</h1>
+        <h1 className="text-xl font-bold">Categories</h1>
         <Link
           href="/rules"
           className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm rounded-md"
         >
-          分类规则
+          Category rules
         </Link>
       </div>
 

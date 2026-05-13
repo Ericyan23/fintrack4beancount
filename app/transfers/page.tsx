@@ -56,7 +56,7 @@ function formatAmount(amount: string): string {
 }
 
 function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString('zh-CN', {
+  return new Date(ts * 1000).toLocaleDateString('en-US', {
     month: 'numeric',
     day: 'numeric',
   })
@@ -65,26 +65,26 @@ function formatDate(ts: number): string {
 function kindLabel(kind: string): string {
   switch (kind) {
     case 'credit_card_payment':
-      return '信用卡还款'
+      return 'Credit card payment'
     case 'internal':
-      return '内部转账'
+      return 'Internal transfer'
     case 'wallet':
-      return '钱包'
+      return 'Wallet'
     case 'investment':
-      return '投资'
+      return 'Investment'
     default:
-      return '转账'
+      return 'Transfer'
   }
 }
 
 function statusLabel(status: TransferMatch['status']): string {
   switch (status) {
     case 'suggested':
-      return '待确认'
+      return 'Pending review'
     case 'confirmed':
-      return '已确认'
+      return 'Confirmed'
     case 'ignored':
-      return '已忽略'
+      return 'Ignored'
   }
 }
 
@@ -190,7 +190,7 @@ export default function TransfersPage() {
       })
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(data.error ?? '保存外部账户失败')
+        throw new Error(data.error ?? 'Failed to save external account')
       }
       setExternalAccountByTxn(prev => {
         const next = { ...prev }
@@ -212,32 +212,32 @@ export default function TransfersPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">转账匹配</h1>
+        <h1 className="text-xl font-bold">Transfer matching</h1>
         <button
           onClick={scan}
           disabled={scanning}
           className="rounded-md bg-blue-700 px-3 py-1.5 text-sm text-white hover:bg-blue-600 disabled:opacity-50"
         >
-          {scanning ? '扫描中...' : '扫描匹配'}
+          {scanning ? 'Scanning...' : 'Scan matches'}
         </button>
       </div>
 
       {summary && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-lg border border-blue-900/60 bg-blue-950/30 p-3">
-            <p className="text-xs text-blue-300">待确认</p>
+            <p className="text-xs text-blue-300">Pending review</p>
             <p className="mt-1 text-2xl font-semibold text-blue-200">{summary.suggested}</p>
           </div>
           <div className="rounded-lg border border-emerald-900/60 bg-emerald-950/30 p-3">
-            <p className="text-xs text-emerald-300">已确认</p>
+            <p className="text-xs text-emerald-300">Confirmed</p>
             <p className="mt-1 text-2xl font-semibold text-emerald-200">{summary.confirmed}</p>
           </div>
           <div className="rounded-lg border border-slate-700 bg-slate-800 p-3">
-            <p className="text-xs text-slate-400">未匹配</p>
+            <p className="text-xs text-slate-400">Unmatched</p>
             <p className="mt-1 text-2xl font-semibold text-slate-100">{summary.unmatched}</p>
           </div>
           <div className="rounded-lg border border-slate-700 bg-slate-800 p-3">
-            <p className="text-xs text-slate-400">已忽略</p>
+            <p className="text-xs text-slate-400">Ignored</p>
             <p className="mt-1 text-2xl font-semibold text-slate-100">{summary.ignored}</p>
           </div>
         </div>
@@ -254,16 +254,16 @@ export default function TransfersPage() {
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
             }`}
           >
-            {item === 'all' ? '全部' : statusLabel(item)}
+            {item === 'all' ? 'All' : statusLabel(item)}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="py-12 text-center text-slate-500">加载中...</div>
+        <div className="py-12 text-center text-slate-500">Loading...</div>
       ) : matches.length === 0 ? (
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-8 text-center text-slate-500">
-          没有匹配记录
+          No matches found
         </div>
       ) : (
         <div className="space-y-3">
@@ -288,14 +288,14 @@ export default function TransfersPage() {
                         disabled={savingId === match.id}
                         className="rounded bg-emerald-700 px-3 py-1 text-xs text-white hover:bg-emerald-600 disabled:opacity-50"
                       >
-                        确认
+                        Confirm
                       </button>
                       <button
                         onClick={() => updateStatus(match.id, 'ignored')}
                         disabled={savingId === match.id}
                         className="rounded bg-slate-700 px-3 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-50"
                       >
-                        忽略
+                        Ignore
                       </button>
                     </>
                   )}
@@ -313,7 +313,7 @@ export default function TransfersPage() {
 
       {unmatched.length > 0 && (
         <div>
-          <h2 className="mb-3 text-sm font-medium text-slate-400">未匹配转账</h2>
+          <h2 className="mb-3 text-sm font-medium text-slate-400">Unmatched transfers</h2>
           {externalAccountError && (
             <p className="mb-3 rounded-md border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
               {externalAccountError}
@@ -346,7 +346,7 @@ export default function TransfersPage() {
                       className="w-64 max-w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-100 disabled:opacity-50"
                     >
                       <option value="">
-                        {externalAccounts.length === 0 ? '无可用外部账户' : '选择外部账户'}
+                        {externalAccounts.length === 0 ? 'No external accounts available' : 'Select external account'}
                       </option>
                       {externalAccounts.map(account => (
                         <option key={account.account} value={account.account}>{account.account}</option>
@@ -358,7 +358,7 @@ export default function TransfersPage() {
                       disabled={!externalAccountByTxn[txn.id] || savingExternalTxnId === txn.id}
                       className="rounded bg-slate-700 px-3 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-50"
                     >
-                      {savingExternalTxnId === txn.id ? '保存中...' : '标记'}
+                      {savingExternalTxnId === txn.id ? 'Saving...' : 'Mark'}
                     </button>
                   </div>
                 </div>

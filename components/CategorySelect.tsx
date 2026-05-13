@@ -86,7 +86,7 @@ function beancountStatusClass(status: CategoryStat['beancount_status']): string 
 }
 
 function CategorySelectInner({
-  value, onChange, placeholder = '-- 选择分类 --',
+  value, onChange, placeholder = '-- Select category --',
   className = '', autoFocus, onBlur, searchable = false,
 }: Props) {
   const [categories, setCategories] = useState<string[]>([])
@@ -183,7 +183,7 @@ function CategorySelectInner({
           placeholder="Expenses:Food:Restaurants"
           className="flex-1 bg-slate-700 border border-blue-500 rounded px-2 py-1 text-xs text-slate-100 placeholder-slate-500 min-w-0"
         />
-        <button onClick={addCategory} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded">添加</button>
+        <button onClick={addCategory} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded">Add</button>
         <button onClick={() => setAdding(false)} className="px-2 py-1 bg-slate-600 hover:bg-slate-500 text-white text-xs rounded">✕</button>
       </div>
     )
@@ -316,7 +316,7 @@ function CategorySelectInner({
           >
             {filteredCategories.length === 0 ? (
               <div className="space-y-2 p-2">
-                <p className="px-2 py-1 text-xs text-slate-500">没有匹配分类</p>
+                <p className="px-2 py-1 text-xs text-slate-500">No matching categories</p>
                 <button
                   type="button"
                   onMouseDown={event => event.preventDefault()}
@@ -327,7 +327,7 @@ function CategorySelectInner({
                   }}
                   className="w-full rounded px-2 py-2.5 text-left text-xs text-blue-300 hover:bg-slate-700"
                 >
-                  ＋ 新建 {query.trim() || '分类'}
+                  + Create {query.trim() || 'category'}
                 </button>
               </div>
             ) : (
@@ -376,7 +376,7 @@ function CategorySelectInner({
                   }}
                   className="w-full border-t border-slate-700 px-3 py-2.5 text-left text-xs text-blue-300 hover:bg-slate-700"
                 >
-                  ＋ 新建分类...
+                  + Create category...
                 </button>
               </>
             )}
@@ -403,12 +403,12 @@ function CategorySelectInner({
           {cats.map(c => <option key={c} value={c}>{c}</option>)}
         </optgroup>
       ))}
-      <option value="__add__">＋ 新建分类...</option>
+      <option value="__add__">+ Create category...</option>
     </select>
   )
 }
 
-// 用 client-only 包装避免 SSR hydration mismatch
+// Wrap client-only rendering to avoid SSR hydration mismatches.
 export default function CategorySelect(props: Props) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -420,7 +420,7 @@ export default function CategorySelect(props: Props) {
         onChange={() => {}}
         className={`bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100 ${props.className ?? ''}`}
       >
-        <option value="">{props.placeholder ?? '-- 选择分类 --'}</option>
+        <option value="">{props.placeholder ?? '-- Select category --'}</option>
       </select>
     )
   }

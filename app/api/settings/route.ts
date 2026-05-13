@@ -46,7 +46,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     if (key === 'sync_hour') {
       const sanitized = sanitizeSyncHour(value)
       if (sanitized === null) {
-        return NextResponse.json({ error: '同步时间必须是 0 到 23 的整数' }, { status: 400 })
+        return NextResponse.json({ error: 'Sync hour must be an integer from 0 to 23' }, { status: 400 })
       }
       setSetting(key, sanitized)
       continue

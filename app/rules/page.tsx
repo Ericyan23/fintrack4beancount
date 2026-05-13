@@ -147,20 +147,20 @@ export default function RulesPage() {
     for (const rule of [...rules].sort((a, b) => b.priority - a.priority)) {
       try {
         if (new RegExp(rule.pattern, 'i').test(testInput)) {
-          setTestResult(`匹配规则 #${rule.id} → ${rule.category}`)
+          setTestResult(`Matched rule #${rule.id} -> ${rule.category}`)
           return
         }
       } catch {
         // skip invalid
       }
     }
-    setTestResult('无匹配规则（未分类）')
+    setTestResult('No matching rule (uncategorized)')
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
-        <h1 className="text-xl font-bold shrink-0">分类规则</h1>
+        <h1 className="text-xl font-bold shrink-0">Category Rules</h1>
         <div className="flex flex-col items-end gap-1.5">
           <div className="flex gap-2">
             <button
@@ -168,33 +168,33 @@ export default function RulesPage() {
               disabled={applying || rules.length === 0}
               className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm rounded-md whitespace-nowrap"
             >
-              {applying ? '应用中...' : '▶ 应用规则'}
+              {applying ? 'Applying...' : '▶ Apply rules'}
             </button>
             <button
               onClick={runAIClassify}
               disabled={classifying}
               className="px-3 py-1.5 bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-white text-sm rounded-md whitespace-nowrap"
             >
-              {classifying ? 'AI 分析中...' : '✦ AI 批量建议'}
+              {classifying ? 'AI analyzing...' : '✦ Batch AI suggestions'}
             </button>
           </div>
           {applyResult && (
             <span className="text-xs text-green-400 text-right">
-              规则：✓ 已分类 {applyResult.applied} 条，剩余 {applyResult.remaining} 条
+              Rules: ✓ categorized {applyResult.applied}, {applyResult.remaining} remaining
             </span>
           )}
           {classifyProgress && (
             <div className="w-full max-w-xs space-y-1">
               <div className="flex justify-between text-xs text-slate-400">
                 <span>
-                  AI 分析中 {classifyProgress.current}/{classifyProgress.total}
-                  {classifyProgress.grouped ? ' 组' : ''}
+                  AI analyzing {classifyProgress.current}/{classifyProgress.total}
+                  {classifyProgress.grouped ? ' groups' : ''}
                 </span>
-                <span>已建议 {classifyProgress.suggested} 条</span>
+                <span>Suggested {classifyProgress.suggested}</span>
               </div>
               {classifyProgress.grouped && classifyProgress.transactionTotal !== undefined && (
                 <p className="text-[11px] text-slate-500 text-right">
-                  合并处理 {classifyProgress.transactionTotal} 条交易
+                  Processing {classifyProgress.transactionTotal} grouped transactions
                 </p>
               )}
               <div className="w-full bg-slate-700 rounded-full h-1.5">
@@ -211,7 +211,7 @@ export default function RulesPage() {
                 ? `✕ ${classifyResult.error}`
                 : classifyResult.info
                 ? `ℹ ${classifyResult.info}`
-                : `AI：✦ 建议 ${classifyResult.suggested} 条，剩余 ${classifyResult.remaining} 条未分类`}
+                : `AI: ✦ suggested ${classifyResult.suggested}, ${classifyResult.remaining} uncategorized remaining`}
             </span>
           )}
         </div>
@@ -219,11 +219,11 @@ export default function RulesPage() {
 
       {/* New rule form */}
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
-        <h2 className="text-sm font-medium text-slate-300 mb-4">新建规则</h2>
+        <h2 className="text-sm font-medium text-slate-300 mb-4">New rule</h2>
         <form onSubmit={createRule} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-slate-400 block mb-1">正则模式</label>
+              <label className="text-xs text-slate-400 block mb-1">Regex pattern</label>
               <input
                 type="text"
                 placeholder="e.g. WHOLE.*FOODS"
@@ -234,7 +234,7 @@ export default function RulesPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">分类</label>
+              <label className="text-xs text-slate-400 block mb-1">Category</label>
               <CategorySelect
                 value={category}
                 onChange={setCategory}
@@ -242,7 +242,7 @@ export default function RulesPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">优先级（数字越大越优先）</label>
+              <label className="text-xs text-slate-400 block mb-1">Priority (higher runs first)</label>
               <input
                 type="number"
                 value={priority}
@@ -256,18 +256,18 @@ export default function RulesPage() {
             type="submit"
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-md"
           >
-            + 新建规则
+            + New rule
           </button>
         </form>
       </div>
 
       {/* Rule tester */}
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
-        <h2 className="text-sm font-medium text-slate-300 mb-3">规则测试</h2>
+        <h2 className="text-sm font-medium text-slate-300 mb-3">Rule tester</h2>
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="输入交易描述测试规则..."
+            placeholder="Enter a transaction description to test rules..."
             value={testInput}
             onChange={e => setTestInput(e.target.value)}
             className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
@@ -276,11 +276,11 @@ export default function RulesPage() {
             onClick={testRule}
             className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white text-sm rounded-md"
           >
-            测试
+            Test
           </button>
         </div>
         {testResult && (
-          <p className={`mt-2 text-sm ${testResult.includes('匹配') ? 'text-green-400' : 'text-amber-400'}`}>
+          <p className={`mt-2 text-sm ${testResult.includes('Matched') ? 'text-green-400' : 'text-amber-400'}`}>
             {testResult}
           </p>
         )}
@@ -292,29 +292,29 @@ export default function RulesPage() {
           onClick={() => setShowCatManager(v => !v)}
           className="w-full flex items-center justify-between text-sm font-medium text-slate-400 hover:text-slate-200 py-1"
         >
-          <span>分类管理（{catStats.length} 个）</span>
-          <span>{showCatManager ? '▲ 收起' : '▼ 展开'}</span>
+          <span>Category management ({catStats.length})</span>
+          <span>{showCatManager ? '▲ Collapse' : '▼ Expand'}</span>
         </button>
         {showCatManager && <div className="mt-3"><CategoryManager initialStats={catStats} /></div>}
       </div>
 
       {/* Rules list */}
       <div>
-        <h2 className="text-sm font-medium text-slate-400 mb-3">已有规则（{rules.length} 条）</h2>
+        <h2 className="text-sm font-medium text-slate-400 mb-3">Existing rules ({rules.length})</h2>
         {loading ? (
-          <p className="text-slate-500 text-sm">加载中...</p>
+          <p className="text-slate-500 text-sm">Loading...</p>
         ) : rules.length === 0 ? (
           <div className="bg-slate-800 rounded-xl p-6 text-center text-slate-500 border border-slate-700">
-            暂无规则，新建一条开始自动分类
+            No rules yet. Create one to start automatic categorization.
           </div>
         ) : (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="hidden md:grid grid-cols-[60px_1fr_1fr_60px_80px] gap-4 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
-              <span>优先级</span>
-              <span>模式（正则）</span>
-              <span>分类</span>
+              <span>Priority</span>
+              <span>Pattern (regex)</span>
+              <span>Category</span>
               <span>ID</span>
-              <span>操作</span>
+              <span>Actions</span>
             </div>
             {rules.map((rule, i) => (
               <div
@@ -331,7 +331,7 @@ export default function RulesPage() {
                   onClick={() => deleteRule(rule.id!)}
                   className="text-red-400 hover:text-red-300 text-xs"
                 >
-                  删除
+                  Delete
                 </button>
               </div>
             ))}

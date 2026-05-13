@@ -26,13 +26,13 @@ export default function NetWorthChart({ snapshots }: Props) {
   if (snapshots.length === 0) {
     return (
       <div className="flex items-center justify-center h-32 text-slate-500 text-sm">
-        暂无净资产历史数据（首次同步后显示）
+        No net worth history yet. It appears after the first sync.
       </div>
     )
   }
 
   const data = snapshots.map(s => ({
-    date: new Date(s.snapshotAt * 1000).toLocaleDateString('zh-CN', {
+    date: new Date(s.snapshotAt * 1000).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
     }),
@@ -69,7 +69,7 @@ export default function NetWorthChart({ snapshots }: Props) {
           stroke="#3b82f6"
           strokeWidth={2}
           dot={false}
-          name="净资产"
+          name="Net Worth"
         />
       </LineChart>
     </ResponsiveContainer>

@@ -7,7 +7,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'source and target required' }, { status: 400 })
   }
   if (source === target) {
-    return NextResponse.json({ error: '源和目标不能相同' }, { status: 400 })
+    return NextResponse.json({ error: 'Source and target cannot be the same' }, { status: 400 })
   }
 
   const result = mergeCategories(source.trim(), target.trim())

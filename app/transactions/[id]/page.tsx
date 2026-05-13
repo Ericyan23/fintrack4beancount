@@ -52,10 +52,10 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
   }, [txn, category, notes, router])
 
   if (loading) {
-    return <div className="text-center py-12 text-slate-500">加载中...</div>
+    return <div className="text-center py-12 text-slate-500">Loading...</div>
   }
   if (!txn) {
-    return <div className="text-center py-12 text-slate-500">未找到交易</div>
+    return <div className="text-center py-12 text-slate-500">Transaction not found</div>
   }
 
   const amount = parseFloat(txn.amount)
@@ -67,7 +67,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
         onClick={() => router.back()}
         className="text-sm text-slate-400 hover:text-slate-300"
       >
-        ← 返回
+        ← Back
       </button>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
@@ -79,40 +79,40 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
           {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)}
         </p>
         <div className="mt-3 space-y-1 text-sm text-slate-400">
-          <p>日期：{new Date(txn.posted * 1000).toLocaleDateString('zh-CN')}</p>
+          <p>Date: {new Date(txn.posted * 1000).toLocaleDateString('en-US')}</p>
           {txn.transactedAt && (
-            <p>交易时间：{new Date(txn.transactedAt * 1000).toLocaleDateString('zh-CN')}</p>
+            <p>Transaction time: {new Date(txn.transactedAt * 1000).toLocaleDateString('en-US')}</p>
           )}
-          <p>账户：{account?.name ?? txn.accountId}</p>
-          {txn.status === 'pending' && <p className="text-amber-400">⚠ 待结算</p>}
-          {txn.status === 'cancelled' && <p className="text-slate-500">✕ 已取消</p>}
-          <p>来源：{txn.source}</p>
+          <p>Account: {account?.name ?? txn.accountId}</p>
+          {txn.status === 'pending' && <p className="text-amber-400">⚠ Pending</p>}
+          {txn.status === 'cancelled' && <p className="text-slate-500">✕ Cancelled</p>}
+          <p>Source: {txn.source}</p>
         </div>
       </div>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
-        <h2 className="text-sm font-medium text-slate-300">编辑信息</h2>
+        <h2 className="text-sm font-medium text-slate-300">Edit details</h2>
 
         <div>
-          <label className="text-xs text-slate-400 block mb-1">分类</label>
+          <label className="text-xs text-slate-400 block mb-1">Category</label>
           {txn.suggestedCat && !txn.category && (
-            <p className="text-xs text-blue-400 mb-1">AI建议: {txn.suggestedCat}</p>
+            <p className="text-xs text-blue-400 mb-1">AI suggestion: {txn.suggestedCat}</p>
           )}
           <CategorySelect
             value={category}
             onChange={setCategory}
-            placeholder="-- 未分类 --"
+            placeholder="-- Uncategorized --"
             className="w-full py-2"
           />
         </div>
 
         <div>
-          <label className="text-xs text-slate-400 block mb-1">备注</label>
+          <label className="text-xs text-slate-400 block mb-1">Notes</label>
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
             rows={3}
-            placeholder="添加备注..."
+            placeholder="Add notes..."
             className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500 resize-none"
           />
         </div>
@@ -122,7 +122,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
           disabled={saving}
           className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium rounded-md"
         >
-          {saving ? '保存中...' : '保存'}
+          {saving ? 'Saving...' : 'Save'}
         </button>
       </div>
     </div>

@@ -228,7 +228,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
       setPreflight(data as BalanceAssertionPreflightResult)
     } catch {
       setPreflight(null)
-      setPreflightError('Balance assertion preflight 请求失败')
+      setPreflightError('Balance assertion preflight request failed')
     } finally {
       setPreflightLoading(false)
     }
@@ -241,13 +241,13 @@ export default function BalanceAssertionPanel({ period }: Props) {
       const res = await fetch(`/api/beancount/balance-assertions?period=${encodeURIComponent(period)}`)
       const data = (await res.json().catch(() => ({}))) as Partial<BalanceAssertionsResponse>
       if (!res.ok || !Array.isArray(data.balanceAssertions)) {
-        setError(data.error ?? '无法读取 balance assertions')
+        setError(data.error ?? 'Unable to read balance assertions')
         setAssertions([])
         return
       }
       setAssertions(data.balanceAssertions)
     } catch {
-      setError('无法读取 balance assertions')
+      setError('Unable to read balance assertions')
       setAssertions([])
     } finally {
       setLoading(false)
@@ -321,13 +321,13 @@ export default function BalanceAssertionPanel({ period }: Props) {
       })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        setError(data.error ?? '保存 balance assertion 失败')
+        setError(data.error ?? 'Failed to save balance assertion')
         return
       }
       setForm(prev => ({ ...prev, amount: '', note: '' }))
       await Promise.all([loadAssertions(), loadPreflight()])
     } catch {
-      setError('保存 balance assertion 失败')
+      setError('Failed to save balance assertion')
     } finally {
       setSaving(false)
     }
@@ -342,12 +342,12 @@ export default function BalanceAssertionPanel({ period }: Props) {
       })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        setError(data.error ?? '删除 balance assertion 失败')
+        setError(data.error ?? 'Failed to delete balance assertion')
         return
       }
       await Promise.all([loadAssertions(), loadPreflight()])
     } catch {
-      setError('删除 balance assertion 失败')
+      setError('Failed to delete balance assertion')
     } finally {
       setDeletingId(null)
     }
@@ -364,12 +364,12 @@ export default function BalanceAssertionPanel({ period }: Props) {
       })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        setError(data.error ?? '更新 balance assertion 状态失败')
+        setError(data.error ?? 'Failed to update balance assertion status')
         return
       }
       await Promise.all([loadAssertions(), loadPreflight()])
     } catch {
-      setError('更新 balance assertion 状态失败')
+      setError('Failed to update balance assertion status')
     } finally {
       setUpdatingStatusId(null)
     }
@@ -385,16 +385,16 @@ export default function BalanceAssertionPanel({ period }: Props) {
       if (!res.ok) {
         try {
           const data = JSON.parse(text) as { error?: string }
-          setDraftError(data.error ?? 'Balance assertion draft 生成失败')
+          setDraftError(data.error ?? 'Failed to generate balance assertion draft')
         } catch {
-          setDraftError(text || 'Balance assertion draft 生成失败')
+          setDraftError(text || 'Failed to generate balance assertion draft')
         }
         setDraftText(null)
         return
       }
       setDraftText(text)
     } catch {
-      setDraftError('Balance assertion draft 请求失败')
+      setDraftError('Balance assertion draft request failed')
       setDraftText(null)
     } finally {
       setDraftLoading(false)
@@ -416,7 +416,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
           <p className="mt-1 text-xs text-slate-500">Draft only · {period}</p>
         </div>
         <span className="rounded-full bg-slate-900 px-2 py-0.5 text-xs tabular-nums text-slate-400">
-          {loading ? '读取中' : assertions.length}
+          {loading ? 'Loading' : assertions.length}
         </span>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
@@ -471,7 +471,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
         <input
           value={form.note}
           onChange={event => updateForm({ note: event.target.value })}
-          placeholder="备注"
+          placeholder="Note"
           className="min-w-0 rounded border border-slate-600 bg-slate-900 px-2 py-2 text-sm text-slate-100 placeholder-slate-600"
         />
         <button
@@ -479,7 +479,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
           disabled={saving}
           className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
         >
-          {saving ? '保存中' : '添加'}
+          {saving ? 'Saving' : 'Add'}
         </button>
       </form>
 
@@ -494,7 +494,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-xs font-semibold text-slate-300">Draft</h3>
-              {preflightLoading && <span className="text-xs text-slate-500">检查中</span>}
+              {preflightLoading && <span className="text-xs text-slate-500">Checking</span>}
               {preflight && (
                 <span className={`rounded-full px-2 py-0.5 text-xs ${
                   preflight.ok ? 'bg-emerald-950 text-emerald-300' : 'bg-red-950 text-red-300'
@@ -516,7 +516,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
               disabled={preflightLoading}
               className="min-h-10 rounded border border-slate-600 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-50"
             >
-              {preflightLoading ? '刷新中' : '刷新'}
+              {preflightLoading ? 'Refreshing' : 'Refresh'}
             </button>
             <button
               type="button"
@@ -524,7 +524,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
               disabled={!preflight?.ok || preflight.summary.exportableAssertions === 0 || draftLoading}
               className="min-h-10 rounded bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {draftLoading ? '生成中' : '预览'}
+              {draftLoading ? 'Generating' : 'Preview'}
             </button>
             <a
               href={preflight?.ok && preflight.summary.exportableAssertions > 0 ? draftHref : undefined}
@@ -538,7 +538,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
                   : 'cursor-not-allowed bg-slate-700 text-slate-500'
               }`}
             >
-              下载
+              Download
             </a>
             <button
               type="button"
@@ -546,7 +546,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
               disabled={!draftText}
               className="min-h-10 rounded border border-slate-600 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {copied ? '已复制' : '复制'}
+              {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
         </div>
@@ -601,7 +601,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
 
       <div className="mt-4 overflow-hidden rounded-lg border border-slate-700">
         {assertions.length === 0 ? (
-          <div className="bg-slate-900/40 px-3 py-4 text-sm text-slate-500">无 draft balance assertion</div>
+          <div className="bg-slate-900/40 px-3 py-4 text-sm text-slate-500">No draft balance assertions</div>
         ) : (
           <div className="divide-y divide-slate-700">
             {assertions.map(assertion => (
@@ -635,7 +635,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-amber-700 px-2 py-1.5 text-xs text-amber-200 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        标记 staged
+                        Mark staged
                       </button>
                       <button
                         type="button"
@@ -643,7 +643,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        拒绝
+                        Reject
                       </button>
                     </>
                   )}
@@ -655,7 +655,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-emerald-700 px-2 py-1.5 text-xs text-emerald-200 hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        标记 merged
+                        Mark merged
                       </button>
                       <button
                         type="button"
@@ -663,7 +663,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        退回 draft
+                        Move back to draft
                       </button>
                       <button
                         type="button"
@@ -671,7 +671,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        拒绝
+                        Reject
                       </button>
                     </>
                   )}
@@ -682,7 +682,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
                       disabled={updatingStatusId === assertion.id}
                       className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      退回 staged
+                      Move back to staged
                     </button>
                   )}
                   {assertion.status === 'rejected' && (
@@ -692,7 +692,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
                       disabled={updatingStatusId === assertion.id}
                       className="min-h-10 rounded border border-blue-700 px-2 py-1.5 text-xs text-blue-200 hover:bg-blue-950/40 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      恢复 draft
+                      Restore draft
                     </button>
                   )}
                   <button
@@ -701,7 +701,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
                     disabled={deletingId === assertion.id || assertion.status !== 'draft'}
                     className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {deletingId === assertion.id ? '删除中' : '删除'}
+                    {deletingId === assertion.id ? 'Deleting' : 'Delete'}
                   </button>
                 </div>
               </div>

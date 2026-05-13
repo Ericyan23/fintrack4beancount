@@ -41,7 +41,7 @@ export function BarSpendingChart({ data }: Props) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
-        暂无支出数据
+        No spending data yet
       </div>
     )
   }
@@ -62,7 +62,7 @@ export function BarSpendingChart({ data }: Props) {
           width={40}
         />
         <Tooltip
-          formatter={(value: number) => [formatCurrency(value), '支出']}
+          formatter={(value: number) => [formatCurrency(value), 'Spending']}
           contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
           labelStyle={{ color: '#f8fafc' }}
         />
@@ -76,7 +76,7 @@ export function PieSpendingChart({ data }: Props) {
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-48 text-slate-500 text-sm">
-        暂无支出数据
+        No spending data yet
       </div>
     )
   }
@@ -98,7 +98,7 @@ export function PieSpendingChart({ data }: Props) {
           ))}
         </Pie>
         <Tooltip
-          formatter={(value: number) => [formatCurrency(value), '支出']}
+          formatter={(value: number) => [formatCurrency(value), 'Spending']}
           contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
         />
         <Legend

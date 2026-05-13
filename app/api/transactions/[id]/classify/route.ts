@@ -18,10 +18,10 @@ export async function POST(_req: NextRequest, { params }: RouteParams): Promise<
     suggested = await classifyByAI(txn.description)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json({ error: `AI 请求失败：${msg}` }, { status: 502 })
+    return NextResponse.json({ error: `AI request failed: ${msg}` }, { status: 502 })
   }
   if (!suggested) {
-    return NextResponse.json({ error: '未能匹配到合适的分类，请检查 API Key 配置' }, { status: 422 })
+    return NextResponse.json({ error: 'No suitable category was matched. Check your API key configuration' }, { status: 422 })
   }
 
   db.update(transactions).set({ suggestedCat: suggested }).where(eq(transactions.id, id)).run()

@@ -159,10 +159,10 @@ export function previewTransactionsCsv(
     const accountId = resolveAccount(accountText, defaultAccountId, lookup)
 
     let error: string | undefined
-    if (!posted) error = '日期无效'
-    else if (amount === null) error = '金额无效'
-    else if (!description) error = '描述缺失'
-    else if (!accountId) error = '账户无法匹配'
+    if (!posted) error = 'Invalid date'
+    else if (amount === null) error = 'Invalid amount'
+    else if (!description) error = 'Missing description'
+    else if (!accountId) error = 'Unable to match account'
 
     if (error) errorRows++
     else validRows++
@@ -230,19 +230,19 @@ export function importTransactionsCsv(
       const status = normalizeStatus(cell(row, mapping.status))
 
       if (!posted) {
-        errors.push({ rowNumber, error: '日期无效' })
+        errors.push({ rowNumber, error: 'Invalid date' })
         return
       }
       if (amount === null) {
-        errors.push({ rowNumber, error: '金额无效' })
+        errors.push({ rowNumber, error: 'Invalid amount' })
         return
       }
       if (!description) {
-        errors.push({ rowNumber, error: '描述缺失' })
+        errors.push({ rowNumber, error: 'Missing description' })
         return
       }
       if (!accountId) {
-        errors.push({ rowNumber, error: '账户无法匹配' })
+        errors.push({ rowNumber, error: 'Unable to match account' })
         return
       }
 

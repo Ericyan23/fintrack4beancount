@@ -179,7 +179,7 @@ export function loadReviewGroups(): ReviewPayload {
     if (group.transactions.length < 20) {
       group.transactions.push({
         ...row,
-        accountName: row.accountName ?? '未知账户',
+        accountName: row.accountName ?? 'Unknown account',
       })
     }
     group.count += 1
@@ -188,7 +188,7 @@ export function loadReviewGroups(): ReviewPayload {
     group.minAbs = Math.min(group.minAbs, abs)
     group.maxAbs = Math.max(group.maxAbs, abs)
     group.latestPosted = Math.max(group.latestPosted, row.posted)
-    group.accounts.add(row.accountName ?? '未知账户')
+    group.accounts.add(row.accountName ?? 'Unknown account')
     group.reasonSet.add(reason)
     if (row.category) {
       group.currentCategories.set(row.category, (group.currentCategories.get(row.category) ?? 0) + 1)

@@ -48,15 +48,15 @@ interface ImportResult {
 }
 
 const FIELD_LABELS: Array<[ImportField, string, boolean]> = [
-  ['date', '日期', true],
-  ['amount', '金额', true],
-  ['description', '描述', true],
-  ['account', '账户列', false],
-  ['category', '分类', false],
-  ['notes', '备注', false],
-  ['tags', '标签', false],
-  ['status', '状态', false],
-  ['externalId', '外部 ID', false],
+  ['date', 'Date', true],
+  ['amount', 'Amount', true],
+  ['description', 'Description', true],
+  ['account', 'Account column', false],
+  ['category', 'Category', false],
+  ['notes', 'Notes', false],
+  ['tags', 'Tags', false],
+  ['status', 'Status', false],
+  ['externalId', 'External ID', false],
 ]
 
 export default function ImportPage() {
@@ -89,7 +89,7 @@ export default function ImportPage() {
       })
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string }
-        setError(payload.error ?? '预览失败')
+        setError(payload.error ?? 'Preview failed')
         return
       }
       const payload = (await res.json()) as PreviewResult
@@ -112,7 +112,7 @@ export default function ImportPage() {
       })
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string }
-        setError(payload.error ?? '导入失败')
+        setError(payload.error ?? 'Import failed')
         return
       }
       setResult((await res.json()) as ImportResult)
@@ -125,8 +125,8 @@ export default function ImportPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">CSV 导入</h1>
-        <Link href="/settings" className="text-sm text-slate-400 hover:text-slate-200">返回设置</Link>
+        <h1 className="text-xl font-bold">CSV Import</h1>
+        <Link href="/settings" className="text-sm text-slate-400 hover:text-slate-200">Back to settings</Link>
       </div>
 
       {error && (
@@ -136,14 +136,14 @@ export default function ImportPage() {
       )}
       {result && (
         <div className="bg-emerald-900/30 border border-emerald-800 text-emerald-200 rounded-md px-3 py-2 text-sm">
-          已导入 {result.imported} 条，跳过重复 {result.skipped} 条，错误 {result.errors.length} 条
+          Imported {result.imported}, skipped {result.skipped} duplicates, {result.errors.length} errors
         </div>
       )}
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-3">
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">CSV 文件</span>
+            <span className="text-xs text-slate-400 block mb-1">CSV file</span>
             <input
               type="file"
               accept=".csv,text/csv"
@@ -161,7 +161,7 @@ export default function ImportPage() {
             />
           </label>
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">默认账户</span>
+            <span className="text-xs text-slate-400 block mb-1">Default account</span>
             <select
               value={defaultAccountId}
               onChange={e => {
@@ -170,7 +170,7 @@ export default function ImportPage() {
               }}
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
             >
-              <option value="">使用 CSV 账户列</option>
+              <option value="">Use CSV account column</option>
               {accounts.map(account => (
                 <option key={account.id} value={account.id}>{account.name}</option>
               ))}
@@ -179,13 +179,13 @@ export default function ImportPage() {
         </div>
 
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-slate-500 truncate">{filename || '未选择文件'}</p>
+          <p className="text-xs text-slate-500 truncate">{filename || 'No file selected'}</p>
           <button
             onClick={() => runPreview()}
             disabled={!csv || loading}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded-md"
           >
-            {loading ? '处理中...' : '预览'}
+            {loading ? 'Processing...' : 'Preview'}
           </button>
         </div>
       </div>
@@ -195,15 +195,15 @@ export default function ImportPage() {
           <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <p className="text-xs text-slate-400">总行数</p>
+                <p className="text-xs text-slate-400">Total rows</p>
                 <p className="text-xl font-bold text-slate-100 mt-1">{preview.totalRows}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">可导入</p>
+                <p className="text-xs text-slate-400">Importable</p>
                 <p className="text-xl font-bold text-emerald-400 mt-1">{preview.validRows}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">错误</p>
+                <p className="text-xs text-slate-400">Errors</p>
                 <p className="text-xl font-bold text-red-400 mt-1">{preview.errorRows}</p>
               </div>
             </div>
@@ -223,7 +223,7 @@ export default function ImportPage() {
                     }}
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
                   >
-                    <option value="">不映射</option>
+                    <option value="">Do not map</option>
                     {preview.columns.map(column => (
                       <option key={`${field}-${column}`} value={column}>{column}</option>
                     ))}
@@ -235,12 +235,12 @@ export default function ImportPage() {
 
           <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
             <div className="grid grid-cols-[70px_110px_100px_1fr_160px_120px] gap-3 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
-              <span>行</span>
-              <span>日期</span>
-              <span>金额</span>
-              <span>描述</span>
-              <span>账户</span>
-              <span>状态</span>
+              <span>Row</span>
+              <span>Date</span>
+              <span>Amount</span>
+              <span>Description</span>
+              <span>Account</span>
+              <span>Status</span>
             </div>
             {preview.rows.map(row => (
               <div
@@ -267,7 +267,7 @@ export default function ImportPage() {
               disabled={loading || !mapping.date || !mapping.amount || !mapping.description}
               className="px-5 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm rounded-md"
             >
-              {loading ? '导入中...' : '确认导入'}
+              {loading ? 'Importing...' : 'Confirm import'}
             </button>
           </div>
         </>

@@ -82,7 +82,7 @@ export default function AccountMappingTable({ accounts }: Props) {
         if (!res.ok || !Array.isArray(data.accounts)) {
           setLedgerStatus({
             loading: false,
-            error: data.error ?? '无法读取 Beancount accounts',
+            error: data.error ?? 'Unable to read Beancount accounts',
             revision: null,
             openCount: 0,
           })
@@ -100,7 +100,7 @@ export default function AccountMappingTable({ accounts }: Props) {
         if (!cancelled) {
           setLedgerStatus({
             loading: false,
-            error: '无法读取 Beancount accounts',
+            error: 'Unable to read Beancount accounts',
             revision: null,
             openCount: 0,
           })
@@ -160,12 +160,12 @@ export default function AccountMappingTable({ accounts }: Props) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-700 bg-slate-800">
       <div className="grid min-w-[900px] grid-cols-[minmax(180px,1.4fr)_minmax(130px,0.8fr)_minmax(130px,0.7fr)_minmax(280px,1.2fr)_90px] gap-3 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
-        <span>账户</span>
-        <span>机构</span>
-        <span>类型</span>
+        <span>Account</span>
+        <span>Institution</span>
+        <span>Type</span>
         <span>
           Beancount Account
-          {ledgerStatus.loading && <span className="ml-2 text-slate-600">读取中</span>}
+          {ledgerStatus.loading && <span className="ml-2 text-slate-600">loading</span>}
           {!ledgerStatus.loading && !ledgerStatus.error && (
             <span className="ml-2 text-slate-600">
               {ledgerStatus.openCount} open{ledgerStatus.revision ? ` · ${ledgerStatus.revision}` : ''}
@@ -173,7 +173,7 @@ export default function AccountMappingTable({ accounts }: Props) {
           )}
           {ledgerStatus.error && <span className="ml-2 text-amber-400">{ledgerStatus.error}</span>}
         </span>
-        <span className="text-right">保存</span>
+        <span className="text-right">Save</span>
       </div>
 
       {rows.map(account => {
@@ -213,7 +213,7 @@ export default function AccountMappingTable({ accounts }: Props) {
               onChange={e => updateRow(account.id, { accountTypeOverride: e.target.value || null })}
               className="min-w-0 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-100"
             >
-              <option value="">自动：{accountTypeLabel(effectiveAccountType(account))}</option>
+              <option value="">Auto: {accountTypeLabel(effectiveAccountType(account))}</option>
               {ACCOUNT_TYPES.map(type => (
                 <option key={type} value={type}>{accountTypeLabel(type)}</option>
               ))}
@@ -246,7 +246,7 @@ export default function AccountMappingTable({ accounts }: Props) {
                 </p>
               )}
               {missingLedgerAccount && (
-                <p className="mt-1 truncate text-[11px] text-amber-300">Ledger 中未找到</p>
+                <p className="mt-1 truncate text-[11px] text-amber-300">Not found in ledger</p>
               )}
             </div>
 
@@ -255,7 +255,7 @@ export default function AccountMappingTable({ accounts }: Props) {
               disabled={state === 'saving'}
               className="rounded bg-blue-700 px-3 py-1.5 text-xs text-white hover:bg-blue-600 disabled:opacity-50"
             >
-              {state === 'saving' ? '保存中' : state === 'saved' ? '已保存' : state === 'error' ? '失败' : '保存'}
+              {state === 'saving' ? 'Saving' : state === 'saved' ? 'Saved' : state === 'error' ? 'Failed' : 'Save'}
             </button>
           </div>
         )

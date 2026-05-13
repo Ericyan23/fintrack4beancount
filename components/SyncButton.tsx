@@ -38,11 +38,11 @@ export default function SyncButton() {
         {loading ? (
           <>
             <span className="animate-spin">↻</span>
-            同步中...
+            Syncing...
           </>
         ) : (
           <>
-            ↻ 同步
+            ↻ Sync
           </>
         )}
       </button>

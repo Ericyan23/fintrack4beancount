@@ -5,16 +5,16 @@ import { usePathname } from 'next/navigation'
 import SyncButton from './SyncButton'
 
 const tabs = [
-  { href: '/', label: '首页', icon: '🏠' },
-  { href: '/review', label: '审核', icon: '✓' },
-  { href: '/transactions', label: '交易', icon: '💳' },
-  { href: '/transfers', label: '转账', icon: '↔' },
-  { href: '/reports', label: '报表', icon: '📊' },
-  { href: '/beancount', label: '账本', icon: 'B' },
-  { href: '/categories', label: '分类', icon: '🏷️' },
-  { href: '/accounts', label: '账户', icon: '🏦' },
-  { href: '/rules', label: '规则', icon: '📋' },
-  { href: '/settings', label: '设置', icon: '⚙️' },
+  { href: '/', label: 'Home', icon: '🏠' },
+  { href: '/review', label: 'Review', icon: '✓' },
+  { href: '/transactions', label: 'Transactions', icon: '💳' },
+  { href: '/transfers', label: 'Transfers', icon: '↔' },
+  { href: '/reports', label: 'Reports', icon: '📊' },
+  { href: '/beancount', label: 'Ledger', icon: 'B' },
+  { href: '/categories', label: 'Categories', icon: '🏷️' },
+  { href: '/accounts', label: 'Accounts', icon: '🏦' },
+  { href: '/rules', label: 'Rules', icon: '📋' },
+  { href: '/settings', label: 'Settings', icon: '⚙️' },
 ]
 
 export default function NavBar() {

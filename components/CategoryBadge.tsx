@@ -30,7 +30,7 @@ interface Props {
 
 export default function CategoryBadge({ category, suggested, onClick, className = '' }: Props) {
   const colorClass = getCategoryColor(category)
-  const label = category ?? (suggested ? `${suggested} ?` : '未分类')
+  const label = category ?? (suggested ? `${suggested} ?` : 'Uncategorized')
 
   return (
     <button
@@ -38,7 +38,7 @@ export default function CategoryBadge({ category, suggested, onClick, className 
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium transition-opacity hover:opacity-80 ${colorClass} ${
         !category ? 'border border-red-500' : ''
       } ${className}`}
-      title={suggested && !category ? `AI建议: ${suggested}` : undefined}
+      title={suggested && !category ? `AI suggestion: ${suggested}` : undefined}
     >
       {!category && <span className="mr-1">⚠</span>}
       {label}

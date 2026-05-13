@@ -50,11 +50,11 @@ function isGeminiRateLimitError(err: unknown): boolean {
 }
 
 function friendlyGeminiQuotaError(): Error {
-  return new Error('今日 Gemini 免费额度已用完，请稍后重试或配置 Claude。')
+  return new Error('Today\'s Gemini free quota is exhausted. Try again later or configure Claude.')
 }
 
 function friendlyGeminiRateLimitError(): Error {
-  return new Error('Gemini 请求过于频繁，请稍后重试。')
+  return new Error('Gemini requests are being sent too frequently. Try again later.')
 }
 
 async function classifyWithGemini(
