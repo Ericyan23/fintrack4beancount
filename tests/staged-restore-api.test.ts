@@ -33,6 +33,15 @@ interface StagedDbRow {
   validationErrors: string | null
 }
 
+interface AuditLogRow {
+  action: string
+  actor: string
+  reason: string | null
+  beforeValues: string
+  afterValues: string
+  metadata: string | null
+}
+
 type StageStatus = 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted' | 'error'
 
 function request(pathname: string, init?: RequestInit): NextRequest {
@@ -45,6 +54,7 @@ function stagedParams(id: string, stagedId: string): StagedRouteContext {
 
 function resetDb(): void {
   sqlite.exec(`
+    DELETE FROM audit_log;
     DELETE FROM staged_transactions;
     DELETE FROM transfer_matches;
     DELETE FROM transactions;
@@ -172,6 +182,21 @@ function loadStagedRow(id: string): StagedDbRow | null {
   return row ?? null
 }
 
+function loadAuditRows(entityId: string): AuditLogRow[] {
+  return sqlite.prepare(`
+    SELECT action,
+           actor,
+           reason,
+           before_values AS beforeValues,
+           after_values AS afterValues,
+           metadata
+    FROM audit_log
+    WHERE entity_type = 'staged_transaction'
+      AND entity_id = ?
+    ORDER BY id
+  `).all(entityId) as AuditLogRow[]
+}
+
 beforeEach(() => {
   resetDb()
 })
@@ -194,6 +219,11 @@ test('POST /api/import/runs/:id/staged/:stagedId/restore restores ignored rows',
   const response = await restoreRoute.POST(
     request(`/api/import/runs/${fixture.runId}/staged/staged-restore-api-ignored/restore`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'eric',
+        editReason: 'restore after review',
+      }),
     }),
     stagedParams(fixture.runId, 'staged-restore-api-ignored'),
   )
@@ -207,6 +237,20 @@ test('POST /api/import/runs/:id/staged/:stagedId/restore restores ignored rows',
   assert.ok(row)
   assert.equal(row.status, 'ready')
   assert.deepEqual(JSON.parse(row.validationErrors ?? 'null'), [])
+
+  const auditRows = loadAuditRows('staged-restore-api-ignored')
+  assert.equal(auditRows.length, 1)
+  assert.equal(auditRows[0].action, 'staged_restore')
+  assert.equal(auditRows[0].actor, 'eric')
+  assert.equal(auditRows[0].reason, 'restore after review')
+
+  const beforeValues = JSON.parse(auditRows[0].beforeValues) as { stagedTransaction: { status: string } }
+  const afterValues = JSON.parse(auditRows[0].afterValues) as { stagedTransaction: { status: string } }
+  const metadata = JSON.parse(auditRows[0].metadata ?? '{}') as { importRunId: string; fields: string[] }
+  assert.equal(beforeValues.stagedTransaction.status, 'ignored')
+  assert.equal(afterValues.stagedTransaction.status, 'ready')
+  assert.equal(metadata.importRunId, fixture.runId)
+  assert.ok(metadata.fields.includes('status'))
 })
 
 test('POST /api/import/runs/:id/staged/:stagedId/restore returns 404 for the wrong run', async () => {

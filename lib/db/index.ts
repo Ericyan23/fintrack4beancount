@@ -612,6 +612,44 @@ function ensureTransactionEditHistorySchema(): void {
   `)
 }
 
+function ensureAuditLogSchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      reason TEXT,
+      before_values TEXT NOT NULL,
+      after_values TEXT NOT NULL,
+      metadata TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `)
+
+  addColumnIfMissing('audit_log', 'entity_type', `entity_type TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('audit_log', 'entity_id', `entity_id TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('audit_log', 'action', `action TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('audit_log', 'actor', `actor TEXT NOT NULL DEFAULT 'local'`)
+  addColumnIfMissing('audit_log', 'reason', `reason TEXT`)
+  addColumnIfMissing('audit_log', 'before_values', `before_values TEXT NOT NULL DEFAULT '{}'`)
+  addColumnIfMissing('audit_log', 'after_values', `after_values TEXT NOT NULL DEFAULT '{}'`)
+  addColumnIfMissing('audit_log', 'metadata', `metadata TEXT`)
+  addColumnIfMissing('audit_log', 'created_at', `created_at INTEGER NOT NULL DEFAULT 0`)
+
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS audit_log_entity_idx
+    ON audit_log(entity_type, entity_id);
+
+    CREATE INDEX IF NOT EXISTS audit_log_action_created_idx
+    ON audit_log(action, created_at);
+
+    CREATE INDEX IF NOT EXISTS audit_log_created_idx
+    ON audit_log(created_at);
+  `)
+}
+
 function ensureTransactionSplitSchema(): void {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS transaction_splits (
@@ -752,6 +790,7 @@ sqlite.exec(`
 
 ensureIngestionSchema()
 ensureTransactionEditHistorySchema()
+ensureAuditLogSchema()
 ensureTransactionSplitSchema()
 ensurePerformanceIndexes()
 

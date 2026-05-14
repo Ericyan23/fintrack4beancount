@@ -169,6 +169,23 @@ export const transactionEditHistory = sqliteTable('transaction_edit_history', {
   index('transaction_edit_history_created_idx').on(table.createdAt),
 ])
 
+export const auditLog = sqliteTable('audit_log', {
+  id:           integer('id').primaryKey({ autoIncrement: true }),
+  entityType:   text('entity_type').notNull(),
+  entityId:     text('entity_id').notNull(),
+  action:       text('action').notNull(),
+  actor:        text('actor').notNull(),
+  reason:       text('reason'),
+  beforeValues: text('before_values', { mode: 'json' }).notNull().$type<IngestionJsonObject>(),
+  afterValues:  text('after_values', { mode: 'json' }).notNull().$type<IngestionJsonObject>(),
+  metadata:     text('metadata', { mode: 'json' }).$type<IngestionJsonObject>(),
+  createdAt:    integer('created_at').notNull(),
+}, (table) => [
+  index('audit_log_entity_idx').on(table.entityType, table.entityId),
+  index('audit_log_action_created_idx').on(table.action, table.createdAt),
+  index('audit_log_created_idx').on(table.createdAt),
+])
+
 export const stagedTransactions = sqliteTable('staged_transactions', {
   id:                 text('id').primaryKey(),
   importRunId:        text('import_run_id').references(() => importRuns.id),
@@ -314,6 +331,7 @@ type TransactionProvenanceKeys =
 export type Transaction = Omit<TransactionSelect, TransactionProvenanceKeys> &
   Partial<Pick<TransactionSelect, TransactionProvenanceKeys>>
 export type TransactionEditHistory = typeof transactionEditHistory.$inferSelect
+export type AuditLog = typeof auditLog.$inferSelect
 export type TransferMatch = typeof transferMatches.$inferSelect
 export type Category = typeof categories.$inferSelect
 export type Rule = typeof rules.$inferSelect

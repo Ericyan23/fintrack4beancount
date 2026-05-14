@@ -376,9 +376,10 @@ Goal: make repeated operation reliable and auditable.
   - [x] source account mapping
   - [ ] default ledger account hints
 - [ ] Add complete audit log for:
-  - [ ] manual edits
-    - Progress: transaction detail manual edits now write `transaction_edit_history`; staged edits, ignore/restore, rules, and exports still need coverage.
-  - [ ] ignore/unignore
+  - [x] manual edits
+    - Progress: transaction detail manual edits write `transaction_edit_history`; staged transaction edits write generic `audit_log` entries with actor, optional reason, field list, before/after values, and source metadata.
+  - [x] ignore/unignore
+    - Progress: staged ignore/delete/restore writes `staged_ignore`, `staged_delete`, and `staged_restore` audit entries.
   - [x] split create/update/delete
     - Progress: split replace/clear records `split_create`, `split_update`, and `split_delete` rows with actor, optional reason, and before/after split snapshots.
   - [ ] rule application

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { deleteStagedTransaction, updateStagedTransaction } from '@/lib/ingest/staged'
+import { deleteStagedTransaction, updateStagedTransaction, type StagedAuditMetadata } from '@/lib/ingest/staged'
 
 interface RouteParams {
   params: Promise<{ id: string; stagedId: string }>
@@ -74,6 +74,13 @@ function parsePatch(body: Record<string, unknown>): { patch: StagedPatch } | { e
   return { patch }
 }
 
+function auditFromBody(body: Record<string, unknown>): StagedAuditMetadata {
+  return {
+    actor: typeof body.actor === 'string' ? body.actor : undefined,
+    reason: typeof body.editReason === 'string' ? body.editReason : undefined,
+  }
+}
+
 function mutationErrorResponse(error: unknown): NextResponse | null {
   if (!(error instanceof Error)) return null
 
@@ -139,6 +146,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
       importRunId: id,
       stagedTransactionId: stagedId,
       patch: parsed.patch,
+      audit: auditFromBody(body),
     })
     return NextResponse.json(result)
   } catch (error) {
@@ -150,11 +158,21 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 
 export async function DELETE(_req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   const { id, stagedId } = await params
+  let body: Record<string, unknown> | null
+  try {
+    body = await readBody(_req)
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+  if (body === null) {
+    return NextResponse.json({ error: 'Request body must be a JSON object' }, { status: 400 })
+  }
 
   try {
     const result = await deleteStagedTransaction({
       importRunId: id,
       stagedTransactionId: stagedId,
+      audit: auditFromBody(body),
     })
     return NextResponse.json(result)
   } catch (error) {

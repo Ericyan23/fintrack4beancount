@@ -127,6 +127,7 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
     'import_profile_mappings',
     'transaction_splits',
     'transaction_edit_history',
+    'audit_log',
   ]) {
     assert.equal(
       scalar(`SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'table' AND name = '${table}'`),
@@ -172,6 +173,29 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
     'transaction_edit_history_created_idx',
   ]) {
     assert.ok(indexNames('transaction_edit_history').includes(index), `missing transaction edit history index ${index}`)
+  }
+
+  const auditLogColumns = columnNames('audit_log')
+  for (const column of [
+    'id',
+    'entity_type',
+    'entity_id',
+    'action',
+    'actor',
+    'reason',
+    'before_values',
+    'after_values',
+    'metadata',
+    'created_at',
+  ]) {
+    assert.ok(auditLogColumns.includes(column), `missing audit_log.${column}`)
+  }
+  for (const index of [
+    'audit_log_entity_idx',
+    'audit_log_action_created_idx',
+    'audit_log_created_idx',
+  ]) {
+    assert.ok(indexNames('audit_log').includes(index), `missing audit log index ${index}`)
   }
 
   for (const index of [

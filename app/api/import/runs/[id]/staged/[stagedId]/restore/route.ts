@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { restoreStagedTransaction } from '@/lib/ingest/staged'
+import { restoreStagedTransaction, type StagedAuditMetadata } from '@/lib/ingest/staged'
 
 interface RouteParams {
   params: Promise<{ id: string; stagedId: string }>
@@ -9,6 +9,23 @@ type StagedMutationError = Error & {
   code?: string
   status?: number
   statusCode?: number
+}
+
+async function readBody(req: NextRequest): Promise<Record<string, unknown> | null> {
+  const text = await req.text()
+  if (!text.trim()) return {}
+
+  const parsed = JSON.parse(text) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+
+  return parsed as Record<string, unknown>
+}
+
+function auditFromBody(body: Record<string, unknown>): StagedAuditMetadata {
+  return {
+    actor: typeof body.actor === 'string' ? body.actor : undefined,
+    reason: typeof body.editReason === 'string' ? body.editReason : undefined,
+  }
 }
 
 function mutationErrorResponse(error: unknown): NextResponse | null {
@@ -43,11 +60,21 @@ function mutationErrorResponse(error: unknown): NextResponse | null {
 
 export async function POST(_req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   const { id, stagedId } = await params
+  let body: Record<string, unknown> | null
+  try {
+    body = await readBody(_req)
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+  if (body === null) {
+    return NextResponse.json({ error: 'Request body must be a JSON object' }, { status: 400 })
+  }
 
   try {
     const result = await restoreStagedTransaction({
       importRunId: id,
       stagedTransactionId: stagedId,
+      audit: auditFromBody(body),
     })
     return NextResponse.json(result)
   } catch (error) {

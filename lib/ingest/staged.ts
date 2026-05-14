@@ -4,6 +4,11 @@ import type { PendingReconciliationStatus, StagedTransactionStatus } from './typ
 type SqliteDatabase = import('better-sqlite3').Database
 export type ResolveExpiredPendingAction = 'cancel_pending' | 'keep_pending'
 
+export interface StagedAuditMetadata {
+  actor?: string | null
+  reason?: string | null
+}
+
 export interface UpdateStagedTransactionInput {
   importRunId: string
   stagedTransactionId: string
@@ -17,6 +22,7 @@ export interface UpdateStagedTransactionInput {
     tags?: string[] | null
     pending?: boolean
   }
+  audit?: StagedAuditMetadata
 }
 
 export interface StagedTransactionMutationResult {
@@ -59,9 +65,11 @@ export class StagedTransactionInvalidInputError extends Error {
 interface StagedTransactionRow {
   id: string
   importRunId: string | null
+  rawItemId: string | null
   sourceConnectionId: string | null
   sourceAccountId: string | null
   accountId: string | null
+  externalId: string | null
   sourceItemKey: string | null
   posted: number | null
   amount: string | null
@@ -71,6 +79,7 @@ interface StagedTransactionRow {
   category: string | null
   notes: string | null
   tags: string | null
+  validationErrors: string | null
   transactionId: string | null
   reconciliationStatus: string | null
   reconciliationTransactionId: string | null
@@ -97,6 +106,35 @@ interface RequiredFieldValues {
 interface ScopedStagedTransactionInput {
   importRunId: string
   stagedTransactionId: string
+  audit?: StagedAuditMetadata
+}
+
+type StagedAuditAction = 'staged_edit' | 'staged_ignore' | 'staged_delete' | 'staged_restore'
+
+interface StagedAuditSnapshot {
+  accountId: string | null
+  posted: number | null
+  amount: string | null
+  description: string | null
+  pending: boolean
+  status: StagedTransactionStatus
+  category: string | null
+  notes: string | null
+  tags: string[]
+  validationErrors: string[]
+  transactionId: string | null
+  reconciliationStatus: string | null
+  reconciliationTransactionId: string | null
+  reconciliationReason: string | null
+}
+
+interface StagedAuditMetadataSnapshot {
+  importRunId: string | null
+  rawItemId: string | null
+  sourceConnectionId: string | null
+  sourceAccountId: string | null
+  externalId: string | null
+  sourceItemKey: string | null
 }
 
 function nowSeconds(): number {
@@ -110,6 +148,16 @@ function present(value: string | null): value is string {
 function stringifyJson(value: string[] | null): string | null {
   if (value === null) return null
   return JSON.stringify(value)
+}
+
+function parseJsonStringArray(value: string | null): string[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 function accountExists(database: SqliteDatabase, accountId: string): boolean {
@@ -151,9 +199,11 @@ function selectScopedStagedTransaction(
     SELECT
       id,
       import_run_id AS importRunId,
+      raw_item_id AS rawItemId,
       source_connection_id AS sourceConnectionId,
       source_account_id AS sourceAccountId,
       account_id AS accountId,
+      external_id AS externalId,
       source_item_key AS sourceItemKey,
       posted,
       amount,
@@ -163,6 +213,7 @@ function selectScopedStagedTransaction(
       category,
       notes,
       tags,
+      validation_errors AS validationErrors,
       transaction_id AS transactionId,
       reconciliation_status AS reconciliationStatus,
       reconciliation_transaction_id AS reconciliationTransactionId,
@@ -174,6 +225,97 @@ function selectScopedStagedTransaction(
   `).get(input.stagedTransactionId, input.importRunId) as StagedTransactionRow | undefined
 
   return row ?? null
+}
+
+const insertAuditLog = sqlite.prepare(`
+  INSERT INTO audit_log (
+    entity_type,
+    entity_id,
+    action,
+    actor,
+    reason,
+    before_values,
+    after_values,
+    metadata,
+    created_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`)
+
+function auditActor(audit: StagedAuditMetadata | undefined): string {
+  const trimmed = audit?.actor?.trim()
+  return trimmed || 'local'
+}
+
+function auditReason(audit: StagedAuditMetadata | undefined, action: StagedAuditAction): string {
+  const trimmed = audit?.reason?.trim()
+  return trimmed || action
+}
+
+function stagedAuditSnapshot(row: StagedTransactionRow): StagedAuditSnapshot {
+  return {
+    accountId: row.accountId,
+    posted: row.posted,
+    amount: row.amount,
+    description: row.description,
+    pending: row.pending === 1,
+    status: row.status,
+    category: row.category,
+    notes: row.notes,
+    tags: parseJsonStringArray(row.tags),
+    validationErrors: parseJsonStringArray(row.validationErrors),
+    transactionId: row.transactionId,
+    reconciliationStatus: row.reconciliationStatus,
+    reconciliationTransactionId: row.reconciliationTransactionId,
+    reconciliationReason: row.reconciliationReason,
+  }
+}
+
+function stagedAuditMetadata(row: StagedTransactionRow): StagedAuditMetadataSnapshot {
+  return {
+    importRunId: row.importRunId,
+    rawItemId: row.rawItemId,
+    sourceConnectionId: row.sourceConnectionId,
+    sourceAccountId: row.sourceAccountId,
+    externalId: row.externalId,
+    sourceItemKey: row.sourceItemKey,
+  }
+}
+
+function changedAuditFields(
+  beforeValues: StagedAuditSnapshot,
+  afterValues: StagedAuditSnapshot,
+): string[] {
+  const fields = Object.keys(afterValues) as Array<keyof StagedAuditSnapshot>
+  return fields.filter(field => JSON.stringify(beforeValues[field]) !== JSON.stringify(afterValues[field]))
+}
+
+function recordStagedAudit(input: {
+  action: StagedAuditAction
+  beforeRow: StagedTransactionRow
+  afterRow: StagedTransactionRow
+  audit?: StagedAuditMetadata
+  timestamp: number
+}): void {
+  const beforeValues = stagedAuditSnapshot(input.beforeRow)
+  const afterValues = stagedAuditSnapshot(input.afterRow)
+  const fields = changedAuditFields(beforeValues, afterValues)
+  if (fields.length === 0) return
+
+  insertAuditLog.run(
+    'staged_transaction',
+    input.beforeRow.id,
+    input.action,
+    auditActor(input.audit),
+    auditReason(input.audit, input.action),
+    JSON.stringify({ stagedTransaction: beforeValues }),
+    JSON.stringify({ stagedTransaction: afterValues }),
+    JSON.stringify({
+      ...stagedAuditMetadata(input.beforeRow),
+      fields,
+    }),
+    input.timestamp,
+  )
 }
 
 function requireMutableStagedTransaction(
@@ -286,6 +428,17 @@ export function updateStagedTransaction(
       input.importRunId,
     )
 
+    const afterRow = selectScopedStagedTransaction(sqlite, input)
+    if (afterRow) {
+      recordStagedAudit({
+        action: 'staged_edit',
+        beforeRow: row,
+        afterRow,
+        audit: input.audit,
+        timestamp: updatedAt,
+      })
+    }
+
     return {
       id: row.id,
       status,
@@ -320,6 +473,17 @@ function setStagedStatus(
       input.stagedTransactionId,
       input.importRunId,
     )
+
+    const afterRow = selectScopedStagedTransaction(sqlite, input)
+    if (afterRow) {
+      recordStagedAudit({
+        action: status === 'ignored' ? 'staged_ignore' : 'staged_delete',
+        beforeRow: row,
+        afterRow,
+        audit: input.audit,
+        timestamp: updatedAt,
+      })
+    }
 
     return {
       id: row.id,
@@ -372,6 +536,17 @@ export function restoreStagedTransaction(
       input.stagedTransactionId,
       input.importRunId,
     )
+
+    const afterRow = selectScopedStagedTransaction(sqlite, input)
+    if (afterRow) {
+      recordStagedAudit({
+        action: 'staged_restore',
+        beforeRow: row,
+        afterRow,
+        audit: input.audit,
+        timestamp: updatedAt,
+      })
+    }
 
     return {
       id: row.id,

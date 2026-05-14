@@ -50,6 +50,17 @@ interface StagedDbRow {
   tags: string | null
 }
 
+interface AuditLogRow {
+  entityType: string
+  entityId: string
+  action: string
+  actor: string
+  reason: string | null
+  beforeValues: string
+  afterValues: string
+  metadata: string | null
+}
+
 const stagedServicePath = path.join(process.cwd(), 'lib', 'ingest', 'staged.ts')
 const skipMutationTests = fs.existsSync(stagedServicePath)
   ? false
@@ -77,6 +88,7 @@ function loadIgnoreRoute(): StagedIgnoreRoute {
 
 function resetDb(): void {
   sqlite.exec(`
+    DELETE FROM audit_log;
     DELETE FROM staged_transactions;
     DELETE FROM transfer_matches;
     DELETE FROM transactions;
@@ -232,6 +244,23 @@ function loadStagedRow(id: string): StagedDbRow | null {
   return row ?? null
 }
 
+function loadAuditRows(entityId: string): AuditLogRow[] {
+  return sqlite.prepare(`
+    SELECT entity_type AS entityType,
+           entity_id AS entityId,
+           action,
+           actor,
+           reason,
+           before_values AS beforeValues,
+           after_values AS afterValues,
+           metadata
+    FROM audit_log
+    WHERE entity_type = 'staged_transaction'
+      AND entity_id = ?
+    ORDER BY id
+  `).all(entityId) as AuditLogRow[]
+}
+
 beforeEach(() => {
   resetDb()
 })
@@ -283,6 +312,8 @@ test('PATCH /api/import/runs/:id/staged/:stagedId validates and updates staged f
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        actor: 'eric',
+        editReason: 'staged row review',
         accountId: 'acct-cleaning-checking',
         posted: 1777766400,
         amount: '-12.34',
@@ -309,6 +340,38 @@ test('PATCH /api/import/runs/:id/staged/:stagedId validates and updates staged f
   assert.equal(row.category, 'Expenses:Food')
   assert.equal(row.notes, 'Edited note')
   assert.deepEqual(row.tags ? JSON.parse(row.tags) : null, ['edited'])
+
+  const auditRows = loadAuditRows(stagedId)
+  assert.equal(auditRows.length, 1)
+  assert.equal(auditRows[0].entityType, 'staged_transaction')
+  assert.equal(auditRows[0].entityId, stagedId)
+  assert.equal(auditRows[0].action, 'staged_edit')
+  assert.equal(auditRows[0].actor, 'eric')
+  assert.equal(auditRows[0].reason, 'staged row review')
+
+  const beforeValues = JSON.parse(auditRows[0].beforeValues) as {
+    stagedTransaction: { description: string; pending: boolean; status: string; tags: string[] }
+  }
+  const afterValues = JSON.parse(auditRows[0].afterValues) as {
+    stagedTransaction: { description: string; pending: boolean; status: string; tags: string[] }
+  }
+  const metadata = JSON.parse(auditRows[0].metadata ?? '{}') as {
+    importRunId: string
+    sourceItemKey: string
+    fields: string[]
+  }
+  assert.equal(beforeValues.stagedTransaction.description, 'Original Coffee')
+  assert.equal(beforeValues.stagedTransaction.pending, true)
+  assert.equal(beforeValues.stagedTransaction.status, 'staged')
+  assert.deepEqual(beforeValues.stagedTransaction.tags, ['initial', 'review'])
+  assert.equal(afterValues.stagedTransaction.description, 'Edited Coffee')
+  assert.equal(afterValues.stagedTransaction.pending, false)
+  assert.equal(afterValues.stagedTransaction.status, 'ready')
+  assert.deepEqual(afterValues.stagedTransaction.tags, ['edited'])
+  assert.equal(metadata.importRunId, runId)
+  assert.equal(metadata.sourceItemKey, 'key-cleaning-edit')
+  assert.ok(metadata.fields.includes('description'))
+  assert.ok(metadata.fields.includes('status'))
 })
 
 test('PATCH /api/import/runs/:id/staged/:stagedId rejects non-object bodies', { skip: skipMutationTests }, async () => {
@@ -398,6 +461,11 @@ test('POST /api/import/runs/:id/staged/:stagedId/ignore marks a staged row ignor
   const response = await route.POST(
     request(`/api/import/runs/${runId}/staged/${stagedId}/ignore`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'eric',
+        editReason: 'skip duplicate source row',
+      }),
     }),
     stagedParams(runId, stagedId),
   )
@@ -406,6 +474,17 @@ test('POST /api/import/runs/:id/staged/:stagedId/ignore marks a staged row ignor
   assert.equal(response.status, 200)
   assert.ok(row)
   assert.equal(row.status, 'ignored')
+
+  const auditRows = loadAuditRows(stagedId)
+  assert.equal(auditRows.length, 1)
+  assert.equal(auditRows[0].action, 'staged_ignore')
+  assert.equal(auditRows[0].actor, 'eric')
+  assert.equal(auditRows[0].reason, 'skip duplicate source row')
+
+  const beforeValues = JSON.parse(auditRows[0].beforeValues) as { stagedTransaction: { status: string } }
+  const afterValues = JSON.parse(auditRows[0].afterValues) as { stagedTransaction: { status: string } }
+  assert.equal(beforeValues.stagedTransaction.status, 'staged')
+  assert.equal(afterValues.stagedTransaction.status, 'ignored')
 })
 
 test('DELETE /api/import/runs/:id/staged/:stagedId soft deletes a staged row', { skip: skipMutationTests }, async () => {
@@ -414,6 +493,11 @@ test('DELETE /api/import/runs/:id/staged/:stagedId soft deletes a staged row', {
   const response = await route.DELETE(
     request(`/api/import/runs/${runId}/staged/${stagedId}`, {
       method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'eric',
+        editReason: 'remove bad source row',
+      }),
     }),
     stagedParams(runId, stagedId),
   )
@@ -422,6 +506,17 @@ test('DELETE /api/import/runs/:id/staged/:stagedId soft deletes a staged row', {
   assert.equal(response.status, 200)
   assert.ok(row)
   assert.equal(row.status, 'deleted')
+
+  const auditRows = loadAuditRows(stagedId)
+  assert.equal(auditRows.length, 1)
+  assert.equal(auditRows[0].action, 'staged_delete')
+  assert.equal(auditRows[0].actor, 'eric')
+  assert.equal(auditRows[0].reason, 'remove bad source row')
+
+  const beforeValues = JSON.parse(auditRows[0].beforeValues) as { stagedTransaction: { status: string } }
+  const afterValues = JSON.parse(auditRows[0].afterValues) as { stagedTransaction: { status: string } }
+  assert.equal(beforeValues.stagedTransaction.status, 'staged')
+  assert.equal(afterValues.stagedTransaction.status, 'deleted')
 })
 
 test('PATCH /api/import/runs/:id/staged/:stagedId returns 404 when the row belongs to another run', { skip: skipMutationTests }, async () => {
