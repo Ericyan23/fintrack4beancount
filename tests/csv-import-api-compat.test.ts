@@ -10,12 +10,14 @@ process.env.DB_PATH = path.join(tempDir, 'fintrack.db')
 
 const { sqlite } = require('../lib/db') as typeof import('../lib/db')
 const route = require('../app/api/import/transactions/route') as typeof import('../app/api/import/transactions/route')
+const stageRoute = require('../app/api/import/transactions/stage/route') as typeof import('../app/api/import/transactions/stage/route')
 
 interface CompatCsvImportPayload {
   imported: number
   skipped: number
   compatibilityMode: string
   importRunId: string
+  reviewUrl: string
   totalRows: number
   rawInserted: number
   staged: number
@@ -73,6 +75,14 @@ function request(body: unknown): Parameters<typeof route.POST>[0] {
   }) as Parameters<typeof route.POST>[0]
 }
 
+function stageRequest(body: unknown): Parameters<typeof stageRoute.POST>[0] {
+  return new Request('http://fintrack.test/api/import/transactions/stage', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  }) as Parameters<typeof stageRoute.POST>[0]
+}
+
 beforeEach(() => {
   resetDb()
 })
@@ -101,7 +111,12 @@ test('POST /api/import/transactions stages rows instead of writing canonical tra
   const payload = (await response.json()) as CompatCsvImportPayload
 
   assert.equal(response.status, 200)
+  assert.match(
+    response.headers.get('warning') ?? '',
+    /Deprecated CSV compatibility endpoint stages rows/,
+  )
   assert.equal(payload.compatibilityMode, 'staged')
+  assert.equal(payload.reviewUrl, `/import/runs/${encodeURIComponent(payload.importRunId)}`)
   assert.equal(payload.imported, 3)
   assert.equal(payload.skipped, 0)
   assert.equal(payload.totalRows, 3)
@@ -113,5 +128,28 @@ test('POST /api/import/transactions stages rows instead of writing canonical tra
   assert.equal(countRows('import_runs'), 1)
   assert.equal(countRows('raw_import_items'), 3)
   assert.equal(countRows('staged_transactions'), 3)
+  assert.equal(countRows('transactions'), 0)
+})
+
+test('POST /api/import/transactions/stage returns the import run review URL', async () => {
+  const response = await stageRoute.POST(stageRequest({
+    csv: readFixture('csv', 'generic-bank.csv'),
+    mapping: {
+      date: 'Date',
+      amount: 'Amount',
+      description: 'Description',
+      account: 'Account',
+      category: 'Category',
+      notes: 'Notes',
+      tags: 'Tags',
+      status: 'Status',
+      externalId: 'External ID',
+    },
+  }))
+  const payload = (await response.json()) as CompatCsvImportPayload
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.reviewUrl, `/import/runs/${encodeURIComponent(payload.importRunId)}`)
+  assert.equal(payload.staged, 3)
   assert.equal(countRows('transactions'), 0)
 })

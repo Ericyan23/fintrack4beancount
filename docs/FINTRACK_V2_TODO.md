@@ -49,8 +49,8 @@ SimpleFIN / CSV / future APIs
   - [x] `.bean` rendering
   - [x] handoff manifest and writer
 - [x] Keep account-to-Beancount-account mapping, but reframe it as Source Account -> Beancount Account Mapping.
-- [ ] Keep CSV preview/mapping UI, but route it through ingestion instead of writing directly to `transactions`.
-  - Progress: staged CSV import path exists; legacy direct import API remains for compatibility and still needs retirement.
+- [x] Keep CSV preview/mapping UI, but route it through ingestion instead of writing directly to `transactions`.
+  - Progress: `/import` uses staged CSV import; compatibility `/api/import/transactions` no longer direct-writes canonical transactions and now advertises staged review.
 - [ ] Keep SimpleFIN account sync, pending handling, and transaction fetch, but split it into adapter/reconciliation/ingestion services.
   - Progress: adapter and staging path exist; legacy `/api/sync` is retained during migration.
 - [x] Keep Review queue and rule creation, but rename the workflow to Staging Review / Ledger Prep.

@@ -44,6 +44,7 @@ interface PreviewResult {
 
 interface StageImportResult {
   importRunId: string
+  reviewUrl: string
   totalRows: number
   rawInserted: number
   staged: number
@@ -223,7 +224,7 @@ export default function ImportPage() {
             {' '}{result.errors.length} errors. Import run {result.importRunId} is ready for review.
           </span>
           <Link
-            href={`/import/runs/${encodeURIComponent(result.importRunId)}`}
+            href={result.reviewUrl}
             className="self-start rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-600 md:self-auto"
           >
             Review staged rows

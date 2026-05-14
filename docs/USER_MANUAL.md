@@ -222,7 +222,7 @@ Reports are only as accurate as the reviewed transactions. If reports look wrong
 
 ## 13. Import and Export
 
-The Import page can preview and import transaction files.
+The Import page can preview and stage transaction files for review before promotion.
 
 The app also exposes export functions for:
 
@@ -613,7 +613,7 @@ Read the error message. Fix the root cause in FinTrack or Beancount, then write 
 
 ## 25. Import and Export
 
-The Import page can preview and import transaction files.
+The Import page can preview and stage transaction files for review before promotion.
 
 The app also exposes export functions for:
 

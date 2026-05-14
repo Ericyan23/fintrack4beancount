@@ -24,10 +24,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     body.connectionName,
   )
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     imported: result.staged,
     skipped: result.duplicates,
     compatibilityMode: 'staged',
+    reviewUrl: `/import/runs/${encodeURIComponent(result.importRunId)}`,
     ...result,
   })
+  response.headers.set(
+    'Warning',
+    '299 FinTrack "Deprecated CSV compatibility endpoint stages rows; review and promote the import run"',
+  )
+  return response
 }

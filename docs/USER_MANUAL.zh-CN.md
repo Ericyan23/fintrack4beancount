@@ -222,7 +222,7 @@ Reports 页面汇总财务活动。
 
 ## 13. 导入和导出
 
-Import 页面可以预览并导入交易文件。
+Import 页面可以预览交易文件，并先进入 staging review，确认后再 promote。
 
 应用也提供导出功能：
 

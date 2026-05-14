@@ -17,5 +17,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'date, amount, and description mappings are required' }, { status: 400 })
   }
 
-  return NextResponse.json(stageTransactionsCsv(body.csv, body.mapping, body.defaultAccountId, body.connectionName))
+  const result = stageTransactionsCsv(body.csv, body.mapping, body.defaultAccountId, body.connectionName)
+  return NextResponse.json({
+    ...result,
+    reviewUrl: `/import/runs/${encodeURIComponent(result.importRunId)}`,
+  })
 }
