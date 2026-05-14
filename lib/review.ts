@@ -10,6 +10,7 @@ export interface ReviewTransaction {
   accountName: string
   category: string | null
   suggestedCat: string | null
+  splitCount: number
 }
 
 export interface ReviewGroup {
@@ -27,6 +28,8 @@ export interface ReviewGroup {
   minAbs: number
   maxAbs: number
   latestPosted: number
+  splitTransactionCount: number
+  splitPostingCount: number
   accounts: string[]
   currentCategories: Array<{ category: string; count: number }>
   suggestedCategories: Array<{ category: string; count: number }>
@@ -123,8 +126,16 @@ export function loadReviewGroups(): ReviewPayload {
       t.account_id AS accountId,
       t.category,
       t.suggested_cat AS suggestedCat,
-      a.name AS accountName
+      a.name AS accountName,
+      COALESCE(split_counts.splitCount, 0) AS splitCount
     FROM transactions t
+    LEFT JOIN (
+      SELECT
+        parent_transaction_id,
+        COUNT(*) AS splitCount
+      FROM transaction_splits
+      GROUP BY parent_transaction_id
+    ) split_counts ON split_counts.parent_transaction_id = t.id
     LEFT JOIN accounts a ON a.id = t.account_id
     WHERE t.status != 'cancelled'
       AND (
@@ -166,6 +177,8 @@ export function loadReviewGroups(): ReviewPayload {
         minAbs: Number.POSITIVE_INFINITY,
         maxAbs: 0,
         latestPosted: row.posted,
+        splitTransactionCount: 0,
+        splitPostingCount: 0,
         accounts: new Set<string>(),
         currentCategories: new Map<string, number>(),
         suggestedCategories: new Map<string, number>(),
@@ -180,6 +193,7 @@ export function loadReviewGroups(): ReviewPayload {
       group.transactions.push({
         ...row,
         accountName: row.accountName ?? 'Unknown account',
+        splitCount: row.splitCount ?? 0,
       })
     }
     group.count += 1
@@ -188,6 +202,10 @@ export function loadReviewGroups(): ReviewPayload {
     group.minAbs = Math.min(group.minAbs, abs)
     group.maxAbs = Math.max(group.maxAbs, abs)
     group.latestPosted = Math.max(group.latestPosted, row.posted)
+    if (row.splitCount > 0) {
+      group.splitTransactionCount += 1
+      group.splitPostingCount += row.splitCount
+    }
     group.accounts.add(row.accountName ?? 'Unknown account')
     group.reasonSet.add(reason)
     if (row.category) {

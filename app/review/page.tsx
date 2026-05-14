@@ -12,6 +12,7 @@ interface ReviewTransaction {
   accountName: string
   category: string | null
   suggestedCat: string | null
+  splitCount: number
 }
 
 interface ReviewGroup {
@@ -29,6 +30,8 @@ interface ReviewGroup {
   minAbs: number
   maxAbs: number
   latestPosted: number
+  splitTransactionCount: number
+  splitPostingCount: number
   accounts: string[]
   currentCategories: Array<{ category: string; count: number }>
   suggestedCategories: Array<{ category: string; count: number }>
@@ -284,6 +287,11 @@ export default function ReviewPage() {
                           {reasonLabel(group.reason)}
                         </span>
                         <span className="text-xs text-slate-500">Latest {formatDate(group.latestPosted)}</span>
+                        {group.splitTransactionCount > 0 && (
+                          <span className="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-300">
+                            {group.splitTransactionCount} split{group.splitTransactionCount === 1 ? '' : 's'}, {group.splitPostingCount} postings
+                          </span>
+                        )}
                       </div>
                       <h2 className="mt-2 truncate text-base font-semibold text-slate-100">
                         {group.sampleDescription}
@@ -394,6 +402,11 @@ export default function ReviewPage() {
                             <span className="min-w-0 truncate text-slate-300">
                               {txn.description}
                               <span className="ml-2 text-slate-500">{txn.accountName}</span>
+                              {txn.splitCount > 0 && (
+                                <span className="ml-2 rounded-full bg-cyan-950 px-1.5 py-0.5 text-[11px] text-cyan-300">
+                                  Split x{txn.splitCount}
+                                </span>
+                              )}
                             </span>
                             <span className={`font-medium tabular-nums ${
                               amount.positive ? 'text-emerald-300' : 'text-red-300'

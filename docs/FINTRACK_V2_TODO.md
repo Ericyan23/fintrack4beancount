@@ -304,8 +304,8 @@ Beancount preparation system for SimpleFIN and generic CSV.
 - [x] Treat splits as ledger postings, not as separate source transactions.
 - [x] Enforce split sum equals parent transaction amount.
 - [x] Add split editor in transaction detail page.
-- [ ] Show split summary in lists and review queues.
-  - Progress: transaction/export queries expose split counts; review queue display still needs confirmation.
+- [x] Show split summary in lists and review queues.
+  - Progress: transaction/export queries expose split counts; review queue groups and samples show split transaction/posting counts.
 - [x] Export split transactions as multi-posting Beancount entries.
 
 ### Classification And Review Semantics
