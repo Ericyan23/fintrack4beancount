@@ -382,7 +382,8 @@ Goal: make repeated operation reliable and auditable.
     - Progress: staged ignore/delete/restore writes `staged_ignore`, `staged_delete`, and `staged_restore` audit entries.
   - [x] split create/update/delete
     - Progress: split replace/clear records `split_create`, `split_update`, and `split_delete` rows with actor, optional reason, and before/after split snapshots.
-  - [ ] rule application
+  - [x] rule application
+    - Progress: rule-driven reclassification and post-import enrichment write `rule_application` audit entries with before/after classification fields and source provenance metadata.
   - [ ] export run creation
 - [ ] Merge or rename `/categories` into Ledger Accounts & Rules.
 - [ ] Improve rule management around ledger accounts and review statuses.
