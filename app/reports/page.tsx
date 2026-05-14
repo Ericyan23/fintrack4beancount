@@ -190,9 +190,17 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-5">
+      <div className="rounded-md border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm text-slate-400">
+        <strong className="font-medium text-slate-300">Archived — legacy view.</strong>
+        {' '}Reports are frozen in v2. Use{' '}
+        <Link href="/" className="text-blue-400 hover:text-blue-300">Command Center</Link>
+        {' '}for pipeline status or{' '}
+        <Link href="/beancount" className="text-blue-400 hover:text-blue-300">Export Center</Link>
+        {' '}for Beancount output.
+      </div>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">Transaction Diagnostics</h1>
+          <h1 className="text-xl font-bold text-slate-400">Transaction Diagnostics</h1>
           <p className="mt-1 text-sm text-slate-500">
             Ad hoc posted-transaction views retained outside the primary ledger prep flow.
           </p>

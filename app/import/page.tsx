@@ -57,6 +57,19 @@ interface SimpleFinStageResult {
   error?: string
 }
 
+interface RunSummary {
+  id: string
+  status: string
+  itemCount: number
+  startedAt: number | null
+  error: string | null
+  connectionName: string | null
+  sourceKind: string | null
+  eligibleCount: number
+  errorCount: number
+  mergedCount: number
+}
+
 const FIELD_LABELS: Array<[ImportField, string, boolean]> = [
   ['date', 'Date', true],
   ['amount', 'Amount', true],
@@ -69,9 +82,33 @@ const FIELD_LABELS: Array<[ImportField, string, boolean]> = [
   ['externalId', 'External ID', false],
 ]
 
+function timeAgo(ts: number | null): string {
+  if (!ts) return '—'
+  const diff = Date.now() / 1000 - ts
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
+function sourceLabel(kind: string | null, name: string | null): string {
+  if (name) return name
+  if (kind === 'simplefin') return 'SimpleFIN'
+  if (kind === 'csv') return 'CSV'
+  return kind ?? 'Unknown source'
+}
+
+function runStatusClass(status: string): string {
+  if (status === 'completed') return 'border-emerald-800 bg-emerald-900/30 text-emerald-200'
+  if (status === 'running') return 'border-blue-800 bg-blue-900/30 text-blue-200'
+  if (status === 'error') return 'border-red-800 bg-red-900/30 text-red-200'
+  return 'border-slate-700 bg-slate-800 text-slate-400'
+}
+
 export default function ImportPage() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<AccountInfo[]>([])
+  const [recentRuns, setRecentRuns] = useState<RunSummary[]>([])
   const [csv, setCsv] = useState('')
   const [filename, setFilename] = useState('')
   const [defaultAccountId, setDefaultAccountId] = useState('')
@@ -82,10 +119,18 @@ export default function ImportPage() {
   const [loading, setLoading] = useState(false)
   const [simpleFinLoading, setSimpleFinLoading] = useState(false)
 
+  function loadRecentRuns() {
+    fetch('/api/import/runs')
+      .then(res => res.json())
+      .then((payload: { runs?: RunSummary[] }) => setRecentRuns(payload.runs ?? []))
+      .catch(() => {})
+  }
+
   useEffect(() => {
     fetch('/api/accounts')
       .then(res => res.json())
       .then((payload: { accounts?: AccountInfo[] }) => setAccounts(payload.accounts ?? []))
+    loadRecentRuns()
   }, [])
 
   async function runPreview(
@@ -132,6 +177,7 @@ export default function ImportPage() {
         return
       }
       setResult((await res.json()) as StageImportResult)
+      loadRecentRuns()
       await runPreview(mapping, defaultAccountId, false)
     } finally {
       setLoading(false)
@@ -151,6 +197,7 @@ export default function ImportPage() {
         setError(payload.error ?? 'SimpleFIN staging failed')
         return
       }
+      loadRecentRuns()
       router.push(`/import/runs/${encodeURIComponent(payload.importRunId)}`)
     } finally {
       setSimpleFinLoading(false)
@@ -181,6 +228,57 @@ export default function ImportPage() {
             Review staged rows
           </Link>
         </div>
+      )}
+
+      {/* ── Recent import runs ─────────────────────────────────────────── */}
+      {recentRuns.length > 0 && (
+        <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+          <div className="border-b border-slate-700 px-4 py-3">
+            <h2 className="text-sm font-medium text-slate-300">Recent import runs</h2>
+          </div>
+          <div className="divide-y divide-slate-700">
+            {recentRuns.map(run => {
+              const hasWork = run.eligibleCount > 0 || run.errorCount > 0
+              return (
+                <Link
+                  key={run.id}
+                  href={`/import/runs/${encodeURIComponent(run.id)}`}
+                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-3 hover:bg-slate-700/40 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-slate-200 truncate">
+                        {sourceLabel(run.sourceKind, run.connectionName)}
+                      </span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${runStatusClass(run.status)}`}>
+                        {run.status}
+                      </span>
+                      {run.error && (
+                        <span className="text-[11px] text-red-300 truncate max-w-[180px]">{run.error}</span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                      <span>{run.itemCount} items</span>
+                      {run.eligibleCount > 0 && (
+                        <span className="text-amber-300">{run.eligibleCount} ready to promote</span>
+                      )}
+                      {run.errorCount > 0 && (
+                        <span className="text-red-400">{run.errorCount} errors</span>
+                      )}
+                      {run.mergedCount > 0 && <span>{run.mergedCount} merged</span>}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-xs text-slate-500">{timeAgo(run.startedAt)}</p>
+                    {hasWork && (
+                      <p className="mt-1 text-[11px] font-medium text-amber-300">Review</p>
+                    )}
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
       )}
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
