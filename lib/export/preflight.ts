@@ -8,6 +8,11 @@ import {
   type LedgerSnapshot,
   type LedgerPosting,
 } from '@/lib/export/beancount-ledger'
+import {
+  ledgerIntentFromTransaction,
+  ledgerIntentFromTransfer,
+  type LedgerIntent,
+} from '@/lib/export/ledger-intents'
 import { REVIEW_CATEGORY_NAMES } from '@/lib/classify/defaults'
 
 export type PreflightSeverity = 'blocker' | 'review'
@@ -91,6 +96,7 @@ export interface BeancountPreflightResult {
   duplicateCandidates: PreflightIssue[]
   exportableTransactions: PreflightTransaction[]
   mergedTransfers: PreflightTransfer[]
+  exportableIntents: LedgerIntent[]
   skipped: PreflightSkipped[]
 }
 
@@ -903,6 +909,10 @@ export function runBeancountPreflight(options: {
   }
 
   const proposedStaging = path.join('staging', period, 'fintrack', 'draft', `${period}.bean`)
+  const exportableIntents: LedgerIntent[] = [
+    ...exportableTransactions.map(ledgerIntentFromTransaction),
+    ...mergedTransfers.map(ledgerIntentFromTransfer),
+  ]
 
   return {
     ok: blockers.length === 0,
@@ -929,6 +939,7 @@ export function runBeancountPreflight(options: {
     duplicateCandidates,
     exportableTransactions,
     mergedTransfers,
+    exportableIntents,
     skipped,
   }
 }

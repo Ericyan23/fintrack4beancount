@@ -1,18 +1,23 @@
-import type {
-  BeancountPreflightResult,
-  PreflightSplitPosting,
-  PreflightTransaction,
-  PreflightTransfer,
-} from '@/lib/export/preflight'
+import {
+  ledgerIntentFromTransaction,
+  ledgerIntentFromTransfer,
+  type LedgerIntent,
+  type LedgerPostingIntent,
+} from '@/lib/export/ledger-intents'
+import type { BeancountPreflightResult } from '@/lib/export/preflight'
 
 export interface RenderBeancountDraftOptions {
   generatedAt?: Date
 }
 
+type BeancountDraftPreflight = Omit<BeancountPreflightResult, 'exportableIntents'> & {
+  exportableIntents?: LedgerIntent[]
+}
+
 interface DraftEntry {
   date: string
   sourceId: string
-  render: () => string
+  intent: LedgerIntent
 }
 
 function escapeBeancountString(value: string): string {
@@ -46,70 +51,69 @@ function renderSourceId(sourceId: string): string {
   return `  source_id: "${escapeBeancountString(sourceId)}"`
 }
 
-function requireAccount(txn: PreflightTransaction): string {
-  if (!txn.beancountAccount) {
-    throw new Error(`Missing Beancount account for transaction ${txn.id}`)
-  }
-  return txn.beancountAccount
+function postingTransactionId(posting: LedgerPostingIntent, intent: LedgerIntent): string {
+  return posting.transactionId ?? intent.transactionIds[0] ?? intent.id
 }
 
-function requireCategory(txn: PreflightTransaction): string {
-  if (!txn.category || txn.category.startsWith('Transfer:')) {
-    throw new Error(`Missing export category for transaction ${txn.id}`)
-  }
-  return txn.category
+function postingParseContext(posting: LedgerPostingIntent, intent: LedgerIntent): string {
+  return posting.splitId ?? postingTransactionId(posting, intent)
 }
 
-function requireSplitAccount(split: PreflightSplitPosting, transactionId: string): string {
-  if (!split.ledgerAccount) {
-    throw new Error(`Missing split ledger account for transaction ${transactionId}`)
+function requirePostingAccount(intent: LedgerIntent, posting: LedgerPostingIntent): string {
+  const transactionId = postingTransactionId(posting, intent)
+
+  switch (posting.role) {
+    case 'source':
+    case 'transfer':
+      if (!posting.account) {
+        throw new Error(`Missing Beancount account for transaction ${transactionId}`)
+      }
+      return posting.account
+    case 'category':
+      if (!posting.account || posting.account.startsWith('Transfer:')) {
+        throw new Error(`Missing export category for transaction ${transactionId}`)
+      }
+      return posting.account
+    case 'split':
+      if (!posting.account) {
+        throw new Error(`Missing split ledger account for transaction ${transactionId}`)
+      }
+      return posting.account
   }
-  return split.ledgerAccount
+
+  const exhaustiveRole: never = posting.role
+  return exhaustiveRole
 }
 
-function renderTransaction(txn: PreflightTransaction): string {
-  const account = requireAccount(txn)
-  const amount = parseAmount(txn.amount, txn.id)
+function requireConsistentTransferCurrency(intent: LedgerIntent): void {
+  if (intent.kind !== 'confirmed_transfer') return
+
+  const [firstPosting, ...remainingPostings] = intent.postings
+  if (!firstPosting) return
+  for (const posting of remainingPostings) {
+    if (posting.currency !== firstPosting.currency) {
+      throw new Error(`Currency mismatch for transfer match ${intent.transferMatchId ?? intent.id}`)
+    }
+  }
+}
+
+function renderLedgerIntent(intent: LedgerIntent): string {
+  requireConsistentTransferCurrency(intent)
   const lines = [
-    `${txn.date} * "${escapeBeancountString(txn.description)}"`,
-    renderSourceId(txn.sourceId),
-    postingLine(account, amount, txn.currency),
+    `${intent.date} * "${escapeBeancountString(intent.description)}"`,
+    renderSourceId(intent.sourceId),
   ]
 
-  if (txn.splitPostings?.length) {
-    for (const split of txn.splitPostings) {
-      const splitAccount = requireSplitAccount(split, txn.id)
-      const splitAmount = parseAmount(split.amount, split.id)
-      lines.push(postingLine(splitAccount, -splitAmount, split.currency))
-    }
-  } else {
-    const category = requireCategory(txn)
-    lines.push(postingLine(category, -amount, txn.currency))
+  for (const posting of intent.postings) {
+    const account = requirePostingAccount(intent, posting)
+    const amount = parseAmount(posting.amount, postingParseContext(posting, intent))
+    lines.push(postingLine(account, amount, posting.currency))
   }
 
   return lines.join('\n')
 }
 
-function renderTransfer(transfer: PreflightTransfer): string {
-  const outflowAccount = requireAccount(transfer.outflow)
-  const inflowAccount = requireAccount(transfer.inflow)
-  const outflowAmount = parseAmount(transfer.outflow.amount, transfer.outflow.id)
-  const inflowAmount = parseAmount(transfer.inflow.amount, transfer.inflow.id)
-  const currency = transfer.outflow.currency
-
-  if (currency !== transfer.inflow.currency) {
-    throw new Error(`Currency mismatch for transfer match ${transfer.id}`)
-  }
-
-  return [
-    `${transfer.date} * "Transfer"`,
-    renderSourceId(transfer.sourceId),
-    postingLine(outflowAccount, outflowAmount, currency),
-    postingLine(inflowAccount, inflowAmount, currency),
-  ].join('\n')
-}
-
-function renderHeader(preflight: BeancountPreflightResult, generatedAt: Date): string {
+function renderHeader(preflight: BeancountDraftPreflight, generatedAt: Date): string {
   return [
     `; Generated: ${generatedAt.toISOString()}`,
     `; Period: ${preflight.period}`,
@@ -119,26 +123,49 @@ function renderHeader(preflight: BeancountPreflightResult, generatedAt: Date): s
   ].join('\n')
 }
 
+function exportableIntentsFor(preflight: BeancountDraftPreflight): LedgerIntent[] {
+  const legacyIntents = [
+    ...preflight.exportableTransactions.map(ledgerIntentFromTransaction),
+    ...preflight.mergedTransfers.map(ledgerIntentFromTransfer),
+  ]
+
+  if (preflight.exportableIntents !== undefined) {
+    assertIntentParity(preflight.exportableIntents, legacyIntents)
+    return preflight.exportableIntents
+  }
+
+  return legacyIntents
+}
+
+function assertIntentParity(intents: LedgerIntent[], legacyIntents: LedgerIntent[]): void {
+  const intentSourceIds = sortedSourceIds(intents)
+  const legacySourceIds = sortedSourceIds(legacyIntents)
+
+  if (
+    intentSourceIds.length !== legacySourceIds.length ||
+    intentSourceIds.some((sourceId, index) => sourceId !== legacySourceIds[index])
+  ) {
+    throw new Error('Cannot render Beancount draft because exportableIntents do not match legacy export fields')
+  }
+}
+
+function sortedSourceIds(intents: LedgerIntent[]): string[] {
+  return intents.map(intent => intent.sourceId).sort((a, b) => a.localeCompare(b))
+}
+
 export function renderBeancountDraft(
-  preflight: BeancountPreflightResult,
+  preflight: BeancountDraftPreflight,
   options: RenderBeancountDraftOptions = {},
 ): string {
   if (preflight.blockers.length > 0) {
     throw new Error('Cannot render Beancount draft while preflight has blockers')
   }
 
-  const entries: DraftEntry[] = [
-    ...preflight.exportableTransactions.map(txn => ({
-      date: txn.date,
-      sourceId: txn.sourceId,
-      render: () => renderTransaction(txn),
-    })),
-    ...preflight.mergedTransfers.map(transfer => ({
-      date: transfer.date,
-      sourceId: transfer.sourceId,
-      render: () => renderTransfer(transfer),
-    })),
-  ]
+  const entries: DraftEntry[] = exportableIntentsFor(preflight).map(intent => ({
+    date: intent.date,
+    sourceId: intent.sourceId,
+    intent,
+  }))
 
   entries.sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date)
@@ -146,6 +173,6 @@ export function renderBeancountDraft(
   })
 
   const generatedAt = options.generatedAt ?? new Date()
-  const renderedEntries = entries.map(entry => entry.render())
+  const renderedEntries = entries.map(entry => renderLedgerIntent(entry.intent))
   return [renderHeader(preflight, generatedAt), ...renderedEntries].join('\n\n') + '\n'
 }

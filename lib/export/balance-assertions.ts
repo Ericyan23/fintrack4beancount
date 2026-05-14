@@ -7,6 +7,10 @@ import {
   type LedgerBalanceDirective,
   type LedgerSnapshot,
 } from '@/lib/export/beancount-ledger'
+import {
+  exportCandidateFromBalanceAssertion,
+  type ExportCandidateBalanceAssertion,
+} from '@/lib/export/ledger-intents'
 
 export type BalanceAssertionSeverity = 'blocker' | 'review'
 
@@ -55,6 +59,7 @@ export interface BalanceAssertionPreflightResult {
   reviewItems: BalanceAssertionIssue[]
   duplicateCandidates: BalanceAssertionIssue[]
   exportableAssertions: PreflightBalanceAssertion[]
+  exportableCandidates: ExportCandidateBalanceAssertion[]
 }
 
 interface PeriodRange {
@@ -281,6 +286,7 @@ export function runBalanceAssertionPreflight(options: {
 
   const blockedDraftIds = markDraftDuplicates(validCandidates, blockers, duplicateCandidates)
   const exportableAssertions = validCandidates.filter(assertion => !blockedDraftIds.has(assertion.id))
+  const exportableCandidates = exportableAssertions.map(exportCandidateFromBalanceAssertion)
   const proposedStaging = path.join('staging', period, 'fintrack', 'draft', `${period}-balances.bean`)
 
   return {
@@ -306,6 +312,7 @@ export function runBalanceAssertionPreflight(options: {
     reviewItems,
     duplicateCandidates,
     exportableAssertions,
+    exportableCandidates,
   }
 }
 

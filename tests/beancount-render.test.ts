@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFixture } from './helpers/fixtures'
+import type { LedgerIntent } from '../lib/export/ledger-intents'
 import type { BeancountPreflightResult, PreflightTransaction } from '../lib/export/preflight'
 
 const { renderBeancountDraft } = require('../lib/export/beancount') as typeof import('../lib/export/beancount')
+
+type LegacyBeancountPreflightResult = Omit<BeancountPreflightResult, 'exportableIntents'>
+type BeancountPreflightResultWithIntents = LegacyBeancountPreflightResult & { exportableIntents: LedgerIntent[] }
 
 const checkingAccount = 'Assets:US:Banks:MainChecking'
 
@@ -25,8 +29,8 @@ function transaction(overrides: Partial<PreflightTransaction>): PreflightTransac
   }
 }
 
-test('renders a stable Beancount draft snapshot', () => {
-  const preflight: BeancountPreflightResult = {
+test('renders a stable Beancount draft snapshot from legacy preflight fields', () => {
+  const preflight: LegacyBeancountPreflightResult = {
     ok: true,
     period: '2026-04',
     dateRange: { start: '2026-04-01', end: '2026-04-30' },
@@ -96,8 +100,118 @@ test('renders a stable Beancount draft snapshot', () => {
   )
 })
 
+test('prefers exportable intents over legacy export fields when present', () => {
+  const preflight: BeancountPreflightResultWithIntents = {
+    ok: true,
+    period: '2026-04',
+    dateRange: { start: '2026-04-01', end: '2026-04-30' },
+    beancountRoot: '/tmp/beancount-test',
+    ledger: { filesScanned: 1, openAccounts: 4, sourceIds: 0 },
+    proposedStaging: 'staging/2026-04/fintrack/draft/2026-04.bean',
+    summary: {
+      transactionsScanned: 2,
+      exportableTransactions: 1,
+      mergedTransfers: 0,
+      skipped: 0,
+      blockers: 0,
+      reviewItems: 0,
+      duplicateCandidates: 0,
+    },
+    blockers: [],
+    reviewItems: [],
+    duplicateCandidates: [],
+    skipped: [],
+    exportableTransactions: [
+      transaction({
+        id: 'intent-txn',
+        sourceId: 'fintrack:acct-checking:intent-txn',
+        date: '2026-04-01',
+        description: 'Legacy Should Not Render',
+        amount: '-99.00',
+        category: 'Expenses:Legacy',
+      }),
+    ],
+    mergedTransfers: [],
+    exportableIntents: [
+      {
+        id: 'intent:preferred',
+        kind: 'cash_transaction',
+        sourceId: 'fintrack:acct-checking:intent-txn',
+        date: '2026-04-04',
+        description: 'Intent Only',
+        postings: [
+          {
+            account: checkingAccount,
+            amount: '-8.00',
+            currency: 'USD',
+            role: 'source',
+            transactionId: 'intent-txn',
+          },
+          {
+            account: 'Expenses:Food:Dining',
+            amount: '8.00',
+            currency: 'USD',
+            role: 'category',
+            transactionId: 'intent-txn',
+          },
+        ],
+        transactionIds: ['intent-txn'],
+      },
+    ],
+  }
+
+  assert.equal(
+    renderBeancountDraft(preflight, { generatedAt: new Date('2026-05-13T12:00:00.000Z') }),
+    [
+      '; Generated: 2026-05-13T12:00:00.000Z',
+      '; Period: 2026-04',
+      '; Source: FinTrack',
+      '; Warning: draft only; review before committing to Beancount.',
+      '; Proposed staging: staging/2026-04/fintrack/draft/2026-04.bean',
+      '',
+      '2026-04-04 * "Intent Only"',
+      '  source_id: "fintrack:acct-checking:intent-txn"',
+      '  Assets:US:Banks:MainChecking                    -8.00 USD',
+      '  Expenses:Food:Dining                            8.00 USD',
+      '',
+    ].join('\n'),
+  )
+})
+
+test('rejects stale exportable intents that do not match legacy export fields', () => {
+  const preflight: BeancountPreflightResultWithIntents = {
+    ok: true,
+    period: '2026-04',
+    dateRange: { start: '2026-04-01', end: '2026-04-30' },
+    beancountRoot: '/tmp/beancount-test',
+    ledger: { filesScanned: 1, openAccounts: 4, sourceIds: 0 },
+    proposedStaging: 'staging/2026-04/fintrack/draft/2026-04.bean',
+    summary: {
+      transactionsScanned: 1,
+      exportableTransactions: 1,
+      mergedTransfers: 0,
+      skipped: 0,
+      blockers: 0,
+      reviewItems: 0,
+      duplicateCandidates: 0,
+    },
+    blockers: [],
+    reviewItems: [],
+    duplicateCandidates: [],
+    skipped: [],
+    exportableTransactions: [transaction({})],
+    mergedTransfers: [],
+    exportableIntents: [],
+  }
+
+  assert.throws(
+    () => renderBeancountDraft(preflight, { generatedAt: new Date('2026-05-13T12:00:00.000Z') }),
+    /exportableIntents do not match legacy export fields/,
+  )
+})
+
 test('renders split transactions with parent source id and split counter-postings', () => {
-  const preflight: BeancountPreflightResult = {
+  const preflight: LegacyBeancountPreflightResult = {
     ok: true,
     period: '2026-04',
     dateRange: { start: '2026-04-01', end: '2026-04-30' },

@@ -61,11 +61,10 @@ export function buildBeancountHandoffManifest(options: {
   const balancePreflight = runBalanceAssertionPreflight({ period, beancountRoot })
   const snapshot = loadLedgerSnapshot(beancountRoot)
   const directory = path.posix.join(period, 'fintrack')
-  const transactionSourceIds = [
-    ...transactionPreflight.exportableTransactions.map(txn => txn.sourceId),
-    ...transactionPreflight.mergedTransfers.map(transfer => transfer.sourceId),
-  ]
-  const balanceSourceIds = balancePreflight.exportableAssertions.map(assertion => assertion.sourceId)
+  const transactionSourceIds = transactionPreflight.exportableIntents.map(intent => intent.sourceId)
+  const balanceSourceIds = balancePreflight.exportableCandidates.map(candidate => candidate.sourceId)
+  const transactionIntents = transactionPreflight.exportableIntents.filter(intent => intent.kind !== 'confirmed_transfer')
+  const transferIntents = transactionPreflight.exportableIntents.filter(intent => intent.kind === 'confirmed_transfer')
 
   return {
     schemaVersion: 1,
@@ -89,9 +88,9 @@ export function buildBeancountHandoffManifest(options: {
       balanceAssertionDraftFile: path.posix.join(directory, `${period}-balances.bean`),
     },
     counts: {
-      transactions: transactionPreflight.exportableTransactions.length,
-      transfers: transactionPreflight.mergedTransfers.length,
-      balanceAssertions: balancePreflight.exportableAssertions.length,
+      transactions: transactionIntents.length,
+      transfers: transferIntents.length,
+      balanceAssertions: balancePreflight.exportableCandidates.length,
       skipped: transactionPreflight.skipped.length,
       transactionBlockers: transactionPreflight.blockers.length,
       balanceAssertionBlockers: balancePreflight.blockers.length,
