@@ -245,7 +245,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
 - [x] Retire direct-write `lib/sync/simplefin.ts` by splitting replacement work into:
   - [x] adapter fetch
   - [x] account normalization
-  - [ ] pending reconciliation
+  - [x] pending reconciliation
   - [x] transaction ingestion
   - [ ] post-import enrichment
   - [x] sync/import logging
@@ -256,12 +256,12 @@ Beancount preparation system for SimpleFIN and generic CSV.
 ### Pending Reconciliation
 
 - [x] Stop treating disappeared pending transactions as automatically cancelled.
-- [ ] Add staged reconciliation states:
+- [x] Add staged reconciliation states:
   - [x] pending matched to posted
   - [x] expired pending
-  - [ ] cancelled
+  - [x] cancelled
   - [x] manual resolve
-  - Progress: expired pending rows now produce staged validation errors; review can now cancel the canonical pending transaction or keep it pending with `manual_resolve` audit metadata.
+  - Progress: expired pending rows now produce staged validation errors; review can cancel the canonical pending transaction with `cancelled` audit metadata or keep it pending with `manual_resolve` audit metadata.
 - [x] Add review UI for unresolved pending settlement cases.
 
 ### Manual Review, Edits, And Ignore

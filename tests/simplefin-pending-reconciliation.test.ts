@@ -360,6 +360,7 @@ test('expired pending manual resolution can cancel the canonical pending transac
     action?: string
     transactionId?: string
     canonicalStatus?: string
+    reconciliationStatus?: string
     validationErrors?: string[]
   }
 
@@ -368,6 +369,7 @@ test('expired pending manual resolution can cancel the canonical pending transac
   assert.equal(payload.action, 'cancel_pending')
   assert.equal(payload.transactionId, pendingId)
   assert.equal(payload.canonicalStatus, 'cancelled')
+  assert.equal(payload.reconciliationStatus, 'cancelled')
   assert.deepEqual(payload.validationErrors, [])
 
   const canonical = sqlite.prepare(`
@@ -396,8 +398,8 @@ test('expired pending manual resolution can cancel the canonical pending transac
   assert.equal(canonical.status, 'cancelled')
   assert.equal(staged.status, 'merged')
   assert.equal(staged.transactionId, pendingId)
-  assert.equal(staged.reconciliationStatus, 'manual_resolve')
-  assert.equal(staged.reconciliationReason, 'Manually resolved expired pending transaction as cancelled')
+  assert.equal(staged.reconciliationStatus, 'cancelled')
+  assert.equal(staged.reconciliationReason, 'Manually cancelled expired pending transaction')
   assert.deepEqual(JSON.parse(staged.validationErrors), [])
 })
 
@@ -423,6 +425,7 @@ test('expired pending manual resolution can keep the canonical transaction pendi
     action?: string
     transactionId?: string
     canonicalStatus?: string
+    reconciliationStatus?: string
     validationErrors?: string[]
   }
 
@@ -431,6 +434,7 @@ test('expired pending manual resolution can keep the canonical transaction pendi
   assert.equal(payload.action, 'keep_pending')
   assert.equal(payload.transactionId, pendingId)
   assert.equal(payload.canonicalStatus, 'pending')
+  assert.equal(payload.reconciliationStatus, 'manual_resolve')
   assert.deepEqual(payload.validationErrors, [])
 
   const canonical = sqlite.prepare(`

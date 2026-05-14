@@ -7,6 +7,7 @@ export type StagedTransactionStatus = 'staged' | 'ready' | 'merged' | 'ignored' 
 export type PendingReconciliationStatus =
   | 'pending_matched_to_posted'
   | 'pending_expired'
+  | 'cancelled'
   | 'manual_resolve'
 export type ImportProfileKind = 'csv' | 'simplefin' | 'ofx' | 'qif' | 'generic'
 export type IngestionJsonObject = Record<string, unknown>

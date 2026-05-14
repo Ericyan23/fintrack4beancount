@@ -1,5 +1,5 @@
 import { sqlite } from '../db'
-import type { StagedTransactionStatus } from './types'
+import type { PendingReconciliationStatus, StagedTransactionStatus } from './types'
 
 type SqliteDatabase = import('better-sqlite3').Database
 export type ResolveExpiredPendingAction = 'cancel_pending' | 'keep_pending'
@@ -30,6 +30,7 @@ export interface ResolveExpiredPendingResult extends StagedTransactionMutationRe
   action: ResolveExpiredPendingAction
   transactionId: string
   canonicalStatus: 'pending' | 'cancelled'
+  reconciliationStatus: PendingReconciliationStatus
 }
 
 export class StagedTransactionNotFoundError extends Error {
@@ -417,8 +418,11 @@ export function resolveExpiredPendingStagedTransaction(
     const canonicalStatus: ResolveExpiredPendingResult['canonicalStatus'] = input.action === 'cancel_pending'
       ? 'cancelled'
       : 'pending'
+    const reconciliationStatus: PendingReconciliationStatus = input.action === 'cancel_pending'
+      ? 'cancelled'
+      : 'manual_resolve'
     const reconciliationReason = input.action === 'cancel_pending'
-      ? 'Manually resolved expired pending transaction as cancelled'
+      ? 'Manually cancelled expired pending transaction'
       : 'Manually resolved expired pending transaction by keeping it pending'
 
     if (input.action === 'cancel_pending') {
@@ -438,7 +442,7 @@ export function resolveExpiredPendingStagedTransaction(
       SET status = ?,
           transaction_id = ?,
           validation_errors = ?,
-          reconciliation_status = 'manual_resolve',
+          reconciliation_status = ?,
           reconciliation_reason = ?,
           updated_at = ?
       WHERE id = ?
@@ -447,6 +451,7 @@ export function resolveExpiredPendingStagedTransaction(
       nextStatus,
       transactionId,
       JSON.stringify([]),
+      reconciliationStatus,
       reconciliationReason,
       updatedAt,
       input.stagedTransactionId,
@@ -461,6 +466,7 @@ export function resolveExpiredPendingStagedTransaction(
       action: input.action,
       transactionId,
       canonicalStatus,
+      reconciliationStatus,
     }
   })()
 }
