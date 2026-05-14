@@ -230,7 +230,7 @@ test('stages posted SimpleFIN rows as pending-to-posted matches instead of new c
   assert.equal(staged.reconciliationTransactionId, pendingId)
 
   const promoted = promoteStagedTransactions({ importRunId: result.importRunId })
-  assert.deepEqual(promoted, { promoted: 1, skipped: 0, errors: [] })
+  assert.deepEqual(promoted, { promoted: 1, skipped: 0, enriched: 0, errors: [] })
 
   const rows = sqlite.prepare(`
     SELECT

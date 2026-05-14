@@ -47,6 +47,10 @@ interface CanonicalRow {
   description: string
   pending: number
   status: string
+  category: string | null
+  ledgerAccount: string | null
+  reviewStatus: string | null
+  classifier: string | null
   updatedAt: number
 }
 
@@ -131,6 +135,10 @@ function canonicalByExternalId(externalId: string): CanonicalRow | null {
            description,
            pending,
            status,
+           category,
+           ledger_account AS ledgerAccount,
+           review_status AS reviewStatus,
+           classifier,
            updated_at            AS updatedAt
     FROM transactions
     WHERE external_id = ?
@@ -207,7 +215,7 @@ test('full SimpleFIN E2E: stage, map source accounts, promote, verify provenance
   // Promote
   const promoteResult = promoteStagedTransactions({ importRunId: stageResult.importRunId })
 
-  assert.deepEqual(promoteResult, { promoted: 7, skipped: 0, errors: [] })
+  assert.deepEqual(promoteResult, { promoted: 7, skipped: 0, enriched: 5, errors: [] })
   assert.equal(canonicalCount(), 7)
 
   // ── Verify payroll (posted checking transaction) ──────────────────────────
@@ -228,6 +236,10 @@ test('full SimpleFIN E2E: stage, map source accounts, promote, verify provenance
   assert.equal(payroll.transactedAt, 1774224000)
   assert.equal(payroll.pending, 0)
   assert.equal(payroll.status, 'posted')
+  assert.equal(payroll.category, 'Income:Salary')
+  assert.equal(payroll.ledgerAccount, 'Income:Salary')
+  assert.equal(payroll.reviewStatus, 'reviewed')
+  assert.equal(payroll.classifier, 'rule')
   assert.ok(payroll.updatedAt > 0, 'updated_at is set')
   assert.match(payroll.id, /^txn:ingest:[a-f0-9]{32}$/)
 
@@ -309,7 +321,7 @@ test('re-import same SimpleFIN payload: staged rows merge at staging time, promo
   assert.equal(result2.validationErrors, 0)
 
   const promote2 = promoteStagedTransactions({ importRunId: result2.importRunId })
-  assert.deepEqual(promote2, { promoted: 0, skipped: 7, errors: [] })
+  assert.deepEqual(promote2, { promoted: 0, skipped: 7, enriched: 0, errors: [] })
   assert.equal(canonicalCount(), 7, 'no new canonical transactions')
 })
 
@@ -360,7 +372,7 @@ test('promote skips canonical duplicates even when staging did not detect them',
   // Promote second run — promote level detects canonical duplicates by
   // (source_connection_id, source_item_key) and skips them
   const promote2 = promoteStagedTransactions({ importRunId: result2.importRunId })
-  assert.deepEqual(promote2, { promoted: 0, skipped: 7, errors: [] })
+  assert.deepEqual(promote2, { promoted: 0, skipped: 7, enriched: 0, errors: [] })
   assert.equal(canonicalCount(), 7, 'no duplicate canonical transactions')
 })
 

@@ -102,6 +102,7 @@ function stageTransaction(input: {
   rawItemId?: string
   amount?: string | null
   description?: string | null
+  category?: string | null
 }): void {
   let rawItemId = input.rawItemId ?? null
   if (!rawItemId && input.sourceItemKey) {
@@ -132,7 +133,7 @@ function stageTransaction(input: {
     description: input.description === undefined ? `Description ${input.id}` : input.description,
     pending: input.normalizedStatus === 'pending',
     status: input.status ?? 'ready',
-    category: 'Expenses:Food',
+    category: input.category === undefined ? 'Expenses:Food' : input.category,
     notes: 'Imported note',
     tags: ['promote', 'test'],
     normalizedPayload: input.normalizedStatus ? { status: input.normalizedStatus } : undefined,
@@ -173,7 +174,7 @@ test('promotes a staged transaction into canonical transactions with provenance'
 
   const result = promoteStagedTransactions({ importRunId: fixture.runId })
 
-  assert.deepEqual(result, { promoted: 1, skipped: 0, errors: [] })
+  assert.deepEqual(result, { promoted: 1, skipped: 0, enriched: 0, errors: [] })
 
   const transaction = sqlite.prepare(`
     SELECT id,
@@ -294,7 +295,7 @@ test('skips a canonical duplicate and links staged row to the existing transacti
 
   const result = promoteStagedTransactions({ importRunId: fixture.runId })
 
-  assert.deepEqual(result, { promoted: 0, skipped: 1, errors: [] })
+  assert.deepEqual(result, { promoted: 0, skipped: 1, enriched: 0, errors: [] })
   assert.equal(transactionCount(), 1)
 
   const staged = sqlite.prepare(`
@@ -325,7 +326,7 @@ test('skips ignored, error, and merged staged rows without inserting transaction
 
   const result = promoteStagedTransactions({ importRunId: fixture.runId })
 
-  assert.deepEqual(result, { promoted: 0, skipped: 3, errors: [] })
+  assert.deepEqual(result, { promoted: 0, skipped: 3, enriched: 0, errors: [] })
   assert.equal(transactionCount(), 0)
 
   const statuses = sqlite.prepare(`
@@ -413,7 +414,7 @@ test('preserves cancelled normalized transaction status when promoting', () => {
 
   const result = promoteStagedTransactions({ importRunId: fixture.runId })
 
-  assert.deepEqual(result, { promoted: 1, skipped: 0, errors: [] })
+  assert.deepEqual(result, { promoted: 1, skipped: 0, enriched: 0, errors: [] })
 
   const transaction = sqlite.prepare(`
     SELECT status, pending
@@ -423,4 +424,43 @@ test('preserves cancelled normalized transaction status when promoting', () => {
 
   assert.equal(transaction.status, 'cancelled')
   assert.equal(transaction.pending, 0)
+})
+
+test('post-import enrichment applies rules to promoted posted rows without a ledger account', () => {
+  const fixture = createImportFixture()
+  stageTransaction({
+    id: 'staged-rule-enrichment',
+    runId: fixture.runId,
+    connectionId: fixture.connectionId,
+    sourceAccountId: fixture.sourceAccountId,
+    accountId: fixture.accountId,
+    sourceItemKey: 'checking:rule-enrichment-001',
+    description: 'Coffee Shop',
+    category: null,
+  })
+  completeRun(fixture.runId)
+
+  const result = promoteStagedTransactions({ importRunId: fixture.runId })
+
+  assert.deepEqual(result, { promoted: 1, skipped: 0, enriched: 1, errors: [] })
+
+  const transaction = sqlite.prepare(`
+    SELECT
+      category,
+      ledger_account AS ledgerAccount,
+      review_status AS reviewStatus,
+      classifier
+    FROM transactions
+    LIMIT 1
+  `).get() as {
+    category: string | null
+    ledgerAccount: string | null
+    reviewStatus: string | null
+    classifier: string | null
+  }
+
+  assert.equal(transaction.category, 'Expenses:Food:Restaurants')
+  assert.equal(transaction.ledgerAccount, 'Expenses:Food:Restaurants')
+  assert.equal(transaction.reviewStatus, 'reviewed')
+  assert.equal(transaction.classifier, 'rule')
 })

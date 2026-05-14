@@ -247,7 +247,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] account normalization
   - [x] pending reconciliation
   - [x] transaction ingestion
-  - [ ] post-import enrichment
+  - [x] post-import enrichment
   - [x] sync/import logging
 - [x] Move net worth snapshot/backfill out of SimpleFIN-specific sync.
 - [x] Replace direct `INSERT OR IGNORE INTO transactions` from import paths.
@@ -320,7 +320,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] `confidence`
   - [x] `suggested_at`
 - [ ] Make rules and AI suggestions write enrichment data, not source facts.
-  - Progress: rules and AI now write `ledger_account` / `suggested_ledger_account` plus compatibility `category` / `suggested_cat` mirrors.
+  - Progress: rules and AI now write `ledger_account` / `suggested_ledger_account` plus compatibility `category` / `suggested_cat` mirrors; promote runs rule-based enrichment for newly promoted posted transactions.
 - [x] Preserve current review queue behavior during migration.
 
 ### Ledger Intent / Export Candidate Layer

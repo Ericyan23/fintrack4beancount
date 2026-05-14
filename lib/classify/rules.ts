@@ -26,24 +26,29 @@ function fallbackReviewCategoryForPosted(amountText: string, status: string): st
   return reviewCategoryForAmount(Number.parseFloat(amountText))
 }
 
+function hasEffectiveLedgerAccount(ledgerAccount: string | null, category: string | null): boolean {
+  if (ledgerAccount?.trim()) return true
+  return Boolean(category?.trim() && !REVIEW_CATEGORY_SET.has(category))
+}
+
 function updateLedgerClassification(
   statement: SqliteStatement,
   category: string,
   id: string,
-): void {
+): number {
   const timestamp = Math.floor(Date.now() / 1000)
   const isReviewCategory = REVIEW_CATEGORY_SET.has(category)
-  statement.run(
+  return statement.run(
     isReviewCategory ? null : category,
     isReviewCategory ? 'needs_review' : 'reviewed',
     category,
     timestamp,
     id,
-  )
+  ).changes
 }
 
-export async function classifyNewTransactions(ids: string[]): Promise<void> {
-  if (ids.length === 0) return
+export function classifyNewTransactions(ids: string[]): number {
+  if (ids.length === 0) return 0
 
   const ruleList = db.select().from(rules).orderBy(rules.priority).all()
   const updateCategory = sqlite.prepare(`
@@ -56,6 +61,7 @@ export async function classifyNewTransactions(ids: string[]): Promise<void> {
     WHERE id = ?
   `)
   const chunkSize = 500
+  let classified = 0
 
   for (let i = 0; i < ids.length; i += chunkSize) {
     const chunk = ids.slice(i, i + chunkSize)
@@ -63,6 +69,7 @@ export async function classifyNewTransactions(ids: string[]): Promise<void> {
       SELECT id, description, amount, status, category, ledger_account AS ledgerAccount
       FROM transactions
       WHERE id IN (${chunk.map(() => '?').join(', ')})
+        AND status = 'posted'
     `).all(...chunk) as Array<{
       id: string
       description: string
@@ -74,31 +81,41 @@ export async function classifyNewTransactions(ids: string[]): Promise<void> {
 
     sqlite.transaction(() => {
       for (const txn of rows) {
-        if (txn.ledgerAccount) continue
+        if (hasEffectiveLedgerAccount(txn.ledgerAccount, txn.category)) continue
 
         const category =
           classifyByRules(txn.description, ruleList) ??
           fallbackReviewCategoryForPosted(txn.amount, txn.status)
-        if (category) updateLedgerClassification(updateCategory, category, txn.id)
+        if (category) classified += updateLedgerClassification(updateCategory, category, txn.id)
       }
     })()
   }
+
+  return classified
 }
 
-export async function reclassifyUnmatched(): Promise<void> {
+export function reclassifyUnmatched(): number {
+  const reviewPlaceholders = REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')
   const unclassified = sqlite.prepare(`
-    SELECT id, description, amount, status
+    SELECT id, description, amount, status, category, ledger_account AS ledgerAccount
     FROM transactions
     WHERE status = 'posted'
-      AND ledger_account IS NULL
-  `).all() as Array<{
+      AND (ledger_account IS NULL OR ledger_account = '')
+      AND (
+        category IS NULL
+        OR category = ''
+        OR category IN (${reviewPlaceholders})
+      )
+  `).all(...REVIEW_CATEGORY_NAMES) as Array<{
     id: string
     description: string
     amount: string
     status: string
+    category: string | null
+    ledgerAccount: string | null
   }>
 
-  if (unclassified.length === 0) return
+  if (unclassified.length === 0) return 0
 
   const ruleList = db.select().from(rules).orderBy(rules.priority).all()
   const updateCategory = sqlite.prepare(`
@@ -110,15 +127,20 @@ export async function reclassifyUnmatched(): Promise<void> {
         updated_at = ?
     WHERE id = ?
   `)
+  let classified = 0
 
   sqlite.transaction(() => {
     for (const txn of unclassified) {
+      if (hasEffectiveLedgerAccount(txn.ledgerAccount, txn.category)) continue
+
       const category =
         classifyByRules(txn.description, ruleList) ??
         fallbackReviewCategoryForPosted(txn.amount, txn.status)
       if (category) {
-        updateLedgerClassification(updateCategory, category, txn.id)
+        classified += updateLedgerClassification(updateCategory, category, txn.id)
       }
     }
   })()
+
+  return classified
 }

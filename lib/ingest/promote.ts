@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { sqlite } from '../db'
+import { classifyNewTransactions } from '@/lib/classify/rules'
 
 type SqliteDatabase = import('better-sqlite3').Database
 
@@ -11,6 +12,7 @@ export interface PromoteStagedTransactionsInput {
 export interface PromoteStagedTransactionsResult {
   promoted: number
   skipped: number
+  enriched: number
   errors: Array<{ stagedTransactionId: string; error: string }>
 }
 
@@ -214,11 +216,16 @@ function markStagedMerged(
   `).run(transactionId, timestamp, stagedTransactionId)
 }
 
+interface PromoteRowResult {
+  status: 'promoted' | 'skipped'
+  transactionId?: string
+}
+
 function promotePendingMatch(
   database: SqliteDatabase,
   row: RequiredStagedTransactionRow,
   timestamp: number,
-): 'promoted' {
+): PromoteRowResult {
   const transactionId = row.reconciliationTransactionId ?? row.transactionId
   if (!present(transactionId)) {
     throw new Error('Missing pending reconciliation transaction id')
@@ -285,18 +292,18 @@ function promotePendingMatch(
   }
 
   markStagedMerged(database, row.id, transactionId, timestamp)
-  return 'promoted'
+  return { status: 'promoted', transactionId }
 }
 
-function promoteRow(database: SqliteDatabase, row: StagedTransactionRow): 'promoted' | 'skipped' {
+function promoteRow(database: SqliteDatabase, row: StagedTransactionRow): PromoteRowResult {
   if (!PROMOTABLE_STATUSES.has(row.status)) {
-    return 'skipped'
+    return { status: 'skipped' }
   }
 
   const promotable = requirePromotable(row)
   const timestamp = nowSeconds()
 
-  return database.transaction(() => {
+  return database.transaction((): PromoteRowResult => {
     if (promotable.reconciliationStatus === 'pending_matched_to_posted') {
       return promotePendingMatch(database, promotable, timestamp)
     }
@@ -309,7 +316,7 @@ function promoteRow(database: SqliteDatabase, row: StagedTransactionRow): 'promo
 
     if (existing) {
       markStagedMerged(database, promotable.id, existing.id, timestamp)
-      return 'skipped' as const
+      return { status: 'skipped' }
     }
 
     const transactionId = canonicalTransactionId(
@@ -353,7 +360,7 @@ function promoteRow(database: SqliteDatabase, row: StagedTransactionRow): 'promo
 
     markStagedMerged(database, promotable.id, transactionId, timestamp)
 
-    return 'promoted' as const
+    return { status: 'promoted', transactionId }
   })()
 }
 
@@ -365,16 +372,22 @@ export function promoteStagedTransactions(
   const result: PromoteStagedTransactionsResult = {
     promoted: 0,
     skipped: 0,
+    enriched: 0,
     errors: [],
   }
 
   const rows = selectStagedRows(sqlite, input)
+  const promotedTransactionIds: string[] = []
 
   for (const row of rows) {
     try {
-      const status = promoteRow(sqlite, row)
-      if (status === 'promoted') result.promoted += 1
-      else result.skipped += 1
+      const promoted = promoteRow(sqlite, row)
+      if (promoted.status === 'promoted') {
+        result.promoted += 1
+        if (promoted.transactionId) promotedTransactionIds.push(promoted.transactionId)
+      } else {
+        result.skipped += 1
+      }
     } catch (error) {
       result.errors.push({
         stagedTransactionId: row.id,
@@ -382,6 +395,8 @@ export function promoteStagedTransactions(
       })
     }
   }
+
+  result.enriched = classifyNewTransactions(promotedTransactionIds)
 
   return result
 }
