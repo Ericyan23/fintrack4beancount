@@ -160,8 +160,7 @@ export default function ImportPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">CSV Import</h1>
-        <Link href="/settings" className="text-sm text-slate-400 hover:text-slate-200">Back to settings</Link>
+        <h1 className="text-xl font-bold">Import</h1>
       </div>
 
       {error && (

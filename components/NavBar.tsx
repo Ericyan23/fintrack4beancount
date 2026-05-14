@@ -7,6 +7,7 @@ import SyncButton from './SyncButton'
 
 const tabs = [
   { href: '/', label: 'Command Center', icon: '🏠' },
+  { href: '/import', label: 'Import', icon: '↓' },
   { href: '/review', label: 'Ledger Prep', icon: '✓' },
   { href: '/transactions', label: 'Transactions', icon: '💳' },
   { href: '/transfers', label: 'Transfer Review', icon: '↔' },
