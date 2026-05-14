@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { backfillNetWorthHistory } from '@/lib/sync/simplefin'
+import { backfillNetWorthHistory } from '@/lib/networth'
 
 export async function POST(): Promise<NextResponse> {
   try {

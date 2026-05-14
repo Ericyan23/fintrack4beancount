@@ -238,20 +238,20 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] `Promote`
   - [x] `Enrich`
   - [x] `Export`
-- [ ] Move generic CSV import to the ingestion service first.
-  - Progress: staged CSV import uses ingestion; legacy direct import API still exists for compatibility.
-- [ ] Then move SimpleFIN sync to the ingestion service.
-  - Progress: SimpleFIN staging uses ingestion; legacy `/api/sync` still writes directly for compatibility.
-- [ ] Split `lib/sync/simplefin.ts` into:
+- [x] Move generic CSV import to the ingestion service first.
+  - Progress: staged CSV import uses ingestion; compatibility `/api/import/transactions` now stages and returns legacy count fields.
+- [x] Then move SimpleFIN sync to the ingestion service.
+  - Progress: SimpleFIN staging uses ingestion; compatibility `/api/sync` and scheduler now stage through the shared ingestion helper.
+- [x] Retire direct-write `lib/sync/simplefin.ts` by splitting replacement work into:
   - [x] adapter fetch
   - [x] account normalization
   - [ ] pending reconciliation
   - [x] transaction ingestion
   - [ ] post-import enrichment
   - [x] sync/import logging
-- [ ] Move net worth snapshot/backfill out of SimpleFIN-specific sync.
-- [ ] Replace direct `INSERT OR IGNORE INTO transactions` from import paths.
-  - Progress: new CSV and SimpleFIN staging paths avoid direct canonical writes; legacy CSV import and legacy sync still need retirement or compatibility wrapping.
+- [x] Move net worth snapshot/backfill out of SimpleFIN-specific sync.
+- [x] Replace direct `INSERT OR IGNORE INTO transactions` from import paths.
+  - Progress: exposed CSV/SimpleFIN import entry points no longer write canonical transactions directly; old direct-write helper modules have been removed.
 
 ### Pending Reconciliation
 

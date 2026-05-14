@@ -10,26 +10,11 @@ process.env.DB_PATH = path.join(tempDir, 'fintrack.db')
 
 const { sqlite } = require('../lib/db') as typeof import('../lib/db')
 const {
-  importTransactionsCsv,
   previewTransactionsCsv,
-} = require('../lib/import/transactions') as typeof import('../lib/import/transactions')
-
-interface TransactionRow {
-  id: string
-  accountId: string
-  amount: string
-  description: string
-  pending: number
-  status: string
-  category: string | null
-  notes: string | null
-  tags: string
-}
+} = require('../lib/ingest/csv-preview') as typeof import('../lib/ingest/csv-preview')
 
 function resetDb(): void {
   sqlite.exec(`
-    DELETE FROM transfer_matches;
-    DELETE FROM transactions;
     DELETE FROM accounts;
   `)
 
@@ -55,23 +40,6 @@ function resetDb(): void {
   )
 }
 
-function transactionRows(): TransactionRow[] {
-  return sqlite.prepare(`
-    SELECT
-      id,
-      account_id AS accountId,
-      amount,
-      description,
-      pending,
-      status,
-      category,
-      notes,
-      tags
-    FROM transactions
-    ORDER BY posted ASC, id ASC
-  `).all() as TransactionRow[]
-}
-
 beforeEach(() => {
   resetDb()
 })
@@ -82,7 +50,7 @@ after(() => {
   fs.rmSync(tempDir, { recursive: true, force: true })
 })
 
-describe('CSV transaction import', () => {
+describe('CSV transaction preview', () => {
   test('previews a generic bank CSV with detected mapping', () => {
     const csv = readFixture('csv', 'generic-bank.csv')
     const preview = previewTransactionsCsv(csv)
@@ -107,52 +75,17 @@ describe('CSV transaction import', () => {
     assert.equal(preview.rows[2].status, 'pending')
   })
 
-  test('imports generic bank CSV rows into the existing transaction shape', () => {
-    const csv = readFixture('csv', 'generic-bank.csv')
-    const result = importTransactionsCsv(csv, {})
+  test('previews unknown CSV accounts as errors without writing canonical transactions', () => {
+    const csv = [
+      'Date,Description,Amount,Account',
+      '2026-05-01,Coffee Shop,-3.50,Unknown Account',
+    ].join('\n')
+    const preview = previewTransactionsCsv(csv)
 
-    assert.deepEqual(result, { imported: 3, skipped: 0, errors: [] })
-
-    const rows = transactionRows()
-    assert.equal(rows.length, 3)
-    assert.deepEqual(rows.map(row => row.id), [
-      'csv:bank-csv-001',
-      'csv:bank-csv-002',
-      'csv:bank-csv-003',
-    ])
-
-    assert.deepEqual(rows[0], {
-      id: 'csv:bank-csv-001',
-      accountId: 'acct-checking',
-      amount: '-4.75',
-      description: 'Coffee Shop "Downtown"',
-      pending: 0,
-      status: 'posted',
-      category: 'Expenses:Food:Coffee',
-      notes: 'Morning coffee',
-      tags: JSON.stringify(['coffee', 'work']),
-    })
-    assert.equal(rows[2].pending, 1)
-    assert.equal(rows[2].status, 'pending')
-    assert.equal(rows[2].category, 'Expenses:Auto:Fuel')
-  })
-
-  test('skips duplicate CSV rows by stable external ID', () => {
-    const csv = readFixture('csv', 'duplicate-import.csv')
-
-    assert.deepEqual(importTransactionsCsv(csv, {}), {
-      imported: 1,
-      skipped: 1,
-      errors: [],
-    })
-    assert.equal(transactionRows().length, 1)
-
-    assert.deepEqual(importTransactionsCsv(csv, {}), {
-      imported: 0,
-      skipped: 2,
-      errors: [],
-    })
-    assert.equal(transactionRows().length, 1)
+    assert.equal(preview.totalRows, 1)
+    assert.equal(preview.validRows, 0)
+    assert.equal(preview.errorRows, 1)
+    assert.equal(preview.rows[0].error, 'Unable to match account')
   })
 
   test('keeps a SimpleFIN sample payload available for ingestion tests', () => {
