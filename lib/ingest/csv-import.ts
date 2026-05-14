@@ -131,6 +131,7 @@ export function stageTransactionsCsv(
   csvText: string,
   mappingInput: CsvImportMapping,
   defaultAccountId?: string,
+  connectionName?: string,
 ): CsvStageImportResult {
   const lookup = lookupAccounts()
   const defaultAccount = defaultAccountId ? lookup.byId.get(defaultAccountId) ?? null : null
@@ -139,10 +140,13 @@ export function stageTransactionsCsv(
     kind: 'csv',
     name: 'CSV Import',
   })
+  const slug = connectionName
+    ? (connectionName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'manual')
+    : 'manual'
   const connection = ensureSourceConnection({
-    id: 'csv:manual',
+    id: `csv:${slug}`,
     sourceId: source.id,
-    name: 'Manual CSV Uploads',
+    name: connectionName?.trim() || 'Manual CSV Uploads',
   })
   const run = createImportRun({
     sourceConnectionId: connection.id,

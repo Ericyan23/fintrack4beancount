@@ -112,6 +112,7 @@ export default function ImportPage() {
   const [csv, setCsv] = useState('')
   const [filename, setFilename] = useState('')
   const [defaultAccountId, setDefaultAccountId] = useState('')
+  const [csvConnectionName, setCsvConnectionName] = useState('')
   const [mapping, setMapping] = useState<ImportMapping>({})
   const [preview, setPreview] = useState<PreviewResult | null>(null)
   const [result, setResult] = useState<StageImportResult | null>(null)
@@ -169,7 +170,7 @@ export default function ImportPage() {
       const res = await fetch('/api/import/transactions/stage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csv, mapping, defaultAccountId: defaultAccountId || undefined }),
+        body: JSON.stringify({ csv, mapping, defaultAccountId: defaultAccountId || undefined, connectionName: csvConnectionName.trim() || undefined }),
       })
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string }
@@ -299,7 +300,7 @@ export default function ImportPage() {
       </div>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_220px_220px] gap-3">
           <label className="block">
             <span className="text-xs text-slate-400 block mb-1">CSV file</span>
             <input
@@ -316,6 +317,16 @@ export default function ImportPage() {
                 setMapping({})
               }}
               className="w-full text-sm text-slate-300 file:mr-3 file:rounded file:border-0 file:bg-blue-600 file:px-3 file:py-2 file:text-sm file:text-white hover:file:bg-blue-500"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs text-slate-400 block mb-1">Source name <span className="text-slate-600">(optional)</span></span>
+            <input
+              type="text"
+              value={csvConnectionName}
+              onChange={e => setCsvConnectionName(e.target.value)}
+              placeholder="e.g. Chase Checking"
+              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
             />
           </label>
           <label className="block">

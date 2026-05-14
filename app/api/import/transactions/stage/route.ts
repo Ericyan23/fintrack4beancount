@@ -7,6 +7,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     csv?: string
     mapping?: CsvImportMapping
     defaultAccountId?: string
+    connectionName?: string
   }
 
   if (!body.csv?.trim()) {
@@ -16,5 +17,5 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'date, amount, and description mappings are required' }, { status: 400 })
   }
 
-  return NextResponse.json(stageTransactionsCsv(body.csv, body.mapping, body.defaultAccountId))
+  return NextResponse.json(stageTransactionsCsv(body.csv, body.mapping, body.defaultAccountId, body.connectionName))
 }
