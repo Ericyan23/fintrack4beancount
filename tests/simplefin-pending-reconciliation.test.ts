@@ -3,6 +3,7 @@ import { after, beforeEach, test } from 'node:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import type { NextRequest } from 'next/server'
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-simplefin-pending-reconciliation-'))
 process.env.DB_PATH = path.join(tempDir, 'fintrack.db')
@@ -18,6 +19,7 @@ const {
 const {
   promoteStagedTransactions,
 } = require('../lib/ingest/promote') as typeof import('../lib/ingest/promote')
+const resolvePendingRoute = require('../app/api/import/runs/[id]/staged/[stagedId]/resolve-pending/route') as ResolvePendingRoute
 const {
   ensureSource,
   ensureSourceAccount,
@@ -25,10 +27,26 @@ const {
 } = require('../lib/ingest/store') as typeof import('../lib/ingest/store')
 import type { SimpleFinPayload, SimpleFinTransactionPayload } from '../lib/ingest/simplefin'
 
+interface StagedRouteContext {
+  params: Promise<{ id: string; stagedId: string }>
+}
+
+interface ResolvePendingRoute {
+  POST(req: NextRequest, context: StagedRouteContext): Promise<Response>
+}
+
 const CONNECTION_ID = 'simplefin:pending-reconciliation'
 const ACCOUNT_ID = 'acct-checking'
 const EXTERNAL_ACCOUNT_ID = 'simplefin-checking-001'
 const SOURCE_ACCOUNT_ID = buildSimpleFinSourceAccountId(CONNECTION_ID, EXTERNAL_ACCOUNT_ID)
+
+function request(pathname: string, init?: RequestInit): NextRequest {
+  return new Request(`http://localhost${pathname}`, init) as NextRequest
+}
+
+function stagedParams(id: string, stagedId: string): StagedRouteContext {
+  return { params: Promise.resolve({ id, stagedId }) }
+}
 
 function unixDate(date: string): number {
   return Math.floor(Date.parse(`${date}T00:00:00.000Z`) / 1000)
@@ -144,6 +162,18 @@ function payloadWithTransactions(transactions: SimpleFinTransactionPayload[]): S
       transactions,
     }],
   }
+}
+
+function expiredPendingStagedId(importRunId: string): string {
+  const row = sqlite.prepare(`
+    SELECT id
+    FROM staged_transactions
+    WHERE import_run_id = ?
+      AND reconciliation_status = 'pending_expired'
+  `).get(importRunId) as { id: string } | undefined
+
+  assert.ok(row)
+  return row.id
 }
 
 beforeEach(() => {
@@ -306,4 +336,130 @@ test('missing stale pending transactions create manual resolution rows without c
 
   assert.equal(canonical.pending, 1)
   assert.equal(canonical.status, 'pending')
+})
+
+test('expired pending manual resolution can cancel the canonical pending transaction', async () => {
+  const staleCreatedAt = Math.floor(Date.now() / 1000) - 45 * 86400
+  const pendingId = insertPendingCanonical({ createdAt: staleCreatedAt })
+  const result = stageSimpleFinPayload(payloadWithTransactions([]), {
+    sourceConnectionId: CONNECTION_ID,
+    sourceConnectionName: 'Pending Reconciliation',
+  })
+  const stagedId = expiredPendingStagedId(result.importRunId)
+
+  const response = await resolvePendingRoute.POST(
+    request(`/api/import/runs/${result.importRunId}/staged/${stagedId}/resolve-pending`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cancel_pending' }),
+    }),
+    stagedParams(result.importRunId, stagedId),
+  )
+  const payload = await response.json() as {
+    status?: string
+    action?: string
+    transactionId?: string
+    canonicalStatus?: string
+    validationErrors?: string[]
+  }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.status, 'merged')
+  assert.equal(payload.action, 'cancel_pending')
+  assert.equal(payload.transactionId, pendingId)
+  assert.equal(payload.canonicalStatus, 'cancelled')
+  assert.deepEqual(payload.validationErrors, [])
+
+  const canonical = sqlite.prepare(`
+    SELECT pending, status
+    FROM transactions
+    WHERE id = ?
+  `).get(pendingId) as { pending: number; status: string }
+  const staged = sqlite.prepare(`
+    SELECT
+      status,
+      transaction_id AS transactionId,
+      reconciliation_status AS reconciliationStatus,
+      reconciliation_reason AS reconciliationReason,
+      validation_errors AS validationErrors
+    FROM staged_transactions
+    WHERE id = ?
+  `).get(stagedId) as {
+    status: string
+    transactionId: string
+    reconciliationStatus: string
+    reconciliationReason: string
+    validationErrors: string
+  }
+
+  assert.equal(canonical.pending, 0)
+  assert.equal(canonical.status, 'cancelled')
+  assert.equal(staged.status, 'merged')
+  assert.equal(staged.transactionId, pendingId)
+  assert.equal(staged.reconciliationStatus, 'manual_resolve')
+  assert.equal(staged.reconciliationReason, 'Manually resolved expired pending transaction as cancelled')
+  assert.deepEqual(JSON.parse(staged.validationErrors), [])
+})
+
+test('expired pending manual resolution can keep the canonical transaction pending', async () => {
+  const staleCreatedAt = Math.floor(Date.now() / 1000) - 45 * 86400
+  const pendingId = insertPendingCanonical({ createdAt: staleCreatedAt })
+  const result = stageSimpleFinPayload(payloadWithTransactions([]), {
+    sourceConnectionId: CONNECTION_ID,
+    sourceConnectionName: 'Pending Reconciliation',
+  })
+  const stagedId = expiredPendingStagedId(result.importRunId)
+
+  const response = await resolvePendingRoute.POST(
+    request(`/api/import/runs/${result.importRunId}/staged/${stagedId}/resolve-pending`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'keep_pending' }),
+    }),
+    stagedParams(result.importRunId, stagedId),
+  )
+  const payload = await response.json() as {
+    status?: string
+    action?: string
+    transactionId?: string
+    canonicalStatus?: string
+    validationErrors?: string[]
+  }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.status, 'ignored')
+  assert.equal(payload.action, 'keep_pending')
+  assert.equal(payload.transactionId, pendingId)
+  assert.equal(payload.canonicalStatus, 'pending')
+  assert.deepEqual(payload.validationErrors, [])
+
+  const canonical = sqlite.prepare(`
+    SELECT pending, status
+    FROM transactions
+    WHERE id = ?
+  `).get(pendingId) as { pending: number; status: string }
+  const staged = sqlite.prepare(`
+    SELECT
+      status,
+      transaction_id AS transactionId,
+      reconciliation_status AS reconciliationStatus,
+      reconciliation_reason AS reconciliationReason,
+      validation_errors AS validationErrors
+    FROM staged_transactions
+    WHERE id = ?
+  `).get(stagedId) as {
+    status: string
+    transactionId: string
+    reconciliationStatus: string
+    reconciliationReason: string
+    validationErrors: string
+  }
+
+  assert.equal(canonical.pending, 1)
+  assert.equal(canonical.status, 'pending')
+  assert.equal(staged.status, 'ignored')
+  assert.equal(staged.transactionId, pendingId)
+  assert.equal(staged.reconciliationStatus, 'manual_resolve')
+  assert.equal(staged.reconciliationReason, 'Manually resolved expired pending transaction by keeping it pending')
+  assert.deepEqual(JSON.parse(staged.validationErrors), [])
 })

@@ -260,9 +260,9 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] pending matched to posted
   - [x] expired pending
   - [ ] cancelled
-  - [ ] manual resolve
-  - Progress: expired pending rows now produce staged validation errors for manual resolution; explicit manual resolve action/UI still needs implementation.
-- [ ] Add review UI for unresolved pending settlement cases.
+  - [x] manual resolve
+  - Progress: expired pending rows now produce staged validation errors; review can now cancel the canonical pending transaction or keep it pending with `manual_resolve` audit metadata.
+- [x] Add review UI for unresolved pending settlement cases.
 
 ### Manual Review, Edits, And Ignore
 

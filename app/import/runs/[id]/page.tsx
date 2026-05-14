@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 
 type StagedRow = Record<string, unknown>
-type RowAction = 'save' | 'ignore' | 'delete' | 'restore'
+type RowAction = 'save' | 'ignore' | 'delete' | 'restore' | 'cancelPending' | 'keepPending'
 type SummaryKey = 'raw' | 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted' | 'error' | 'canonical'
 type Summary = Record<SummaryKey, number | null>
 
@@ -382,6 +382,18 @@ function rowValidationErrors(row: StagedRow): string {
   return messages.length > 0 ? messages.join('; ') : '-'
 }
 
+function rowReconciliationStatus(row: StagedRow): string {
+  return stringValue(getFirst(row, ['reconciliationStatus', 'reconciliation_status']))
+}
+
+function rowReconciliationReason(row: StagedRow): string {
+  return stringValue(getFirst(row, ['reconciliationReason', 'reconciliation_reason']))
+}
+
+function rowIsExpiredPending(row: StagedRow): boolean {
+  return rowReconciliationStatus(row) === 'pending_expired'
+}
+
 function rowValidationErrorList(row: StagedRow): string[] {
   const value = getFirst(row, ['validationErrors', 'validation_errors'])
   if (!Array.isArray(value)) return []
@@ -441,6 +453,12 @@ function rowIsLocked(row: StagedRow): boolean {
 
 function rowIsRestorable(row: StagedRow): boolean {
   return RESTORABLE_STATUSES.has(rowStatus(row).toLowerCase())
+}
+
+function rowActionLabel(action: RowAction): string {
+  if (action === 'cancelPending') return 'Cancel pending...'
+  if (action === 'keepPending') return 'Keep pending...'
+  return `${action[0].toUpperCase()}${action.slice(1)}...`
 }
 
 function collectErrors(value: unknown): string[] {
@@ -764,6 +782,21 @@ export default function ImportRunPage() {
     await mutateStagedRow(row, key, 'restore', 'Restore', { method: 'POST' }, '/restore')
   }
 
+  async function resolvePendingRow(row: StagedRow, key: string, action: 'cancel_pending' | 'keep_pending') {
+    await mutateStagedRow(
+      row,
+      key,
+      action === 'cancel_pending' ? 'cancelPending' : 'keepPending',
+      action === 'cancel_pending' ? 'Cancel pending' : 'Keep pending',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      },
+      '/resolve-pending',
+    )
+  }
+
   async function updateSourceAccountMapping(sourceAccount: SourceAccountMapping, accountId: string) {
     if (!runId) return
 
@@ -1063,6 +1096,7 @@ export default function ImportRunPage() {
                 const draft = drafts[key] ?? draftFromRow(row)
                 const locked = rowIsLocked(row)
                 const restorable = rowIsRestorable(row)
+                const expiredPending = rowIsExpiredPending(row)
                 const busyAction = rowActions[key]
                 const disabled = locked || Boolean(busyAction)
                 const hasSelectedAccount = accounts.some(account => account.id === draft.accountId)
@@ -1073,7 +1107,8 @@ export default function ImportRunPage() {
                 )
                 const currentAccountName = rowText(row, ['accountName', 'account', 'canonicalAccountName'], draft.accountId)
                 const validationErrors = rowValidationErrors(row)
-                const actionLabel = busyAction ? `${busyAction[0].toUpperCase()}${busyAction.slice(1)}...` : ''
+                const reconciliationReason = rowReconciliationReason(row)
+                const actionLabel = busyAction ? rowActionLabel(busyAction) : ''
 
                 return (
                   <div
@@ -1172,8 +1207,11 @@ export default function ImportRunPage() {
                         aria-label="Pending"
                       />
                     </span>
-                    <span className={validationErrors === '-' ? 'truncate text-slate-500' : 'text-red-200'}>
-                      {validationErrors}
+                    <span className={validationErrors === '-' ? 'text-slate-500' : 'text-red-200'}>
+                      <span className="block">{validationErrors}</span>
+                      {reconciliationReason && reconciliationReason !== validationErrors && (
+                        <span className="mt-1 block text-[11px] text-slate-400">{reconciliationReason}</span>
+                      )}
                     </span>
                     <span className="space-y-1">
                       {restorable ? (
@@ -1186,6 +1224,23 @@ export default function ImportRunPage() {
                         </button>
                       ) : locked ? (
                         <span className="text-xs text-slate-500">Locked</span>
+                      ) : expiredPending ? (
+                        <span className="flex flex-wrap gap-1.5">
+                          <button
+                            onClick={() => resolvePendingRow(row, key, 'cancel_pending')}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md border border-red-900 bg-red-950/50 px-2 py-1 text-xs text-red-200 hover:bg-red-900/70 disabled:opacity-60"
+                          >
+                            {busyAction === 'cancelPending' ? actionLabel : 'Cancel pending'}
+                          </button>
+                          <button
+                            onClick={() => resolvePendingRow(row, key, 'keep_pending')}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
+                          >
+                            {busyAction === 'keepPending' ? actionLabel : 'Keep pending'}
+                          </button>
+                        </span>
                       ) : (
                         <span className="flex flex-wrap gap-1.5">
                           <button

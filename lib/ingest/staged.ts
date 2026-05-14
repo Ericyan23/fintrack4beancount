@@ -2,6 +2,7 @@ import { sqlite } from '../db'
 import type { StagedTransactionStatus } from './types'
 
 type SqliteDatabase = import('better-sqlite3').Database
+export type ResolveExpiredPendingAction = 'cancel_pending' | 'keep_pending'
 
 export interface UpdateStagedTransactionInput {
   importRunId: string
@@ -25,6 +26,12 @@ export interface StagedTransactionMutationResult {
   updatedAt: number
 }
 
+export interface ResolveExpiredPendingResult extends StagedTransactionMutationResult {
+  action: ResolveExpiredPendingAction
+  transactionId: string
+  canonicalStatus: 'pending' | 'cancelled'
+}
+
 export class StagedTransactionNotFoundError extends Error {
   constructor(importRunId: string, stagedTransactionId: string) {
     super(`Staged transaction not found: ${stagedTransactionId} in import run ${importRunId}`)
@@ -33,8 +40,8 @@ export class StagedTransactionNotFoundError extends Error {
 }
 
 export class StagedTransactionConflictError extends Error {
-  constructor(stagedTransactionId: string, status: StagedTransactionStatus) {
-    super(`Cannot mutate ${status} staged transaction: ${stagedTransactionId}`)
+  constructor(stagedTransactionId: string, status: StagedTransactionStatus, message?: string) {
+    super(message ?? `Cannot mutate ${status} staged transaction: ${stagedTransactionId}`)
     this.name = 'StagedTransactionConflictError'
   }
 }
@@ -63,7 +70,17 @@ interface StagedTransactionRow {
   category: string | null
   notes: string | null
   tags: string | null
+  transactionId: string | null
+  reconciliationStatus: string | null
+  reconciliationTransactionId: string | null
+  reconciliationReason: string | null
   updatedAt: number
+}
+
+interface PendingCanonicalTransactionRow {
+  id: string
+  pending: number
+  status: string
 }
 
 interface RequiredFieldValues {
@@ -145,6 +162,10 @@ function selectScopedStagedTransaction(
       category,
       notes,
       tags,
+      transaction_id AS transactionId,
+      reconciliation_status AS reconciliationStatus,
+      reconciliation_transaction_id AS reconciliationTransactionId,
+      reconciliation_reason AS reconciliationReason,
       updated_at AS updatedAt
     FROM staged_transactions
     WHERE id = ?
@@ -181,6 +202,22 @@ function requireEditableStagedTransaction(
   return row
 }
 
+function selectPendingCanonicalTransaction(
+  database: SqliteDatabase,
+  transactionId: string,
+): PendingCanonicalTransactionRow | null {
+  const row = database.prepare(`
+    SELECT
+      id,
+      pending,
+      status
+    FROM transactions
+    WHERE id = ?
+  `).get(transactionId) as PendingCanonicalTransactionRow | undefined
+
+  return row ?? null
+}
+
 export function updateStagedTransaction(
   input: UpdateStagedTransactionInput,
 ): StagedTransactionMutationResult {
@@ -203,7 +240,18 @@ export function updateStagedTransaction(
       throw new StagedTransactionInvalidInputError(`Account not found: ${next.accountId}`)
     }
     const validationErrors = validateRequiredFields(next)
-    const status: 'error' | 'ready' = validationErrors.length > 0 ? 'error' : 'ready'
+    if (
+      row.reconciliationStatus === 'pending_expired'
+      && validationErrors.length === 0
+      && present(row.reconciliationReason)
+    ) {
+      validationErrors.push(row.reconciliationReason)
+    }
+    const status: 'error' | 'ready' = (
+      row.reconciliationStatus === 'pending_expired' || validationErrors.length > 0
+    )
+      ? 'error'
+      : 'ready'
     const updatedAt = nowSeconds()
 
     sqlite.prepare(`
@@ -329,6 +377,90 @@ export function restoreStagedTransaction(
       status,
       validationErrors,
       updatedAt,
+    }
+  })()
+}
+
+export function resolveExpiredPendingStagedTransaction(
+  input: ScopedStagedTransactionInput & { action: ResolveExpiredPendingAction },
+): ResolveExpiredPendingResult {
+  return sqlite.transaction(() => {
+    const row = requireEditableStagedTransaction(sqlite, input)
+    if (row.reconciliationStatus !== 'pending_expired') {
+      throw new StagedTransactionConflictError(
+        input.stagedTransactionId,
+        row.status,
+        `Staged transaction is not an expired pending reconciliation row: ${input.stagedTransactionId}`,
+      )
+    }
+
+    const transactionId = row.reconciliationTransactionId ?? row.transactionId
+    if (!present(transactionId)) {
+      throw new StagedTransactionConflictError(
+        input.stagedTransactionId,
+        row.status,
+        `Missing pending reconciliation transaction id: ${input.stagedTransactionId}`,
+      )
+    }
+
+    const canonical = selectPendingCanonicalTransaction(sqlite, transactionId)
+    if (!canonical || canonical.pending !== 1 || canonical.status !== 'pending') {
+      throw new StagedTransactionConflictError(
+        input.stagedTransactionId,
+        row.status,
+        `Pending transaction not found or no longer pending: ${transactionId}`,
+      )
+    }
+
+    const updatedAt = nowSeconds()
+    const nextStatus: ResolveExpiredPendingResult['status'] = input.action === 'cancel_pending' ? 'merged' : 'ignored'
+    const canonicalStatus: ResolveExpiredPendingResult['canonicalStatus'] = input.action === 'cancel_pending'
+      ? 'cancelled'
+      : 'pending'
+    const reconciliationReason = input.action === 'cancel_pending'
+      ? 'Manually resolved expired pending transaction as cancelled'
+      : 'Manually resolved expired pending transaction by keeping it pending'
+
+    if (input.action === 'cancel_pending') {
+      sqlite.prepare(`
+        UPDATE transactions
+        SET pending = 0,
+            status = 'cancelled',
+            updated_at = ?
+        WHERE id = ?
+          AND pending = 1
+          AND status = 'pending'
+      `).run(updatedAt, transactionId)
+    }
+
+    sqlite.prepare(`
+      UPDATE staged_transactions
+      SET status = ?,
+          transaction_id = ?,
+          validation_errors = ?,
+          reconciliation_status = 'manual_resolve',
+          reconciliation_reason = ?,
+          updated_at = ?
+      WHERE id = ?
+        AND import_run_id = ?
+    `).run(
+      nextStatus,
+      transactionId,
+      JSON.stringify([]),
+      reconciliationReason,
+      updatedAt,
+      input.stagedTransactionId,
+      input.importRunId,
+    )
+
+    return {
+      id: row.id,
+      status: nextStatus,
+      validationErrors: [],
+      updatedAt,
+      action: input.action,
+      transactionId,
+      canonicalStatus,
     }
   })()
 }
