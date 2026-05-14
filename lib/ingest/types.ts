@@ -4,6 +4,10 @@ export type SourceConnectionStatus = 'active' | 'disabled' | 'error'
 export type ImportRunStatus = 'pending' | 'running' | 'completed' | 'failed'
 export type RawImportItemStatus = 'pending' | 'staged' | 'ignored' | 'error'
 export type StagedTransactionStatus = 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted' | 'error'
+export type PendingReconciliationStatus =
+  | 'pending_matched_to_posted'
+  | 'pending_expired'
+  | 'manual_resolve'
 export type ImportProfileKind = 'csv' | 'simplefin' | 'ofx' | 'qif' | 'generic'
 export type IngestionJsonObject = Record<string, unknown>
 export type IngestionJsonValue =
@@ -96,6 +100,9 @@ export interface StagedIngestionRecord {
   sourceItemKey?: string | null
   transaction?: NormalizedTransaction
   validationErrors?: string[]
+  reconciliationStatus?: PendingReconciliationStatus | null
+  reconciliationTransactionId?: string | null
+  reconciliationReason?: string | null
   status: StagedTransactionStatus
 }
 

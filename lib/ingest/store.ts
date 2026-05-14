@@ -4,6 +4,7 @@ import { stableStringify } from './identity'
 import type {
   ImportRunStatus,
   IngestionJsonObject,
+  PendingReconciliationStatus,
   RawImportItemStatus,
   SourceConnectionStatus,
   SourceKind,
@@ -96,6 +97,9 @@ export interface StagedTransactionRecord {
   normalizedPayload: IngestionJsonObject | null
   validationErrors: string[] | null
   normalizerVersion: string | null
+  reconciliationStatus: PendingReconciliationStatus | null
+  reconciliationTransactionId: string | null
+  reconciliationReason: string | null
   createdAt: number
   updatedAt: number
 }
@@ -182,6 +186,9 @@ export interface InsertStagedTransactionInput {
   normalizedPayload?: IngestionJsonObject | null
   validationErrors?: string[] | null
   normalizerVersion?: string | null
+  reconciliationStatus?: PendingReconciliationStatus | null
+  reconciliationTransactionId?: string | null
+  reconciliationReason?: string | null
 }
 
 interface SourceRow {
@@ -267,6 +274,9 @@ interface StagedTransactionRow {
   normalizedPayload: string | null
   validationErrors: string | null
   normalizerVersion: string | null
+  reconciliationStatus: PendingReconciliationStatus | null
+  reconciliationTransactionId: string | null
+  reconciliationReason: string | null
   createdAt: number
   updatedAt: number
 }
@@ -476,6 +486,9 @@ function selectStagedTransaction(database: SqliteDatabase, id: string): StagedTr
       normalized_payload AS normalizedPayload,
       validation_errors AS validationErrors,
       normalizer_version AS normalizerVersion,
+      reconciliation_status AS reconciliationStatus,
+      reconciliation_transaction_id AS reconciliationTransactionId,
+      reconciliation_reason AS reconciliationReason,
       created_at AS createdAt,
       updated_at AS updatedAt
     FROM staged_transactions
@@ -708,8 +721,9 @@ export function insertStagedTransaction(
          account_id, transaction_id, external_id, source_item_key, posted,
          transacted_at, amount, currency, description, pending, status, category,
          notes, tags, normalized_payload, validation_errors, normalizer_version,
+         reconciliation_status, reconciliation_transaction_id, reconciliation_reason,
          created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.importRunId ?? null,
@@ -733,6 +747,9 @@ export function insertStagedTransaction(
       stringifyJson(input.normalizedPayload),
       stringifyJson(input.validationErrors),
       input.normalizerVersion ?? null,
+      input.reconciliationStatus ?? null,
+      input.reconciliationTransactionId ?? null,
+      input.reconciliationReason ?? null,
       timestamp,
       timestamp,
     )

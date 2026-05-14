@@ -255,12 +255,13 @@ Beancount preparation system for SimpleFIN and generic CSV.
 
 ### Pending Reconciliation
 
-- [ ] Stop treating disappeared pending transactions as automatically cancelled.
+- [x] Stop treating disappeared pending transactions as automatically cancelled.
 - [ ] Add staged reconciliation states:
-  - [ ] pending matched to posted
-  - [ ] expired pending
+  - [x] pending matched to posted
+  - [x] expired pending
   - [ ] cancelled
   - [ ] manual resolve
+  - Progress: expired pending rows now produce staged validation errors for manual resolution; explicit manual resolve action/UI still needs implementation.
 - [ ] Add review UI for unresolved pending settlement cases.
 
 ### Manual Review, Edits, And Ignore

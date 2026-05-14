@@ -34,6 +34,7 @@ interface StagedTransactionRow {
   sourceConnectionId: string | null
   sourceAccountId: string | null
   accountId: string | null
+  transactionId: string | null
   externalId: string | null
   sourceItemKey: string | null
   posted: number | null
@@ -47,6 +48,9 @@ interface StagedTransactionRow {
   tags: string | null
   normalizedPayload: string | null
   normalizerVersion: string | null
+  reconciliationStatus: string | null
+  reconciliationTransactionId: string | null
+  reconciliationReason: string | null
   source: string | null
 }
 
@@ -151,6 +155,9 @@ function selectStagedRows(
       st.tags,
       st.normalized_payload AS normalizedPayload,
       st.normalizer_version AS normalizerVersion,
+      st.reconciliation_status AS reconciliationStatus,
+      st.reconciliation_transaction_id AS reconciliationTransactionId,
+      st.reconciliation_reason AS reconciliationReason,
       sources.kind AS source
     FROM staged_transactions st
     LEFT JOIN source_connections sc
@@ -207,6 +214,73 @@ function markStagedMerged(
   `).run(transactionId, timestamp, stagedTransactionId)
 }
 
+function promotePendingMatch(
+  database: SqliteDatabase,
+  row: RequiredStagedTransactionRow,
+  timestamp: number,
+): 'promoted' {
+  const transactionId = row.reconciliationTransactionId ?? row.transactionId
+  if (!present(transactionId)) {
+    throw new Error('Missing pending reconciliation transaction id')
+  }
+
+  const status = transactionStatus(row)
+  if (status !== 'posted') {
+    throw new Error(`Pending reconciliation requires posted status, got ${status}`)
+  }
+
+  const result = database.prepare(`
+    UPDATE transactions
+    SET
+      source_connection_id = ?,
+      source_account_id = ?,
+      external_id = ?,
+      source_item_key = ?,
+      import_run_id = ?,
+      raw_item_id = ?,
+      normalizer_version = ?,
+      source = ?,
+      posted = ?,
+      transacted_at = ?,
+      amount = ?,
+      description = ?,
+      pending = 0,
+      status = 'posted',
+      category = COALESCE(?, category),
+      notes = COALESCE(?, notes),
+      tags = COALESCE(?, tags),
+      updated_at = ?
+    WHERE id = ?
+      AND pending = 1
+      AND status = 'pending'
+  `).run(
+    row.sourceConnectionId,
+    row.sourceAccountId,
+    row.externalId,
+    row.sourceItemKey,
+    row.importRunId,
+    row.rawItemId,
+    row.normalizerVersion,
+    row.source ?? 'ingest',
+    row.posted,
+    row.transactedAt,
+    row.amount,
+    row.description,
+    row.category,
+    row.notes,
+    row.tags,
+    timestamp,
+    transactionId,
+  )
+
+  if (result.changes === 0) {
+    throw new Error(`Pending transaction not found or no longer pending: ${transactionId}`)
+  }
+
+  markStagedMerged(database, row.id, transactionId, timestamp)
+  return 'promoted'
+}
+
 function promoteRow(database: SqliteDatabase, row: StagedTransactionRow): 'promoted' | 'skipped' {
   if (!PROMOTABLE_STATUSES.has(row.status)) {
     return 'skipped'
@@ -216,6 +290,10 @@ function promoteRow(database: SqliteDatabase, row: StagedTransactionRow): 'promo
   const timestamp = nowSeconds()
 
   return database.transaction(() => {
+    if (promotable.reconciliationStatus === 'pending_matched_to_posted') {
+      return promotePendingMatch(database, promotable, timestamp)
+    }
+
     const existing = selectExistingTransaction(
       database,
       promotable.sourceConnectionId,

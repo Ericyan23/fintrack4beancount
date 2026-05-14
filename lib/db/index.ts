@@ -400,6 +400,9 @@ function ensureIngestionSchema(): void {
       normalized_payload TEXT,
       validation_errors TEXT,
       normalizer_version TEXT,
+      reconciliation_status TEXT,
+      reconciliation_transaction_id TEXT REFERENCES transactions(id),
+      reconciliation_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -434,6 +437,13 @@ function ensureIngestionSchema(): void {
   addColumnIfMissing('transactions', 'raw_item_id', `raw_item_id TEXT REFERENCES raw_import_items(id)`)
   addColumnIfMissing('transactions', 'normalizer_version', `normalizer_version TEXT`)
   addColumnIfMissing('transactions', 'updated_at', `updated_at INTEGER`)
+  addColumnIfMissing('staged_transactions', 'reconciliation_status', `reconciliation_status TEXT`)
+  addColumnIfMissing(
+    'staged_transactions',
+    'reconciliation_transaction_id',
+    `reconciliation_transaction_id TEXT REFERENCES transactions(id)`,
+  )
+  addColumnIfMissing('staged_transactions', 'reconciliation_reason', `reconciliation_reason TEXT`)
 
   sqlite.exec(`
     CREATE INDEX IF NOT EXISTS import_profiles_source_idx
@@ -477,6 +487,9 @@ function ensureIngestionSchema(): void {
 
     CREATE INDEX IF NOT EXISTS staged_transactions_account_idx
     ON staged_transactions(account_id);
+
+    CREATE INDEX IF NOT EXISTS staged_transactions_reconciliation_idx
+    ON staged_transactions(reconciliation_status);
 
     CREATE INDEX IF NOT EXISTS import_profile_mappings_profile_idx
     ON import_profile_mappings(import_profile_id);

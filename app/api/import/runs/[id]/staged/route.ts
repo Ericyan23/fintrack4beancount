@@ -23,6 +23,9 @@ interface StagedImportRunRow {
   transactionId: string | null
   rawItemId: string | null
   sourceItemKey: string | null
+  reconciliationStatus: string | null
+  reconciliationTransactionId: string | null
+  reconciliationReason: string | null
   validationErrors: string[]
   updatedAt: number
 }
@@ -61,6 +64,9 @@ function loadStagedRows(importRunId: string): StagedImportRunRow[] {
       staged_transactions.transaction_id AS transactionId,
       staged_transactions.raw_item_id AS rawItemId,
       staged_transactions.source_item_key AS sourceItemKey,
+      staged_transactions.reconciliation_status AS reconciliationStatus,
+      staged_transactions.reconciliation_transaction_id AS reconciliationTransactionId,
+      staged_transactions.reconciliation_reason AS reconciliationReason,
       staged_transactions.validation_errors AS validationErrors,
       staged_transactions.updated_at AS updatedAt
     FROM staged_transactions

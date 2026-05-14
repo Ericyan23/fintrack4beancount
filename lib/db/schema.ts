@@ -4,6 +4,7 @@ import type {
   ImportRunStatus,
   IngestionJsonObject,
   RawImportItemStatus,
+  PendingReconciliationStatus,
   SourceConnectionStatus,
   SourceKind,
   SourceStatus,
@@ -167,6 +168,9 @@ export const stagedTransactions = sqliteTable('staged_transactions', {
   normalizedPayload:  text('normalized_payload', { mode: 'json' }).$type<IngestionJsonObject>(),
   validationErrors:   text('validation_errors', { mode: 'json' }).$type<string[]>(),
   normalizerVersion:  text('normalizer_version'),
+  reconciliationStatus: text('reconciliation_status').$type<PendingReconciliationStatus>(),
+  reconciliationTransactionId: text('reconciliation_transaction_id').references(() => transactions.id),
+  reconciliationReason: text('reconciliation_reason'),
   createdAt:          integer('created_at').notNull(),
   updatedAt:          integer('updated_at').notNull(),
 }, (table) => [
@@ -174,6 +178,7 @@ export const stagedTransactions = sqliteTable('staged_transactions', {
   index('staged_transactions_raw_item_idx').on(table.rawItemId),
   index('staged_transactions_status_idx').on(table.status),
   index('staged_transactions_account_idx').on(table.accountId),
+  index('staged_transactions_reconciliation_idx').on(table.reconciliationStatus),
 ])
 
 export const transactionSplits = sqliteTable('transaction_splits', {

@@ -169,6 +169,19 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
   }
   assert.equal(columnDefault('transaction_splits', 'created_from'), `'manual_split'`)
 
+  const stagedTransactionColumns = columnNames('staged_transactions')
+  for (const column of [
+    'reconciliation_status',
+    'reconciliation_transaction_id',
+    'reconciliation_reason',
+  ]) {
+    assert.ok(stagedTransactionColumns.includes(column), `missing staged_transactions.${column}`)
+  }
+  assert.ok(
+    indexNames('staged_transactions').includes('staged_transactions_reconciliation_idx'),
+    'missing staged_transactions reconciliation index',
+  )
+
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM sources`), 2)
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM source_connections`), 2)
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM source_accounts`), 2)

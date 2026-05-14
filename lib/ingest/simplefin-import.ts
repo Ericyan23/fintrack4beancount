@@ -41,6 +41,34 @@ export interface StageSimpleFinPayloadResult {
   staged: number
   merged: number
   duplicates: number
+  pendingMatched: number
+  expiredPending: number
+}
+
+interface ExistingSimpleFinTransactionRow {
+  id: string
+  pending: number
+  status: string
+  sourceItemKey: string | null
+}
+
+interface PendingCanonicalTransactionRow {
+  id: string
+  accountId: string
+  sourceConnectionId: string
+  sourceAccountId: string
+  externalId: string | null
+  sourceItemKey: string | null
+  posted: number
+  transactedAt: number | null
+  amount: string
+  description: string
+  createdAt: number
+}
+
+interface PendingReconciliationMatch {
+  transactionId: string
+  reason: string
 }
 
 function dateToUnixSeconds(value: string | null | undefined): number | null {
@@ -167,19 +195,120 @@ function findExistingAccountId(externalAccountId: string): string | null {
   return row?.id ?? null
 }
 
-function findExistingSimpleFinTransaction(accountId: string | null, externalId: string | null): string | null {
+function findExistingSimpleFinTransaction(
+  accountId: string | null,
+  externalId: string | null,
+): ExistingSimpleFinTransactionRow | null {
   if (!accountId || !externalId) return null
 
   const row = sqlite.prepare(`
-    SELECT id
+    SELECT
+      id,
+      pending,
+      status,
+      source_item_key AS sourceItemKey
     FROM transactions
     WHERE account_id = ?
       AND source = 'simplefin'
       AND (id = ? OR external_id = ?)
     LIMIT 1
-  `).get(accountId, externalId, externalId) as { id: string } | undefined
+  `).get(accountId, externalId, externalId) as ExistingSimpleFinTransactionRow | undefined
 
-  return row?.id ?? null
+  return row ?? null
+}
+
+function normalizedDescription(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function findPendingCanonicalMatch(
+  transaction: NormalizedTransaction,
+  accountId: string | null,
+): PendingReconciliationMatch | null {
+  if (transaction.status !== 'posted' || !accountId) return null
+
+  const referenceDate = dateToUnixSeconds(transaction.transactedAt) ?? dateToUnixSeconds(transaction.date)
+  if (referenceDate === null) return null
+
+  const candidates = sqlite.prepare(`
+    SELECT
+      id,
+      account_id AS accountId,
+      source_connection_id AS sourceConnectionId,
+      source_account_id AS sourceAccountId,
+      external_id AS externalId,
+      source_item_key AS sourceItemKey,
+      posted,
+      transacted_at AS transactedAt,
+      amount,
+      description,
+      created_at AS createdAt
+    FROM transactions
+    WHERE source_connection_id = ?
+      AND source_account_id = ?
+      AND account_id = ?
+      AND source = 'simplefin'
+      AND pending = 1
+      AND status = 'pending'
+      AND amount = ?
+      AND COALESCE(transacted_at, posted) BETWEEN ? AND ?
+    ORDER BY ABS(COALESCE(transacted_at, posted) - ?) ASC, created_at DESC
+    LIMIT 10
+  `).all(
+    transaction.sourceConnectionId ?? null,
+    transaction.sourceAccountId,
+    accountId,
+    transaction.amount,
+    referenceDate - 10 * 86400,
+    referenceDate + 10 * 86400,
+    referenceDate,
+  ) as PendingCanonicalTransactionRow[]
+
+  const description = normalizedDescription(transaction.description)
+  const match = candidates.find(candidate => normalizedDescription(candidate.description) === description)
+  if (!match) return null
+
+  return {
+    transactionId: match.id,
+    reason: 'Matched posted SimpleFIN transaction to existing pending canonical transaction by source account, amount, description, and date window.',
+  }
+}
+
+function isPendingCanonical(row: ExistingSimpleFinTransactionRow | null): boolean {
+  return row?.pending === 1 && row.status === 'pending'
+}
+
+function selectExpiredPendingTransactions(
+  sourceConnectionId: string,
+  sourceAccountIds: string[],
+  observedSourceItemKeys: Set<string>,
+): PendingCanonicalTransactionRow[] {
+  if (sourceAccountIds.length === 0) return []
+  const cutoff = Math.floor(Date.now() / 1000) - 40 * 86400
+  const rows = sqlite.prepare(`
+    SELECT
+      id,
+      account_id AS accountId,
+      source_connection_id AS sourceConnectionId,
+      source_account_id AS sourceAccountId,
+      external_id AS externalId,
+      source_item_key AS sourceItemKey,
+      posted,
+      transacted_at AS transactedAt,
+      amount,
+      description,
+      created_at AS createdAt
+    FROM transactions
+    WHERE source_connection_id = ?
+      AND source_account_id IN (${sourceAccountIds.map(() => '?').join(', ')})
+      AND source = 'simplefin'
+      AND pending = 1
+      AND status = 'pending'
+      AND created_at < ?
+    ORDER BY created_at ASC, id ASC
+  `).all(sourceConnectionId, ...sourceAccountIds, cutoff) as PendingCanonicalTransactionRow[]
+
+  return rows.filter(row => row.sourceItemKey && !observedSourceItemKeys.has(row.sourceItemKey))
 }
 
 export function stageSimpleFinPayload(
@@ -226,7 +355,10 @@ export function stageSimpleFinPayload(
   let merged = 0
   let duplicates = 0
   let validationErrors = 0
+  let pendingMatched = 0
+  let expiredPending = 0
   const normalizedTransactionObjects = transactionObjectSet(normalized.transactions)
+  const observedSourceItemKeys = new Set<string>()
 
   for (const account of payload.accounts ?? []) {
     const externalAccountId = typeof account.id === 'string' && account.id.trim() ? account.id.trim() : null
@@ -285,9 +417,18 @@ export function stageSimpleFinPayload(
   }
 
   for (const transaction of normalized.transactions) {
+    observedSourceItemKeys.add(transaction.sourceItemKey)
     const sourceAccount = sourceAccountsById.get(transaction.sourceAccountId) ?? null
     const accountId = sourceAccount?.fintrackAccountId ?? transaction.accountId ?? null
-    const existingTransactionId = findExistingSimpleFinTransaction(accountId, transaction.externalId ?? null)
+    const existingTransaction = findExistingSimpleFinTransaction(accountId, transaction.externalId ?? null)
+    const pendingMatch = existingTransaction && isPendingCanonical(existingTransaction) && transaction.status === 'posted'
+      ? {
+          transactionId: existingTransaction.id,
+          reason: 'Matched posted SimpleFIN transaction to existing pending canonical transaction with the same provider id.',
+        }
+      : existingTransaction
+        ? null
+        : findPendingCanonicalMatch(transaction, accountId)
     const rowValidationErrors = requiredValidationErrors(transaction, accountId)
     const raw = insertRawImportItem({
       importRunId: run.id,
@@ -311,7 +452,7 @@ export function stageSimpleFinPayload(
       sourceConnectionId: connection.id,
       sourceAccountId: sourceAccount?.id ?? transaction.sourceAccountId,
       accountId,
-      transactionId: existingTransactionId,
+      transactionId: pendingMatch?.transactionId ?? existingTransaction?.id ?? null,
       externalId: transaction.externalId ?? null,
       sourceItemKey: transaction.sourceItemKey,
       posted: dateToUnixSeconds(transaction.date),
@@ -320,13 +461,78 @@ export function stageSimpleFinPayload(
       currency: transaction.currency ?? null,
       description: transaction.description,
       pending: transaction.pending ?? false,
-      status: existingTransactionId ? 'merged' : rowValidationErrors.length > 0 ? 'error' : 'staged',
+      status: existingTransaction && !pendingMatch
+        ? 'merged'
+        : pendingMatch && rowValidationErrors.length === 0
+          ? 'ready'
+          : rowValidationErrors.length > 0
+            ? 'error'
+            : 'staged',
       normalizedPayload: normalizedPayload(transaction),
       validationErrors: rowValidationErrors,
       normalizerVersion: transaction.normalizerVersion ?? SIMPLEFIN_NORMALIZER_VERSION,
+      reconciliationStatus: pendingMatch ? 'pending_matched_to_posted' : null,
+      reconciliationTransactionId: pendingMatch?.transactionId ?? null,
+      reconciliationReason: pendingMatch?.reason ?? null,
     })
-    if (existingTransactionId) merged++
-    else if (rowValidationErrors.length === 0) staged++
+    if (existingTransaction && !pendingMatch) merged++
+    else if (pendingMatch && rowValidationErrors.length === 0) {
+      pendingMatched++
+      staged++
+    } else if (rowValidationErrors.length === 0) staged++
+  }
+
+  for (const pending of selectExpiredPendingTransactions(
+    connection.id,
+    [...sourceAccountsById.keys()],
+    observedSourceItemKeys,
+  )) {
+    const rawPayload: IngestionJsonObject = {
+      type: 'pending_expired',
+      transactionId: pending.id,
+      sourceItemKey: pending.sourceItemKey,
+      externalId: pending.externalId,
+    }
+    const raw = insertRawImportItem({
+      importRunId: run.id,
+      sourceAccountId: pending.sourceAccountId,
+      externalId: pending.externalId,
+      sourceItemKey: pending.sourceItemKey ?? `pending-expired:${pending.id}`,
+      rawPayload,
+      status: 'error',
+    })
+
+    if (raw.status === 'duplicate') {
+      duplicates++
+      continue
+    }
+
+    const validationError = 'Pending transaction expired without a posted match; manual resolution required'
+    rawInserted++
+    validationErrors++
+    expiredPending++
+    insertStagedTransaction({
+      importRunId: run.id,
+      rawItemId: raw.item.id,
+      sourceConnectionId: pending.sourceConnectionId,
+      sourceAccountId: pending.sourceAccountId,
+      accountId: pending.accountId,
+      transactionId: pending.id,
+      externalId: pending.externalId,
+      sourceItemKey: pending.sourceItemKey,
+      posted: pending.posted,
+      transactedAt: pending.transactedAt,
+      amount: pending.amount,
+      description: pending.description,
+      pending: true,
+      status: 'error',
+      normalizedPayload: rawPayload,
+      validationErrors: [validationError],
+      normalizerVersion: options.normalizerVersion ?? SIMPLEFIN_NORMALIZER_VERSION,
+      reconciliationStatus: 'pending_expired',
+      reconciliationTransactionId: pending.id,
+      reconciliationReason: validationError,
+    })
   }
 
   finishImportRun({
@@ -348,5 +554,7 @@ export function stageSimpleFinPayload(
     staged,
     merged,
     duplicates,
+    pendingMatched,
+    expiredPending,
   }
 }
