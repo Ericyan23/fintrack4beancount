@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { after, beforeEach, test } from 'node:test'
+import { after, beforeEach, describe, test } from 'node:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -10,6 +10,7 @@ process.env.DB_PATH = path.join(tempDir, 'fintrack.db')
 
 const { sqlite } = require('../lib/db') as typeof import('../lib/db')
 const store = require('../lib/ingest/store') as typeof import('../lib/ingest/store')
+const listRoute = require('../app/api/import/runs/route') as typeof import('../app/api/import/runs/route')
 const runRoute = require('../app/api/import/runs/[id]/route') as typeof import('../app/api/import/runs/[id]/route')
 const stagedRoute = require('../app/api/import/runs/[id]/staged/route') as typeof import('../app/api/import/runs/[id]/staged/route')
 
@@ -417,4 +418,66 @@ test('POST /api/import/runs/:id/promote delegates to promoteStagedTransactions',
   assert.equal(typeof payload.promoted, 'number')
   assert.equal(typeof payload.skipped, 'number')
   assert.ok(Array.isArray(payload.errors))
+})
+
+// ── GET /api/import/runs (list) ───────────────────────────────────────────────
+
+describe('GET /api/import/runs', () => {
+  test('returns empty list when no runs exist', async () => {
+    const response = await listRoute.GET()
+    const payload = await response.json() as { runs: unknown[] }
+
+    assert.equal(response.status, 200)
+    assert.ok(Array.isArray(payload.runs))
+    assert.equal(payload.runs.length, 0)
+  })
+
+  test('returns run with correct aggregated staged counts', async () => {
+    const { runId } = seedImportRun()
+    const response = await listRoute.GET()
+    const payload = await response.json() as {
+      runs: Array<{
+        id: string
+        status: string
+        itemCount: number
+        connectionName: string | null
+        sourceKind: string | null
+        eligibleCount: number
+        errorCount: number
+        mergedCount: number
+      }>
+    }
+
+    assert.equal(response.status, 200)
+    assert.equal(payload.runs.length, 1)
+
+    const run = payload.runs[0]
+    assert.equal(run.id, runId)
+    assert.equal(run.status, 'completed')
+    assert.equal(run.itemCount, 4)
+    assert.equal(run.connectionName, 'API CSV Connection')
+    assert.equal(run.sourceKind, 'csv')
+    // staged(1) + ready(1) = 2 eligible
+    assert.equal(run.eligibleCount, 2)
+    assert.equal(run.errorCount, 1)
+    assert.equal(run.mergedCount, 1)
+  })
+
+  test('returns most recent run first when multiple runs exist', async () => {
+    seedImportRun()
+    // Push the first run into the past so ordering is deterministic
+    sqlite.prepare(`UPDATE import_runs SET created_at = 1000 WHERE id = 'run-api-review'`).run()
+    // second run — bare, no staged rows
+    const source = store.ensureSource({ id: 'csv', kind: 'csv', name: 'CSV' })
+    const conn = store.ensureSourceConnection({ id: 'csv:manual', sourceId: source.id, name: 'Manual' })
+    const run2 = store.createImportRun({ id: 'run-second', sourceConnectionId: conn.id })
+    store.finishImportRun({ id: run2.id })
+
+    const response = await listRoute.GET()
+    const payload = await response.json() as { runs: Array<{ id: string }> }
+
+    assert.equal(payload.runs.length, 2)
+    assert.equal(payload.runs[0].id, 'run-second')
+    assert.equal(payload.runs[1].id, 'run-api-review')
+  })
 })
