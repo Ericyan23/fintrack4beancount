@@ -843,14 +843,51 @@ export default function ImportRunPage() {
       )}
 
       {notice && (
-        <div className="rounded-md border border-emerald-800 bg-emerald-900/30 px-3 py-2 text-sm text-emerald-200">
-          Promoted {notice.promoted}, skipped {notice.skipped}, {notice.errors.length} errors.
+        <div className={`rounded-md border px-3 py-2 text-sm ${
+          notice.errors.length > 0
+            ? 'border-amber-800 bg-amber-900/30 text-amber-200'
+            : 'border-emerald-800 bg-emerald-900/30 text-emerald-200'
+        }`}>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span>
+              {notice.promoted} transaction{notice.promoted !== 1 ? 's' : ''} promoted.
+            </span>
+            {notice.skipped > 0 && (
+              <span className="text-xs opacity-75">
+                {notice.skipped} already imported or skipped.
+              </span>
+            )}
+            {notice.errors.length > 0 && (
+              <span>{notice.errors.length} failed — see details below.</span>
+            )}
+          </div>
           {notice.errors.length > 0 && (
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-emerald-100">
+            <ul className="mt-2 list-disc space-y-1 pl-5">
               {notice.errors.slice(0, 5).map((message, index) => (
                 <li key={`${message}-${index}`}>{message}</li>
               ))}
             </ul>
+          )}
+          {notice.errors.length === 0 && errorCount > 0 && (
+            <p className="mt-2 text-xs">
+              {errorCount} row{errorCount !== 1 ? 's' : ''} still have validation errors.{' '}
+              <button
+                onClick={() => setStatusFilter('error')}
+                className="underline hover:no-underline"
+              >
+                View errors
+              </button>
+            </p>
+          )}
+          {notice.errors.length === 0 && unmappedSourceAccounts.length > 0 && (
+            <p className="mt-2 text-xs">
+              {unmappedSourceAccounts.length} source account{unmappedSourceAccounts.length !== 1 ? 's' : ''} still unmapped — map them above to make more rows eligible.
+            </p>
+          )}
+          {notice.errors.length > 0 && eligibleCount > 0 && (
+            <p className="mt-2 text-xs">
+              {eligibleCount} row{eligibleCount !== 1 ? 's' : ''} still eligible — fix errors and promote again.
+            </p>
           )}
         </div>
       )}
