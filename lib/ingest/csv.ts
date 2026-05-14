@@ -66,9 +66,9 @@ export interface CsvNormalizationResult {
 }
 
 const FIELD_MATCHERS: Record<CsvImportField, string[]> = {
-  date: ['date', 'posted', 'transactiondate', 'transaction date'],
+  date: ['date', 'posted', 'transactiondate', 'transaction date', 'rundate', 'run date', 'transdate', 'trans date', 'postdate', 'post date', 'posteddate', 'posted date'],
   amount: ['amount', 'value'],
-  description: ['description', 'name', 'merchant', 'payee', 'memo'],
+  description: ['description', 'name', 'merchant', 'payee', 'memo', 'action'],
   account: ['account', 'accountname', 'account name'],
   category: ['category'],
   notes: ['notes', 'note'],
@@ -78,7 +78,13 @@ const FIELD_MATCHERS: Record<CsvImportField, string[]> = {
 }
 
 function normalizeHeader(header: string): string {
-  return header.trim().toLowerCase().replace(/[_-]/g, ' ').replace(/\s+/g, ' ')
+  return header
+    .trim()
+    .toLowerCase()
+    .replace(/\s*\([^)]*\)\s*$/, '') // strip trailing currency notation like ($) or (USD)
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function compactHeader(header: string): string {
@@ -164,7 +170,9 @@ export function normalizeCsvTransactions(
   csvText: string,
   options: CsvNormalizerOptions = {},
 ): CsvNormalizationResult {
-  const parsed = parseCsv(csvText)
+  // Strip UTF-8 BOM and leading blank lines (common in Excel/Fidelity/Schwab exports)
+  const cleaned = csvText.replace(/^﻿/, '').replace(/^[\r\n]+/, '')
+  const parsed = parseCsv(cleaned)
   const columns = parsed[0] ?? []
   const objects = rowsToObjects(parsed)
   const bodyRows = parsed.slice(1).filter(row => row.some(cellValue => cellValue.trim() !== ''))
@@ -172,7 +180,7 @@ export function normalizeCsvTransactions(
 
   let validRows = 0
   let errorRows = 0
-  const rows = objects.map((row, index) => {
+  const rows = objects.flatMap((row, index) => {
     const rowNumber = index + 2
     const rawPayload: CsvRawRowPayload = {
       rowNumber,
@@ -181,9 +189,14 @@ export function normalizeCsvTransactions(
       row,
     }
     const dateText = cell(row, mapping.date)
-    const posted = parseDate(dateText)
-    const amount = normalizeAmount(cell(row, mapping.amount))
+    const amountText = cell(row, mapping.amount)
     const description = cell(row, mapping.description)
+
+    // Skip footer/disclaimer rows (e.g. Fidelity legal text at end of file)
+    if (!amountText && !description) return []
+
+    const posted = parseDate(dateText)
+    const amount = normalizeAmount(amountText)
     const accountName = cell(row, mapping.account) || options.defaultAccountName || options.defaultAccount || ''
     const externalAccountId = options.defaultExternalAccountId || accountName
     const sourceAccountId = options.sourceAccountId ?? null
@@ -222,7 +235,7 @@ export function normalizeCsvTransactions(
     if (validationErrors.length === 0) validRows++
     else errorRows++
 
-    return {
+    return [{
       rowNumber,
       posted,
       date: dateText,
@@ -241,14 +254,14 @@ export function normalizeCsvTransactions(
       sourceItemIdentityInput,
       rawPayload,
       validationErrors,
-    }
+    }]
   })
 
   return {
     columns,
     mapping,
     rows,
-    totalRows: objects.length,
+    totalRows: rows.length,
     validRows,
     errorRows,
   }

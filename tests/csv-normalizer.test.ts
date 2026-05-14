@@ -147,3 +147,46 @@ describe('CSV ingestion normalizer', () => {
     )
   })
 })
+
+describe('Fidelity brokerage CSV', () => {
+  test('auto-detects Run Date / Action / Amount ($) columns despite UTF-8 BOM', () => {
+    const csv = readFixture('csv', 'fidelity-brokerage.csv')
+    const result = normalizeCsvTransactions(csv)
+
+    assert.equal(result.mapping.date, 'Run Date')
+    assert.equal(result.mapping.description, 'Action')
+    assert.equal(result.mapping.amount, 'Amount ($)')
+  })
+
+  test('parses all 5 transaction rows and skips footer disclaimer rows', () => {
+    const csv = readFixture('csv', 'fidelity-brokerage.csv')
+    const result = normalizeCsvTransactions(csv)
+
+    assert.equal(result.totalRows, 5, 'footer disclaimer rows must be excluded')
+    // No account column in Fidelity CSV — all rows have "Missing account" error, which is expected
+    const amountErrors = result.rows.filter(r =>
+      r.validationErrors.some(e => e === 'Invalid amount' || e === 'Invalid date'),
+    )
+    assert.equal(amountErrors.length, 0, 'no date or amount parse errors')
+  })
+
+  test('correctly parses amounts including negative stock purchases and positive sales', () => {
+    const csv = readFixture('csv', 'fidelity-brokerage.csv')
+    const result = normalizeCsvTransactions(csv)
+
+    const [deposit, buy, dividend, transfer, sell] = result.rows
+    assert.equal(deposit.amount, '2500.00')
+    assert.equal(buy.amount, '-500.00')
+    assert.equal(dividend.amount, '12.50')
+    assert.equal(transfer.amount, '-200.00')
+    assert.equal(sell.amount, '549.35')
+  })
+
+  test('parses MM/DD/YYYY dates', () => {
+    const csv = readFixture('csv', 'fidelity-brokerage.csv')
+    const result = normalizeCsvTransactions(csv)
+
+    assert.ok(result.rows[0].posted !== null, 'date should parse')
+    assert.equal(result.rows[0].date, '04/01/2025')
+  })
+})
