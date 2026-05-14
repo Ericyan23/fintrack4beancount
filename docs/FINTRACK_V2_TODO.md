@@ -377,9 +377,10 @@ Goal: make repeated operation reliable and auditable.
   - [ ] default ledger account hints
 - [ ] Add complete audit log for:
   - [ ] manual edits
-    - Progress: transaction detail manual edits now write `transaction_edit_history`; staged edits, ignore/restore, splits, rules, and exports still need coverage.
+    - Progress: transaction detail manual edits now write `transaction_edit_history`; staged edits, ignore/restore, rules, and exports still need coverage.
   - [ ] ignore/unignore
-  - [ ] split create/update/delete
+  - [x] split create/update/delete
+    - Progress: split replace/clear records `split_create`, `split_update`, and `split_delete` rows with actor, optional reason, and before/after split snapshots.
   - [ ] rule application
   - [ ] export run creation
 - [ ] Merge or rename `/categories` into Ledger Accounts & Rules.

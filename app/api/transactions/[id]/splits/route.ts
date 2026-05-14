@@ -6,6 +6,7 @@ import {
   replaceTransactionSplits,
   TransactionSplitConflictError,
   type TransactionSplitInput,
+  type TransactionSplitAuditMetadata,
 } from '@/lib/ingest/splits'
 
 interface RouteParams {
@@ -72,6 +73,15 @@ function parseSplits(body: Record<string, unknown>): { splits: TransactionSplitI
   return { splits }
 }
 
+function splitAuditFromBody(body: Record<string, unknown> | null): TransactionSplitAuditMetadata | undefined {
+  if (!body) return undefined
+
+  return {
+    actor: typeof body.actor === 'string' ? body.actor : undefined,
+    reason: typeof body.editReason === 'string' ? body.editReason : undefined,
+  }
+}
+
 function splitErrorResponse(error: unknown): NextResponse | null {
   if (error instanceof ParentTransactionNotFoundError) {
     return NextResponse.json({ error: error.message }, { status: 404 })
@@ -120,6 +130,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Ne
       splits: replaceTransactionSplits({
         parentTransactionId: id,
         splits: parsed.splits,
+        audit: splitAuditFromBody(body),
       }),
     })
   } catch (error) {
@@ -131,9 +142,16 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Ne
 
 export async function DELETE(_req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   const { id } = await params
+  let body: Record<string, unknown> | null = null
 
   try {
-    return NextResponse.json({ splits: clearTransactionSplits(id) })
+    body = await readBody(_req)
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  try {
+    return NextResponse.json({ splits: clearTransactionSplits(id, splitAuditFromBody(body)) })
   } catch (error) {
     const response = splitErrorResponse(error)
     if (response) return response

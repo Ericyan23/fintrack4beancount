@@ -10,6 +10,11 @@ export interface TransactionSplitInput {
   notes?: string | null
 }
 
+export interface TransactionSplitAuditMetadata {
+  actor?: string | null
+  reason?: string | null
+}
+
 export interface TransactionSplitRecord {
   id: string
   parentTransactionId: string
@@ -45,6 +50,20 @@ interface NormalizedSplitInput {
   parsedAmount: ParsedDecimal
 }
 
+interface TransactionSplitAuditSnapshot {
+  id: string
+  splitGroupId: string
+  amount: string
+  currency: string
+  ledgerAccount: string
+  memo: string | null
+  notes: string | null
+  sortOrder: number
+  createdFrom: string
+}
+
+type TransactionSplitAuditOperation = 'split_create' | 'split_update' | 'split_delete'
+
 export class ParentTransactionNotFoundError extends Error {
   constructor(parentTransactionId: string) {
     super(`Parent transaction not found: ${parentTransactionId}`)
@@ -76,6 +95,8 @@ const splitSelectSql = `
   WHERE parent_transaction_id = ?
   ORDER BY sort_order ASC, id ASC
 `
+
+const selectSplits = sqlite.prepare(splitSelectSql)
 
 const parentSelect = sqlite.prepare(`
   SELECT t.id,
@@ -109,15 +130,29 @@ const insertSplit = sqlite.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `)
 
+const insertSplitAudit = sqlite.prepare(`
+  INSERT INTO transaction_edit_history (
+    transaction_id,
+    actor,
+    reason,
+    fields,
+    before_values,
+    after_values,
+    created_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?)
+`)
+
 export function listTransactionSplits(parentTransactionId: string): TransactionSplitRecord[] {
   assertParentTransactionExists(parentTransactionId)
-  return sqlite.prepare(splitSelectSql).all(parentTransactionId) as TransactionSplitRecord[]
+  return selectTransactionSplits(parentTransactionId)
 }
 
 export function replaceTransactionSplits(input: {
   parentTransactionId: string
   splits: TransactionSplitInput[]
   createdFrom?: string
+  audit?: TransactionSplitAuditMetadata
 }): TransactionSplitRecord[] {
   const parent = getParentTransaction(input.parentTransactionId)
   if (!parent) {
@@ -149,7 +184,9 @@ export function replaceTransactionSplits(input: {
     updatedAt: now,
   }))
 
+  let storedRows: TransactionSplitRecord[] = []
   sqlite.transaction((transactionRows: typeof rows) => {
+    const beforeRows = selectTransactionSplits(input.parentTransactionId)
     deleteSplits.run(input.parentTransactionId)
     for (const row of transactionRows) {
       insertSplit.run(
@@ -167,19 +204,45 @@ export function replaceTransactionSplits(input: {
         row.updatedAt,
       )
     }
+    storedRows = selectTransactionSplits(input.parentTransactionId)
+    recordSplitAudit({
+      parentTransactionId: input.parentTransactionId,
+      beforeRows,
+      afterRows: storedRows,
+      audit: input.audit,
+      timestamp: now,
+    })
   })(rows)
 
-  return listTransactionSplits(input.parentTransactionId)
+  return storedRows
 }
 
-export function clearTransactionSplits(parentTransactionId: string): TransactionSplitRecord[] {
+export function clearTransactionSplits(
+  parentTransactionId: string,
+  audit?: TransactionSplitAuditMetadata,
+): TransactionSplitRecord[] {
   const parent = getParentTransaction(parentTransactionId)
   if (!parent) {
     throw new ParentTransactionNotFoundError(parentTransactionId)
   }
 
-  deleteSplits.run(parentTransactionId)
-  return listTransactionSplits(parentTransactionId)
+  let storedRows: TransactionSplitRecord[] = []
+  const now = Math.floor(Date.now() / 1000)
+
+  sqlite.transaction(() => {
+    const beforeRows = selectTransactionSplits(parentTransactionId)
+    deleteSplits.run(parentTransactionId)
+    storedRows = selectTransactionSplits(parentTransactionId)
+    recordSplitAudit({
+      parentTransactionId,
+      beforeRows,
+      afterRows: storedRows,
+      audit,
+      timestamp: now,
+    })
+  })()
+
+  return storedRows
 }
 
 export function hasTransactionSplits(parentTransactionId: string): boolean {
@@ -195,6 +258,10 @@ export function hasTransactionSplits(parentTransactionId: string): boolean {
 
 function getParentTransaction(parentTransactionId: string): ParentTransactionRow | undefined {
   return parentSelect.get(parentTransactionId) as ParentTransactionRow | undefined
+}
+
+function selectTransactionSplits(parentTransactionId: string): TransactionSplitRecord[] {
+  return selectSplits.all(parentTransactionId) as TransactionSplitRecord[]
 }
 
 function assertParentTransactionExists(parentTransactionId: string): void {
@@ -217,6 +284,65 @@ function assertParentCanHaveSplits(parentTransactionId: string): void {
       `Transaction ${parentTransactionId} is part of confirmed transfer match ${confirmedTransfer.id}; clear the transfer before adding split postings`,
     )
   }
+}
+
+function splitAuditSnapshot(rows: TransactionSplitRecord[]): TransactionSplitAuditSnapshot[] {
+  return rows.map(row => ({
+    id: row.id,
+    splitGroupId: row.splitGroupId,
+    amount: row.amount,
+    currency: row.currency,
+    ledgerAccount: row.ledgerAccount,
+    memo: row.memo,
+    notes: row.notes,
+    sortOrder: row.sortOrder,
+    createdFrom: row.createdFrom,
+  }))
+}
+
+function splitAuditOperation(
+  beforeSplits: TransactionSplitAuditSnapshot[],
+  afterSplits: TransactionSplitAuditSnapshot[],
+): TransactionSplitAuditOperation {
+  if (beforeSplits.length === 0 && afterSplits.length > 0) return 'split_create'
+  if (beforeSplits.length > 0 && afterSplits.length === 0) return 'split_delete'
+  return 'split_update'
+}
+
+function auditActor(audit: TransactionSplitAuditMetadata | undefined): string {
+  const trimmed = audit?.actor?.trim()
+  return trimmed || 'local'
+}
+
+function auditReason(
+  audit: TransactionSplitAuditMetadata | undefined,
+  operation: TransactionSplitAuditOperation,
+): string {
+  const trimmed = audit?.reason?.trim()
+  return trimmed || operation
+}
+
+function recordSplitAudit(input: {
+  parentTransactionId: string
+  beforeRows: TransactionSplitRecord[]
+  afterRows: TransactionSplitRecord[]
+  audit?: TransactionSplitAuditMetadata
+  timestamp: number
+}): void {
+  const beforeSplits = splitAuditSnapshot(input.beforeRows)
+  const afterSplits = splitAuditSnapshot(input.afterRows)
+  if (JSON.stringify(beforeSplits) === JSON.stringify(afterSplits)) return
+
+  const operation = splitAuditOperation(beforeSplits, afterSplits)
+  insertSplitAudit.run(
+    input.parentTransactionId,
+    auditActor(input.audit),
+    auditReason(input.audit, operation),
+    JSON.stringify([operation, 'splits']),
+    JSON.stringify({ operation, splits: beforeSplits }),
+    JSON.stringify({ operation, splits: afterSplits }),
+    input.timestamp,
+  )
 }
 
 function normalizeSplits(

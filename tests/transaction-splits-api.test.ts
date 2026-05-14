@@ -37,6 +37,15 @@ interface ParentSnapshot {
   updatedAt: number | null
 }
 
+interface SplitHistoryRow {
+  actor: string
+  reason: string | null
+  fields: string
+  beforeValues: string
+  afterValues: string
+  createdAt: number
+}
+
 function request(pathname: string, init?: RequestInit): NextRequest {
   return new Request(`http://localhost${pathname}`, init) as NextRequest
 }
@@ -47,6 +56,7 @@ function params(id: string): RouteContext {
 
 function resetDb(): void {
   sqlite.exec(`
+    DELETE FROM transaction_edit_history;
     DELETE FROM transaction_splits;
     DELETE FROM transfer_matches;
     DELETE FROM transactions;
@@ -158,6 +168,20 @@ function countSplits(): number {
   return row.value
 }
 
+function readSplitHistory(parentTransactionId: string): SplitHistoryRow[] {
+  return sqlite.prepare(`
+    SELECT actor,
+           reason,
+           fields,
+           before_values AS beforeValues,
+           after_values AS afterValues,
+           created_at AS createdAt
+    FROM transaction_edit_history
+    WHERE transaction_id = ?
+    ORDER BY id
+  `).all(parentTransactionId) as SplitHistoryRow[]
+}
+
 function confirmTransfer(outflowTransactionId: string, inflowTransactionId: string): void {
   sqlite.prepare(`
     INSERT INTO transfer_matches (
@@ -229,6 +253,8 @@ test('PUT /api/transactions/:id/splits writes valid split rows with durable trac
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        actor: 'eric',
+        editReason: 'split create via API',
         splits: [
           {
             amount: '-4.25',
@@ -265,6 +291,83 @@ test('PUT /api/transactions/:id/splits writes valid split rows with durable trac
   assert.deepEqual(payload.splits.map(split => split.createdFrom), ['manual_split', 'manual_split'])
   assert.deepEqual(payload.splits.map(split => split.createdAt), [1775001600, 1775001600])
   assert.deepEqual(payload.splits.map(split => split.updatedAt), [1775001600, 1775001600])
+
+  const history = readSplitHistory(parentTransactionId)
+  assert.equal(history.length, 1)
+  assert.equal(history[0].actor, 'eric')
+  assert.equal(history[0].reason, 'split create via API')
+  assert.deepEqual(JSON.parse(history[0].fields), ['split_create', 'splits'])
+  assert.equal(history[0].createdAt, 1775001600)
+
+  const beforeValues = JSON.parse(history[0].beforeValues) as { operation: string; splits: unknown[] }
+  const afterValues = JSON.parse(history[0].afterValues) as {
+    operation: string
+    splits: Array<{ amount: string; ledgerAccount: string }>
+  }
+  assert.equal(beforeValues.operation, 'split_create')
+  assert.deepEqual(beforeValues.splits, [])
+  assert.equal(afterValues.operation, 'split_create')
+  assert.deepEqual(afterValues.splits.map(split => split.amount), ['-4.25', '-5.75'])
+  assert.deepEqual(afterValues.splits.map(split => split.ledgerAccount), [
+    'Expenses:Food:Coffee',
+    'Expenses:Office',
+  ])
+})
+
+test('PUT /api/transactions/:id/splits records split update audit when replacing rows', async () => {
+  const parentTransactionId = insertParentTransaction()
+
+  await splitsRoute.PUT(
+    request(`/api/transactions/${parentTransactionId}/splits`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        splits: [
+          { amount: '-4.00', ledgerAccount: 'Expenses:Food' },
+          { amount: '-6.00', ledgerAccount: 'Expenses:Home' },
+        ],
+      }),
+    }),
+    params(parentTransactionId),
+  )
+
+  const response = await splitsRoute.PUT(
+    request(`/api/transactions/${parentTransactionId}/splits`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'eric',
+        editReason: 'rebalance split postings',
+        splits: [
+          { amount: '-3.00', ledgerAccount: 'Expenses:Travel' },
+          { amount: '-7.00', ledgerAccount: 'Expenses:Home' },
+        ],
+      }),
+    }),
+    params(parentTransactionId),
+  )
+  const payload = await response.json() as { splits: TransactionSplitRecord[] }
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(payload.splits.map(split => split.amount), ['-3.00', '-7.00'])
+
+  const history = readSplitHistory(parentTransactionId)
+  assert.equal(history.length, 2)
+  assert.equal(history[1].actor, 'eric')
+  assert.equal(history[1].reason, 'rebalance split postings')
+  assert.deepEqual(JSON.parse(history[1].fields), ['split_update', 'splits'])
+
+  const beforeValues = JSON.parse(history[1].beforeValues) as {
+    operation: string
+    splits: Array<{ amount: string; ledgerAccount: string }>
+  }
+  const afterValues = JSON.parse(history[1].afterValues) as {
+    operation: string
+    splits: Array<{ amount: string; ledgerAccount: string }>
+  }
+  assert.equal(beforeValues.operation, 'split_update')
+  assert.deepEqual(beforeValues.splits.map(split => split.amount), ['-4.00', '-6.00'])
+  assert.deepEqual(afterValues.splits.map(split => split.amount), ['-3.00', '-7.00'])
 })
 
 test('PUT /api/transactions/:id/splits returns 400 for invalid split totals', async () => {
@@ -288,6 +391,7 @@ test('PUT /api/transactions/:id/splits returns 400 for invalid split totals', as
   assert.equal(response.status, 400)
   assert.equal(payload.error, 'Split amounts must sum exactly to parent transaction amount')
   assert.equal(countSplits(), 0)
+  assert.deepEqual(readSplitHistory(parentTransactionId), [])
 })
 
 test('PUT /api/transactions/:id/splits returns 409 for confirmed transfer parents', async () => {
@@ -338,7 +442,14 @@ test('DELETE /api/transactions/:id/splits clears split rows without mutating the
   const parentBeforeDelete = readParentTransaction(parentTransactionId)
 
   const response = await splitsRoute.DELETE(
-    request(`/api/transactions/${parentTransactionId}/splits`, { method: 'DELETE' }),
+    request(`/api/transactions/${parentTransactionId}/splits`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: 'eric',
+        editReason: 'remove split postings',
+      }),
+    }),
     params(parentTransactionId),
   )
   const payload = await response.json() as { splits: TransactionSplitRecord[] }
@@ -347,6 +458,19 @@ test('DELETE /api/transactions/:id/splits clears split rows without mutating the
   assert.deepEqual(payload.splits, [])
   assert.equal(countSplits(), 0)
   assert.deepEqual(readParentTransaction(parentTransactionId), parentBeforeDelete)
+
+  const history = readSplitHistory(parentTransactionId)
+  assert.equal(history.length, 2)
+  assert.equal(history[1].actor, 'eric')
+  assert.equal(history[1].reason, 'remove split postings')
+  assert.deepEqual(JSON.parse(history[1].fields), ['split_delete', 'splits'])
+
+  const beforeValues = JSON.parse(history[1].beforeValues) as { operation: string; splits: unknown[] }
+  const afterValues = JSON.parse(history[1].afterValues) as { operation: string; splits: unknown[] }
+  assert.equal(beforeValues.operation, 'split_delete')
+  assert.equal(beforeValues.splits.length, 2)
+  assert.equal(afterValues.operation, 'split_delete')
+  assert.deepEqual(afterValues.splits, [])
 })
 
 test('PUT and DELETE /api/transactions/:id/splits return 404 for a missing parent transaction', async () => {
