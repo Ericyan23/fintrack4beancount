@@ -262,7 +262,7 @@ export default function CommandCenter() {
           title="Canonical Transactions"
           metric={String(canonical.total)}
           metricClass="text-slate-100"
-          sub={`${canonical.categorized} categorized · ${canonical.pending} pending · ${reviewCount} need prep`}
+          sub={`${canonical.categorized} assigned · ${canonical.pending} pending · ${reviewCount} need prep`}
           href="/beancount"
           cta="Open Export Center"
         />

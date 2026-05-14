@@ -94,7 +94,7 @@ function beancountStatusClass(status: CategoryStat['beancount_status']): string 
 }
 
 function CategorySelectInner({
-  value, onChange, placeholder = '-- Select category --',
+  value, onChange, placeholder = '-- Select ledger account --',
   className = '', autoFocus, onBlur, searchable = false,
 }: Props) {
   const [categories, setCategories] = useState<string[]>(() => categoryOptionsCache?.categories ?? [])
@@ -338,7 +338,7 @@ function CategorySelectInner({
           >
             {filteredCategories.length === 0 ? (
               <div className="space-y-2 p-2">
-                <p className="px-2 py-1 text-xs text-slate-500">No matching categories</p>
+                <p className="px-2 py-1 text-xs text-slate-500">No matching ledger accounts</p>
                 <button
                   type="button"
                   onMouseDown={event => event.preventDefault()}
@@ -349,7 +349,7 @@ function CategorySelectInner({
                   }}
                   className="w-full rounded px-2 py-2.5 text-left text-xs text-blue-300 hover:bg-slate-700"
                 >
-                  + Create {query.trim() || 'category'}
+                  + Create {query.trim() || 'ledger account'}
                 </button>
               </div>
             ) : (
@@ -398,7 +398,7 @@ function CategorySelectInner({
                   }}
                   className="w-full border-t border-slate-700 px-3 py-2.5 text-left text-xs text-blue-300 hover:bg-slate-700"
                 >
-                  + Create category...
+                  + Create ledger account...
                 </button>
               </>
             )}
@@ -425,7 +425,7 @@ function CategorySelectInner({
           {cats.map(c => <option key={c} value={c}>{c}</option>)}
         </optgroup>
       ))}
-      <option value="__add__">+ Create category...</option>
+      <option value="__add__">+ Create ledger account...</option>
     </select>
   )
 }
@@ -442,7 +442,7 @@ export default function CategorySelect(props: Props) {
         onChange={() => {}}
         className={`bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100 ${props.className ?? ''}`}
       >
-        <option value="">{props.placeholder ?? '-- Select category --'}</option>
+        <option value="">{props.placeholder ?? '-- Select ledger account --'}</option>
       </select>
     )
   }

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   if (!body.pattern || !body.category) {
-    return NextResponse.json({ error: 'pattern and category required' }, { status: 400 })
+    return NextResponse.json({ error: 'pattern and ledger account required' }, { status: 400 })
   }
 
   // Validate regex

@@ -80,7 +80,7 @@ function formatSignedAmount(amount: string): { text: string; positive: boolean }
 }
 
 function reasonLabel(reason: ReviewGroup['reason']): string {
-  if (reason === 'uncategorized') return 'Uncategorized'
+  if (reason === 'uncategorized') return 'Missing ledger account'
   if (reason === 'review_category') return 'Marked for review'
   return 'Mixed'
 }
@@ -172,7 +172,7 @@ export default function ReviewPage() {
         return
       }
       setMessage(
-        `Categorized ${data.changed ?? 0} transactions${data.ruleCreated ? ' and saved a rule' : ''}`,
+        `Assigned ${data.changed ?? 0} transactions${data.ruleCreated ? ' and saved a rule' : ''}`,
       )
       setForms(prev => {
         const next = { ...prev }
@@ -231,7 +231,7 @@ export default function ReviewPage() {
           ['all', 'All'],
           ['spending', 'Outflows'],
           ['income', 'Inflows'],
-          ['uncategorized', 'Uncategorized'],
+          ['uncategorized', 'Missing ledger account'],
           ['review', 'Marked for review'],
         ].map(([value, label]) => (
           <button

@@ -26,8 +26,17 @@ function formatDate(ts: number): string {
   })
 }
 
-function hasPendingSuggestion(txn: TransactionListRow): txn is TransactionListRow & { suggestedCat: string } {
-  return !txn.category && typeof txn.suggestedCat === 'string' && txn.suggestedCat.length > 0
+function ledgerAccountFor(txn: TransactionListRow): string | null {
+  return txn.ledgerAccount ?? txn.category ?? null
+}
+
+function suggestedLedgerAccountFor(txn: TransactionListRow): string | null {
+  return txn.suggestedLedgerAccount ?? txn.suggestedCat ?? null
+}
+
+function hasPendingSuggestion(txn: TransactionListRow): boolean {
+  const suggested = suggestedLedgerAccountFor(txn)
+  return !ledgerAccountFor(txn) && typeof suggested === 'string' && suggested.length > 0
 }
 
 interface Props {
@@ -39,7 +48,7 @@ interface Props {
 export default function TransactionList({ transactions: txns, accounts = [], onUpdate }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [bulkCategory, setBulkCategory] = useState('')
+  const [bulkLedgerAccount, setBulkLedgerAccount] = useState('')
   const [loading, setLoading] = useState<Record<string, boolean>>({})
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({})
   const [bulkAccepting, setBulkAccepting] = useState(false)
@@ -50,13 +59,13 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
     [selected, txns],
   )
 
-  const updateCategory = useCallback(async (id: string, category: string) => {
+  const updateLedgerAccount = useCallback(async (id: string, ledgerAccount: string) => {
     setLoading(prev => ({ ...prev, [id]: true }))
     try {
       await fetch(`/api/transactions/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category }),
+        body: JSON.stringify({ ledgerAccount }),
       })
       onUpdate?.()
     } finally {
@@ -66,9 +75,10 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
   }, [onUpdate])
 
   const confirmSuggested = useCallback(async (txn: TransactionListRow) => {
-    if (!txn.suggestedCat) return
-    await updateCategory(txn.id, txn.suggestedCat)
-  }, [updateCategory])
+    const suggestedLedgerAccount = suggestedLedgerAccountFor(txn)
+    if (!suggestedLedgerAccount) return
+    await updateLedgerAccount(txn.id, suggestedLedgerAccount)
+  }, [updateLedgerAccount])
 
   const ignoreSuggested = useCallback(async (txn: TransactionListRow) => {
     setLoading(prev => ({ ...prev, [txn.id]: true }))
@@ -76,7 +86,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
       await fetch(`/api/transactions/${encodeURIComponent(txn.id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suggestedCat: null }),
+        body: JSON.stringify({ suggestedLedgerAccount: null }),
       })
       onUpdate?.()
     } finally {
@@ -117,7 +127,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
   }
 
   const applyBulk = async () => {
-    if (!bulkCategory || selected.size === 0) return
+    if (!bulkLedgerAccount || selected.size === 0) return
     const ids = Array.from(selected)
     setLoading(prev => {
       const next = { ...prev }
@@ -130,14 +140,14 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
           fetch(`/api/transactions/${encodeURIComponent(id)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ category: bulkCategory }),
+            body: JSON.stringify({ ledgerAccount: bulkLedgerAccount }),
           }),
         ),
       )
       const failed = responses.filter(res => !res.ok).length
       if (failed > 0) alert(`${failed} transaction updates failed`)
       setSelected(new Set())
-      setBulkCategory('')
+      setBulkLedgerAccount('')
       onUpdate?.()
     } finally {
       setLoading(prev => {
@@ -166,7 +176,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
           fetch(`/api/transactions/${encodeURIComponent(txn.id)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ category: txn.suggestedCat }),
+            body: JSON.stringify({ ledgerAccount: suggestedLedgerAccountFor(txn) }),
           }),
         ),
       )
@@ -215,7 +225,9 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
       <div className="space-y-1">
         {txns.map(txn => {
           const { text: amtText, positive } = formatAmount(txn.amount)
-          const isUnclassified = !txn.category
+          const ledgerAccount = ledgerAccountFor(txn)
+          const suggestedLedgerAccount = suggestedLedgerAccountFor(txn)
+          const needsLedgerAccount = !ledgerAccount
           const isEditing = editingId === txn.id
           const isSelected = selected.has(txn.id)
           const accountName = accountNames.get(txn.accountId)
@@ -225,7 +237,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
             <div
               key={txn.id}
               className={`rounded-lg p-3 transition-colors ${
-                isUnclassified
+                needsLedgerAccount
                   ? 'bg-amber-950/40 border border-amber-800/50'
                   : 'bg-slate-800 border border-slate-700'
               } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
@@ -276,23 +288,23 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
                     {isEditing ? (
                       <CategorySelect
                         autoFocus
-                        value={txn.category ?? ''}
-                        onChange={v => { if (v) updateCategory(txn.id, v) }}
+                        value={ledgerAccount ?? ''}
+                        onChange={v => { if (v) updateLedgerAccount(txn.id, v) }}
                         onBlur={() => setEditingId(null)}
                         className="text-xs"
                       />
                     ) : (
                       <CategoryBadge
-                        category={txn.category}
-                        suggested={txn.suggestedCat}
+                        category={ledgerAccount}
+                        suggested={suggestedLedgerAccount}
                         onClick={() => setEditingId(txn.id)}
                       />
                     )}
 
-                    {!txn.category && txn.suggestedCat && (
+                    {!ledgerAccount && suggestedLedgerAccount && (
                       <div className="flex items-center gap-1 text-xs">
                         <span className="text-slate-400">AI suggestion:</span>
-                        <span className="text-blue-300">{txn.suggestedCat}</span>
+                        <span className="text-blue-300">{suggestedLedgerAccount}</span>
                         <button
                           onClick={() => confirmSuggested(txn)}
                           disabled={loading[txn.id]}
@@ -310,7 +322,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
                       </div>
                     )}
 
-                    {!txn.category && !txn.suggestedCat && (
+                    {!ledgerAccount && !suggestedLedgerAccount && (
                       <button
                         onClick={() => askAI(txn.id)}
                         disabled={aiLoading[txn.id]}
@@ -354,14 +366,14 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
             </button>
           )}
           <CategorySelect
-            value={bulkCategory}
-            onChange={setBulkCategory}
-            placeholder="-- Set category in bulk --"
+            value={bulkLedgerAccount}
+            onChange={setBulkLedgerAccount}
+            placeholder="-- Set ledger account in bulk --"
             className="flex-1 min-w-0 py-1.5"
           />
           <button
             onClick={applyBulk}
-            disabled={!bulkCategory}
+            disabled={!bulkLedgerAccount}
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded shrink-0"
           >
             Apply

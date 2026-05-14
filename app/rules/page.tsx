@@ -154,13 +154,13 @@ export default function RulesPage() {
         // skip invalid
       }
     }
-    setTestResult('No matching rule (uncategorized)')
+    setTestResult('No matching rule (no ledger account)')
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
-        <h1 className="text-xl font-bold shrink-0">Category Rules</h1>
+        <h1 className="text-xl font-bold shrink-0">Ledger Account Rules</h1>
         <div className="flex flex-col items-end gap-1.5">
           <div className="flex gap-2">
             <button
@@ -180,7 +180,7 @@ export default function RulesPage() {
           </div>
           {applyResult && (
             <span className="text-xs text-green-400 text-right">
-              Rules: ✓ categorized {applyResult.applied}, {applyResult.remaining} remaining
+              Rules: assigned {applyResult.applied}, {applyResult.remaining} remaining
             </span>
           )}
           {classifyProgress && (
@@ -211,7 +211,7 @@ export default function RulesPage() {
                 ? `✕ ${classifyResult.error}`
                 : classifyResult.info
                 ? `ℹ ${classifyResult.info}`
-                : `AI: ✦ suggested ${classifyResult.suggested}, ${classifyResult.remaining} uncategorized remaining`}
+                : `AI: ✦ suggested ${classifyResult.suggested}, ${classifyResult.remaining} without ledger account remaining`}
             </span>
           )}
         </div>
@@ -234,7 +234,7 @@ export default function RulesPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">Category</label>
+              <label className="text-xs text-slate-400 block mb-1">Ledger account</label>
               <CategorySelect
                 value={category}
                 onChange={setCategory}
@@ -286,13 +286,13 @@ export default function RulesPage() {
         )}
       </div>
 
-      {/* Category manager */}
+      {/* Ledger account manager */}
       <div>
         <button
           onClick={() => setShowCatManager(v => !v)}
           className="w-full flex items-center justify-between text-sm font-medium text-slate-400 hover:text-slate-200 py-1"
         >
-          <span>Category management ({catStats.length})</span>
+          <span>Ledger account management ({catStats.length})</span>
           <span>{showCatManager ? '▲ Collapse' : '▼ Expand'}</span>
         </button>
         {showCatManager && <div className="mt-3"><CategoryManager initialStats={catStats} /></div>}
@@ -305,14 +305,14 @@ export default function RulesPage() {
           <p className="text-slate-500 text-sm">Loading...</p>
         ) : rules.length === 0 ? (
           <div className="bg-slate-800 rounded-xl p-6 text-center text-slate-500 border border-slate-700">
-            No rules yet. Create one to start automatic categorization.
+            No rules yet. Create one to start automatic assignment.
           </div>
         ) : (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="hidden md:grid grid-cols-[60px_1fr_1fr_60px_80px] gap-4 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
               <span>Priority</span>
               <span>Pattern (regex)</span>
-              <span>Category</span>
+              <span>Ledger account</span>
               <span>ID</span>
               <span>Actions</span>
             </div>

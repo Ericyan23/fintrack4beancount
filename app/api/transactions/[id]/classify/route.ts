@@ -21,7 +21,7 @@ export async function POST(_req: NextRequest, { params }: RouteParams): Promise<
     return NextResponse.json({ error: `AI request failed: ${msg}` }, { status: 502 })
   }
   if (!suggested) {
-    return NextResponse.json({ error: 'No suitable category was matched. Check your API key configuration' }, { status: 422 })
+    return NextResponse.json({ error: 'No suitable ledger account was matched. Check your API key configuration' }, { status: 422 })
   }
 
   db.update(transactions)

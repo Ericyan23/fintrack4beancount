@@ -75,7 +75,7 @@ const FIELD_LABELS: Array<[ImportField, string, boolean]> = [
   ['amount', 'Amount', true],
   ['description', 'Description', true],
   ['account', 'Account column', false],
-  ['category', 'Category', false],
+  ['category', 'Ledger Account', false],
   ['notes', 'Notes', false],
   ['tags', 'Tags', false],
   ['status', 'Status', false],

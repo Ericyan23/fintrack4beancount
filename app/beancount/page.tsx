@@ -291,7 +291,7 @@ function IssueList({ title, items, tone }: { title: string; items: PreflightIssu
                 <DetailLine label="transactionId" value={item.transactionId ? <TransactionId id={item.transactionId} /> : undefined} />
                 <DetailLine label="transferMatchId" value={item.transferMatchId} />
                 <DetailLine label="account" value={item.account} />
-                <DetailLine label="category" value={item.category} />
+                <DetailLine label="ledger account" value={item.category} />
                 <DetailLine label="sourceId" value={item.sourceId ? <span className="font-mono">{item.sourceId}</span> : undefined} />
               </div>
             </article>
@@ -317,7 +317,7 @@ function TransactionRow({ txn }: { txn: PreflightTransaction }) {
           <p className="mt-1 truncate text-sm font-medium text-slate-100">{txn.description}</p>
           <div className="mt-2 grid gap-1 text-xs md:grid-cols-2">
             <DetailLine label="account" value={txn.beancountAccount ?? 'Unmapped'} />
-            <DetailLine label="category" value={txn.category ?? 'Uncategorized'} />
+            <DetailLine label="ledger account" value={txn.category ?? 'Unassigned'} />
             <DetailLine label="sourceId" value={<span className="font-mono">{txn.sourceId}</span>} />
           </div>
         </div>

@@ -30,7 +30,7 @@ interface Props {
 
 export default function CategoryBadge({ category, suggested, onClick, className = '' }: Props) {
   const colorClass = getCategoryColor(category)
-  const label = category ?? (suggested ? `${suggested} ?` : 'Uncategorized')
+  const label = category ?? (suggested ? `${suggested} ?` : 'Unassigned')
 
   return (
     <button

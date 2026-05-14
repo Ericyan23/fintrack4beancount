@@ -230,7 +230,7 @@ export default function CategoryManager({ initialStats }: Props) {
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <p className="text-xs text-slate-400">Categories</p>
+          <p className="text-xs text-slate-400">Ledger accounts</p>
           <p className="text-xl font-semibold text-slate-100">{stats.length}</p>
         </div>
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
@@ -253,7 +253,7 @@ export default function CategoryManager({ initialStats }: Props) {
       </div>
 
       <form onSubmit={doAdd} className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-        <label className="text-xs text-slate-400 block mb-2">Create category</label>
+        <label className="text-xs text-slate-400 block mb-2">Create ledger account</label>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             value={newName}
@@ -275,7 +275,7 @@ export default function CategoryManager({ initialStats }: Props) {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search categories"
+          placeholder="Search ledger accounts"
           className="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
         />
         <select
@@ -292,7 +292,7 @@ export default function CategoryManager({ initialStats }: Props) {
 
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <div className="hidden lg:grid grid-cols-[1.3fr_120px_160px_120px_140px_240px] gap-4 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
-          <span>Category</span>
+          <span>Ledger account</span>
           <span>Group</span>
           <span>Impact</span>
           <span>Type</span>
@@ -301,13 +301,13 @@ export default function CategoryManager({ initialStats }: Props) {
         </div>
 
         {filteredStats.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-slate-500">No matching categories</div>
+          <div className="px-4 py-8 text-center text-sm text-slate-500">No matching ledger accounts</div>
         ) : (
           filteredStats.map((cat, i) => {
             const protectedCategory = Boolean(cat.is_required || cat.is_virtual)
             const canDelete = !protectedCategory && impactTotal(cat) === 0
             const usageTitle = protectedCategory
-              ? 'System categories cannot use this action'
+              ? 'System ledger accounts cannot use this action'
               : impactTotal(cat) > 0
               ? 'Referenced by records; merge first'
               : 'Delete'
@@ -322,7 +322,7 @@ export default function CategoryManager({ initialStats }: Props) {
                     <Link href={transactionHref(cat.name)} className="text-sm text-slate-100 font-mono hover:text-blue-300 break-all">
                       {cat.name}
                     </Link>
-                    {cat.is_virtual ? <p className="text-xs text-slate-500 mt-1">Virtual category</p> : null}
+                    {cat.is_virtual ? <p className="text-xs text-slate-500 mt-1">Virtual ledger account</p> : null}
                   </div>
                   <span className="text-xs text-slate-400">{categoryGroup(cat.name)}</span>
                   <span className="text-xs text-slate-400">{impactLabel(cat)}</span>
@@ -344,7 +344,7 @@ export default function CategoryManager({ initialStats }: Props) {
                         setError(null)
                       }}
                       disabled={loading || protectedCategory}
-                      title={protectedCategory ? 'System categories cannot be renamed' : 'Rename'}
+                      title={protectedCategory ? 'System ledger accounts cannot be renamed' : 'Rename'}
                       className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed rounded"
                     >
                       Rename
@@ -357,7 +357,7 @@ export default function CategoryManager({ initialStats }: Props) {
                         setError(null)
                       }}
                       disabled={loading || protectedCategory}
-                      title={protectedCategory ? 'System categories cannot be merged' : 'Merge into another category'}
+                      title={protectedCategory ? 'System ledger accounts cannot be merged' : 'Merge into another ledger account'}
                       className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed rounded"
                     >
                       Merge
@@ -384,7 +384,7 @@ export default function CategoryManager({ initialStats }: Props) {
                         if (e.key === 'Enter') doRename(cat.name)
                         if (e.key === 'Escape') setRenamingFrom(null)
                       }}
-                      placeholder="New category name"
+                      placeholder="New ledger account name"
                       className="flex-1 bg-slate-700 border border-blue-500 rounded px-2 py-1 text-xs text-slate-100 placeholder-slate-500"
                     />
                     <button
@@ -409,7 +409,7 @@ export default function CategoryManager({ initialStats }: Props) {
                       onChange={e => setMergeTarget(e.target.value)}
                       className="flex-1 bg-slate-700 border border-amber-500 rounded px-2 py-1 text-xs text-slate-100"
                     >
-                      <option value="">Select target category</option>
+                      <option value="">Select target ledger account</option>
                       {targetNames.filter(name => name !== cat.name && name !== 'Uncategorized').map(name => (
                         <option key={name} value={name}>{name}</option>
                       ))}

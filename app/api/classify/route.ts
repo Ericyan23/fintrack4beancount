@@ -82,7 +82,7 @@ export async function POST(): Promise<Response> {
 
       const cats = loadCategories()
       if (cats.length === 0) {
-        send(controller, { type: 'error', error: 'The category list is empty. Add categories first' })
+        send(controller, { type: 'error', error: 'The ledger account list is empty. Add ledger accounts first' })
         controller.close()
         return
       }
@@ -99,7 +99,7 @@ export async function POST(): Promise<Response> {
 
       if (unclassified.length === 0) {
         const remaining = countRemainingUnclassified()
-        send(controller, { type: 'done', suggested: 0, remaining, info: 'All uncategorized transactions already have AI suggestions' })
+        send(controller, { type: 'done', suggested: 0, remaining, info: 'All unassigned transactions already have AI suggestions' })
         controller.close()
         return
       }

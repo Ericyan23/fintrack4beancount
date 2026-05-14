@@ -28,10 +28,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const ledgerAccount = body.category?.trim()
   const transactionIds = Array.from(new Set(body.transactionIds ?? [])).filter(Boolean)
 
-  if (!ledgerAccount) return NextResponse.json({ error: 'category required' }, { status: 400 })
+  if (!ledgerAccount) return NextResponse.json({ error: 'ledger account required' }, { status: 400 })
   if (transactionIds.length === 0) return NextResponse.json({ error: 'transactionIds required' }, { status: 400 })
   if (!categoryExists(ledgerAccount)) {
-    return NextResponse.json({ error: `category not found: ${ledgerAccount}` }, { status: 400 })
+    return NextResponse.json({ error: `ledger account not found: ${ledgerAccount}` }, { status: 400 })
   }
 
   const shouldCreateRule = Boolean(body.createRule)

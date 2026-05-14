@@ -1083,7 +1083,7 @@ export default function ImportRunPage() {
                 <span>Posted</span>
                 <span>Amount</span>
                 <span>Description</span>
-                <span>Category</span>
+                <span>Ledger Account</span>
                 <span>Notes</span>
                 <span>Tags</span>
                 <span>Pending</span>
@@ -1175,7 +1175,7 @@ export default function ImportRunPage() {
                         onChange={event => updateDraft(key, { category: event.target.value })}
                         disabled={disabled}
                         className={COMPACT_FIELD_CLASS}
-                        aria-label="Category"
+                        aria-label="Ledger account"
                       />
                     </span>
                     <span>

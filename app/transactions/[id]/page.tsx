@@ -114,7 +114,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
   const [account, setAccount] = useState<AccountInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [category, setCategory] = useState('')
+  const [ledgerAccount, setLedgerAccount] = useState('')
   const [notes, setNotes] = useState('')
   const [splits, setSplits] = useState<TransactionSplitFormRow[]>([])
   const [splitLoading, setSplitLoading] = useState(true)
@@ -149,7 +149,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
         if (cancelled) return
 
         setTxn(transaction)
-        setCategory(transaction.category ?? '')
+        setLedgerAccount(transaction.ledgerAccount ?? transaction.category ?? '')
         setNotes(transaction.notes ?? '')
 
         const [accountsResult, splitsResult] = await Promise.allSettled([
@@ -211,13 +211,13 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        category: category || null,
+        ledgerAccount: ledgerAccount || null,
         notes: notes || null,
       }),
     })
     setSaving(false)
     router.back()
-  }, [txn, category, notes, router])
+  }, [txn, ledgerAccount, notes, router])
 
   const updateSplit = useCallback((index: number, field: SplitField, value: string) => {
     setSplits(current => current.map((split, splitIndex) => (
@@ -243,14 +243,19 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
       {
         localId: newLocalId(),
         amount: txn.amount,
-        ledgerAccount: category || txn.category || txn.suggestedCat || '',
+        ledgerAccount: ledgerAccount
+          || txn.ledgerAccount
+          || txn.category
+          || txn.suggestedLedgerAccount
+          || txn.suggestedCat
+          || '',
         memo: '',
         notes: '',
       },
       blankSplitRow(),
     ])
     setSplitError(null)
-  }, [txn, category])
+  }, [txn, ledgerAccount])
 
   const saveSplits = useCallback(async () => {
     if (!txn) return
@@ -326,6 +331,8 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
 
   const amount = parseFloat(txn.amount)
   const isPositive = amount > 0
+  const currentLedgerAccount = txn.ledgerAccount ?? txn.category ?? null
+  const suggestedLedgerAccount = txn.suggestedLedgerAccount ?? txn.suggestedCat ?? null
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -360,14 +367,14 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
         <h2 className="text-sm font-medium text-slate-300">Edit details</h2>
 
         <div>
-          <label className="text-xs text-slate-400 block mb-1">Category</label>
-          {txn.suggestedCat && !txn.category && (
-            <p className="text-xs text-blue-400 mb-1">AI suggestion: {txn.suggestedCat}</p>
+          <label className="text-xs text-slate-400 block mb-1">Ledger account</label>
+          {suggestedLedgerAccount && !currentLedgerAccount && (
+            <p className="text-xs text-blue-400 mb-1">AI suggestion: {suggestedLedgerAccount}</p>
           )}
           <CategorySelect
-            value={category}
-            onChange={setCategory}
-            placeholder="-- Uncategorized --"
+            value={ledgerAccount}
+            onChange={setLedgerAccount}
+            placeholder="-- Unassigned --"
             className="w-full py-2"
           />
         </div>

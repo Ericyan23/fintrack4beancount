@@ -63,8 +63,8 @@ SimpleFIN / CSV / future APIs
 - [x] Hide or freeze `/reports` until ingestion/export workflows are stable.
 - [x] Stop investing in net worth and spending charts as core product features.
 - [x] Keep PWA/manifest as low-maintenance only.
-- [ ] Reframe `/categories` away from generic category CRUD; focus on ledger accounts, rules, and suggestions.
-  - Progress: standalone Categories is hidden from primary navigation; route/API are still retained.
+- [x] Reframe `/categories` away from generic category CRUD; focus on ledger accounts, rules, and suggestions.
+  - Progress: standalone Categories is hidden from primary navigation; visible UI now frames the retained route as ledger account taxonomy; legacy category route/API names are retained for compatibility.
 - [ ] Keep AI categorization optional and behind rules/manual review.
 - [x] Do not build a Fava-like ledger viewer.
 
@@ -311,7 +311,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
 ### Classification And Review Semantics
 
 - [ ] Stop using `transactions.category` for multiple meanings.
-  - Progress: `category` remains as a compatibility mirror, but review/export/classification now prefer dedicated ledger prep fields.
+  - Progress: `category` remains as a compatibility mirror, but review/export/classification/manual edit paths now prefer dedicated ledger prep fields.
 - [x] Introduce clearer fields or an enrichment table:
   - [x] `ledger_account`
   - [x] `review_status`

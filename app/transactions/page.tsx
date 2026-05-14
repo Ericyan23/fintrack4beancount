@@ -126,7 +126,7 @@ function TransactionsPageContent() {
               href="/transactions?unclassified=true"
               className="text-xs bg-red-900/50 text-red-300 border border-red-800 px-2 py-1 rounded-full hover:bg-red-900"
             >
-              {unclassifiedTotal} uncategorized
+              {unclassifiedTotal} missing ledger account
             </a>
           )}
           {reviewCategoryTotal > 0 && (
@@ -134,7 +134,7 @@ function TransactionsPageContent() {
               href="/transactions?review=true"
               className="text-xs bg-violet-900/50 text-violet-300 border border-violet-800 px-2 py-1 rounded-full hover:bg-violet-900"
             >
-              {reviewCategoryTotal} review categories
+              {reviewCategoryTotal} review markers
             </a>
           )}
           <a
@@ -177,7 +177,7 @@ function TransactionsPageContent() {
               setCategory(value)
               if (value) setCategoryGroup('')
             }}
-            placeholder="All categories"
+            placeholder="All ledger accounts"
             className="w-full py-2"
           />
 
@@ -238,7 +238,7 @@ function TransactionsPageContent() {
               }}
               className="rounded"
             />
-            Uncategorized only
+            Missing ledger account only
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
             <input
@@ -250,7 +250,7 @@ function TransactionsPageContent() {
               }}
               className="rounded"
             />
-            Review categories only
+            Needs review only
           </label>
         </div>
       </div>

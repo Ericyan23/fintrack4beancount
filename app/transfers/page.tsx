@@ -186,7 +186,7 @@ export default function TransfersPage() {
       const res = await fetch(`/api/transactions/${encodeURIComponent(txnId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: account }),
+        body: JSON.stringify({ ledgerAccount: account }),
       })
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string }

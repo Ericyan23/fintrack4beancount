@@ -136,7 +136,7 @@ export default function SettingsPage() {
         {/* AI Classification */}
         <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
           <div>
-            <h2 className="text-sm font-medium text-slate-300">AI categorization (optional)</h2>
+            <h2 className="text-sm font-medium text-slate-300">AI ledger account suggestions (optional)</h2>
             <p className="text-xs text-slate-500 mt-0.5">Configure either one. Gemini is preferred and Claude is the fallback.</p>
           </div>
 
@@ -171,7 +171,7 @@ export default function SettingsPage() {
             />
           </div>
 
-          <p className="text-xs text-slate-500">Leave both blank to skip AI categorization</p>
+          <p className="text-xs text-slate-500">Leave both blank to skip AI ledger account suggestions</p>
         </div>
 
         <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
