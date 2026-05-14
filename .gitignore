@@ -35,6 +35,12 @@ backups/
 !fixtures/**/*.csv
 !fixtures/**/*.bean
 
+# Private/generated SimpleFIN fixture material
+fixtures/simplefin/*.json
+!fixtures/simplefin/sample-payload.json
+!fixtures/simplefin/multi-account-pending.json
+scripts/sanitize-simplefin-fixture.mjs
+
 # Local environment
 .env
 .env.*

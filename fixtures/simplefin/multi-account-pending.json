@@ -1,0 +1,88 @@
+{
+  "accounts": [
+    {
+      "id": "simplefin-checking-001",
+      "name": "Main Checking",
+      "currency": "USD",
+      "balance": "2048.25",
+      "balance-date": 1775001600,
+      "org": {
+        "domain": "examplebank.test",
+        "name": "Example Bank"
+      },
+      "transactions": [
+        {
+          "id": "sf-checking-payroll-001",
+          "posted": 1774224000,
+          "transacted-at": 1774224000,
+          "amount": "1500.00",
+          "description": "Payroll Deposit",
+          "pending": false
+        },
+        {
+          "id": "sf-checking-coffee-001",
+          "posted": 1774310400,
+          "transacted-at": 1774310400,
+          "amount": "-4.75",
+          "description": "Coffee Shop",
+          "pending": false
+        },
+        {
+          "id": "sf-checking-pending-fuel-001",
+          "posted": 0,
+          "transacted-at": 1774396800,
+          "amount": "-42.10",
+          "description": "Pending Fuel Stop",
+          "pending": true
+        }
+      ]
+    },
+    {
+      "id": "simplefin-credit-001",
+      "name": "Rewards Card",
+      "currency": "USD",
+      "balance": "-318.40",
+      "balance-date": 1775001600,
+      "org": {
+        "domain": "examplecard.test",
+        "name": "Example Card"
+      },
+      "transactions": [
+        {
+          "id": "sf-credit-grocery-001",
+          "posted": 1774224000,
+          "transacted-at": 1774137600,
+          "amount": "-63.20",
+          "description": "Grocery Market",
+          "pending": false
+        },
+        {
+          "id": "sf-credit-restaurant-001",
+          "posted": 1774310400,
+          "transacted-at": 1774310400,
+          "amount": "-28.55",
+          "description": "Restaurant",
+          "pending": false
+        },
+        {
+          "id": "sf-credit-payment-001",
+          "posted": 1774483200,
+          "transacted-at": 1774483200,
+          "amount": "120.00",
+          "description": "Card Payment Received",
+          "pending": false
+        },
+        {
+          "id": "sf-credit-pending-travel-001",
+          "posted": 0,
+          "transacted-at": 1774569600,
+          "amount": "-96.70",
+          "description": "Pending Travel Hold",
+          "pending": true
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "errlist": []
+}
