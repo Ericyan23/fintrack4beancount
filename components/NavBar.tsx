@@ -13,7 +13,6 @@ const tabs = [
   { href: '/beancount', label: 'Export Center', icon: 'B' },
   { href: '/accounts', label: 'Account Mapping', icon: '🏦' },
   { href: '/rules', label: 'Rules', icon: '📋' },
-  { href: '/categories', label: 'Categories', icon: '🏷️' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ]
 

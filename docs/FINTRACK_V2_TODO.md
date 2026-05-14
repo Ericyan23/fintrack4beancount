@@ -41,29 +41,32 @@ SimpleFIN / CSV / future APIs
 
 ## Core Assets To Keep
 
-- [ ] Keep and strengthen Beancount export/handoff:
-  - [ ] ledger scan
-  - [ ] open/closed account checks
-  - [ ] source_id duplicate checks
-  - [ ] preflight
-  - [ ] `.bean` rendering
-  - [ ] handoff manifest and writer
-- [ ] Keep account-to-Beancount-account mapping, but reframe it as Source Account -> Beancount Account Mapping.
+- [x] Keep and strengthen Beancount export/handoff:
+  - [x] ledger scan
+  - [x] open/closed account checks
+  - [x] source_id duplicate checks
+  - [x] preflight
+  - [x] `.bean` rendering
+  - [x] handoff manifest and writer
+- [x] Keep account-to-Beancount-account mapping, but reframe it as Source Account -> Beancount Account Mapping.
 - [ ] Keep CSV preview/mapping UI, but route it through ingestion instead of writing directly to `transactions`.
+  - Progress: staged CSV import path exists; legacy direct import API remains for compatibility and still needs retirement.
 - [ ] Keep SimpleFIN account sync, pending handling, and transaction fetch, but split it into adapter/reconciliation/ingestion services.
-- [ ] Keep Review queue and rule creation, but rename the workflow to Staging Review / Ledger Prep.
-- [ ] Keep transfer matching; export confirmed transfers as merged ledger intents.
-- [ ] Keep balance assertions as part of the export/preflight workflow.
+  - Progress: adapter and staging path exist; legacy `/api/sync` is retained during migration.
+- [x] Keep Review queue and rule creation, but rename the workflow to Staging Review / Ledger Prep.
+- [x] Keep transfer matching; export confirmed transfers as merged ledger intents.
+- [x] Keep balance assertions as part of the export/preflight workflow.
 
 ## Features To Deprioritize
 
-- [ ] Move dashboard from primary workflow to Command Center.
-- [ ] Hide or freeze `/reports` until ingestion/export workflows are stable.
-- [ ] Stop investing in net worth and spending charts as core product features.
-- [ ] Keep PWA/manifest as low-maintenance only.
+- [x] Move dashboard from primary workflow to Command Center.
+- [x] Hide or freeze `/reports` until ingestion/export workflows are stable.
+- [x] Stop investing in net worth and spending charts as core product features.
+- [x] Keep PWA/manifest as low-maintenance only.
 - [ ] Reframe `/categories` away from generic category CRUD; focus on ledger accounts, rules, and suggestions.
+  - Progress: standalone Categories is hidden from primary navigation; route/API are still retained.
 - [ ] Keep AI categorization optional and behind rules/manual review.
-- [ ] Do not build a Fava-like ledger viewer.
+- [x] Do not build a Fava-like ledger viewer.
 
 ## Existing Feature Disposition
 
@@ -91,47 +94,47 @@ then freeze, then remove only after the new prep workflow is stable.
 
 ### Safe To Remove From Primary Navigation
 
-- [ ] Reports.
-- [ ] Standalone Categories.
-- [ ] Net worth views and CSV export.
-- [ ] Spending charts.
-- [ ] Account balance dashboard sections.
-- [ ] PWA install-oriented surfaces.
+- [x] Reports.
+- [x] Standalone Categories.
+- [x] Net worth views and CSV export.
+- [x] Spending charts.
+- [x] Account balance dashboard sections.
+- [x] PWA install-oriented surfaces.
 
 ### Do Not Delete Yet
 
 These are tied to Beancount preparation or migration compatibility:
 
-- [ ] `accounts` and `accounts.beancount_account`.
-- [ ] `transactions`.
-- [ ] `transactions.category`, `status`, `suggested_cat` until ledger-account migration exists.
-- [ ] `categories`.
-- [ ] `rules`.
-- [ ] `transfer_matches`.
-- [ ] `balance_assertions`.
-- [ ] `settings`.
-- [ ] `sync_log`.
-- [ ] `net_worth_snapshots` until existing exports/backups and migrations are handled.
+- [x] `accounts` and `accounts.beancount_account`.
+- [x] `transactions`.
+- [x] `transactions.category`, `status`, `suggested_cat` until ledger-account migration exists.
+- [x] `categories`.
+- [x] `rules`.
+- [x] `transfer_matches`.
+- [x] `balance_assertions`.
+- [x] `settings`.
+- [x] `sync_log`.
+- [x] `net_worth_snapshots` until existing exports/backups and migrations are handled.
 
 Keep these APIs during v2 migration:
 
-- [ ] `/api/sync`.
-- [ ] `/api/import/transactions*`.
-- [ ] `/api/accounts*`.
-- [ ] `/api/beancount/accounts`.
-- [ ] `/api/transactions*`.
-- [ ] `/api/review`.
-- [ ] `/api/rules*`.
-- [ ] `/api/transfers*`.
-- [ ] `/api/beancount/balance-assertions`.
-- [ ] `/api/export/beancount/*`.
-- [ ] `/api/export/backup`.
+- [x] `/api/sync`.
+- [x] `/api/import/transactions*`.
+- [x] `/api/accounts*`.
+- [x] `/api/beancount/accounts`.
+- [x] `/api/transactions*`.
+- [x] `/api/review`.
+- [x] `/api/rules*`.
+- [x] `/api/transfers*`.
+- [x] `/api/beancount/balance-assertions`.
+- [x] `/api/export/beancount/*`.
+- [x] `/api/export/backup`.
 
 Freeze these APIs:
 
-- [ ] `/api/reports`.
-- [ ] `/api/networth*`.
-- [ ] `/api/export/networth`.
+- [x] `/api/reports`.
+- [x] `/api/networth*`.
+- [x] `/api/export/networth`.
 
 ### Low-Risk Cleanup Order
 
@@ -157,94 +160,98 @@ Beancount preparation system for SimpleFIN and generic CSV.
 
 ### Tests And Fixtures
 
-- [ ] Add a test script and test runner.
-- [ ] Add golden fixtures:
-  - [ ] SimpleFIN sample payload.
-  - [ ] Generic bank CSV.
-  - [ ] Duplicate import.
+- [x] Add a test script and test runner.
+- [x] Add golden fixtures:
+  - [x] SimpleFIN sample payload.
+  - [x] Generic bank CSV.
+  - [x] Duplicate import.
   - [ ] Pending-to-posted settlement.
-  - [ ] Ignored/deleted re-import behavior.
-  - [ ] Split transaction Beancount render.
-  - [ ] Beancount preflight/render snapshot.
-- [ ] Keep Fidelity fixtures out of v2.0 unless they are used only as non-blocking research samples.
+  - [x] Ignored/deleted re-import behavior.
+  - [x] Split transaction Beancount render.
+  - [x] Beancount preflight/render snapshot.
+- [x] Keep Fidelity fixtures limited to fake, non-blocking parser research samples until cash ingestion/export is stable.
 
 ### Ingestion Schema
 
-- [ ] Add ingestion tables:
-  - [ ] `sources`
-  - [ ] `source_connections`
-  - [ ] `source_accounts`
-  - [ ] `import_runs`
-  - [ ] `raw_import_items`
-  - [ ] `staged_transactions`
-- [ ] Add parser profile tables:
-  - [ ] `import_profiles`
-  - [ ] `import_profile_mappings`
-- [ ] Extend canonical `transactions` with provenance:
-  - [ ] `source_connection_id`
-  - [ ] `source_account_id`
-  - [ ] `external_id`
-  - [ ] `source_item_key`
-  - [ ] `import_run_id`
-  - [ ] `raw_item_id`
-  - [ ] `normalizer_version`
-  - [ ] `updated_at`
-- [ ] Add uniqueness around `(source_connection_id, source_item_key)`.
-- [ ] Backfill existing rows into a `legacy` source where provenance is unknown.
+- [x] Add ingestion tables:
+  - [x] `sources`
+  - [x] `source_connections`
+  - [x] `source_accounts`
+  - [x] `import_runs`
+  - [x] `raw_import_items`
+  - [x] `staged_transactions`
+- [x] Add parser profile tables:
+  - [x] `import_profiles`
+  - [x] `import_profile_mappings`
+- [x] Extend canonical `transactions` with provenance:
+  - [x] `source_connection_id`
+  - [x] `source_account_id`
+  - [x] `external_id`
+  - [x] `source_item_key`
+  - [x] `import_run_id`
+  - [x] `raw_item_id`
+  - [x] `normalizer_version`
+  - [x] `updated_at`
+- [x] Add uniqueness around `(source_connection_id, source_item_key)`.
+- [x] Backfill existing rows into a `legacy` source where provenance is unknown.
 
 ### State Machine
 
 - [ ] Define explicit states for raw/staged/canonical records:
   - [ ] `raw_imported`
-  - [ ] `staged`
+  - [x] `staged`
   - [ ] `needs_review`
   - [ ] `reviewed`
-  - [ ] `ignored`
-  - [ ] `deleted`
+  - [x] `ignored`
+  - [x] `deleted`
   - [ ] `export_ready`
   - [ ] `exported`
   - [ ] `failed`
-- [ ] Define immutable source facts:
-  - [ ] raw payload
-  - [ ] payload hash
-  - [ ] source item key
-  - [ ] source account identity
-- [ ] Define editable user fields separately from raw facts.
+  - Progress: current implementation has raw `pending/staged/ignored/error`, staged `staged/ready/merged/ignored/deleted/error`, and import run `pending/running/completed/failed`; final naming still needs consolidation.
+- [x] Define immutable source facts:
+  - [x] raw payload
+  - [x] payload hash
+  - [x] source item key
+  - [x] source account identity
+- [x] Define editable user fields separately from raw facts.
 
 ### Money And Identity
 
-- [ ] Store money as decimal strings or integer minor units; do not rely on JS `number` for ledger-critical values.
-- [ ] Keep display formatting separate from storage.
-- [ ] Define stable `source_item_key` rules:
-  - [ ] prefer provider external id in source-account namespace.
-  - [ ] fallback to deterministic hash of source account, date, amount, description, and raw payload.
-  - [ ] include normalizer version where needed.
-- [ ] Ensure source_id used by Beancount export comes from provenance and does not change when the user edits description or category.
+- [x] Store money as decimal strings or integer minor units; do not rely on JS `number` for ledger-critical values.
+- [x] Keep display formatting separate from storage.
+- [x] Define stable `source_item_key` rules:
+  - [x] prefer provider external id in source-account namespace.
+  - [x] fallback to deterministic hash of source account, date, amount, description, and raw payload.
+  - [x] include normalizer version where needed.
+- [x] Ensure source_id used by Beancount export comes from provenance and does not change when the user edits description or category.
 
 ### Import Pipeline
 
-- [ ] Define normalized DTOs:
-  - [ ] `NormalizedAccount`
-  - [ ] `NormalizedTransaction`
-  - [ ] `NormalizedBalance`
-- [ ] Define pipeline interfaces:
-  - [ ] `SourceAdapter`
-  - [ ] `Normalizer`
-  - [ ] `Staging`
-  - [ ] `Promote`
-  - [ ] `Enrich`
-  - [ ] `Export`
+- [x] Define normalized DTOs:
+  - [x] `NormalizedAccount`
+  - [x] `NormalizedTransaction`
+  - [x] `NormalizedBalance`
+- [x] Define pipeline interfaces:
+  - [x] `SourceAdapter`
+  - [x] `Normalizer`
+  - [x] `Staging`
+  - [x] `Promote`
+  - [x] `Enrich`
+  - [x] `Export`
 - [ ] Move generic CSV import to the ingestion service first.
+  - Progress: staged CSV import uses ingestion; legacy direct import API still exists for compatibility.
 - [ ] Then move SimpleFIN sync to the ingestion service.
+  - Progress: SimpleFIN staging uses ingestion; legacy `/api/sync` still writes directly for compatibility.
 - [ ] Split `lib/sync/simplefin.ts` into:
-  - [ ] adapter fetch
-  - [ ] account normalization
+  - [x] adapter fetch
+  - [x] account normalization
   - [ ] pending reconciliation
-  - [ ] transaction ingestion
+  - [x] transaction ingestion
   - [ ] post-import enrichment
-  - [ ] sync/import logging
+  - [x] sync/import logging
 - [ ] Move net worth snapshot/backfill out of SimpleFIN-specific sync.
 - [ ] Replace direct `INSERT OR IGNORE INTO transactions` from import paths.
+  - Progress: new CSV and SimpleFIN staging paths avoid direct canonical writes; legacy CSV import and legacy sync still need retirement or compatibility wrapping.
 
 ### Pending Reconciliation
 
@@ -260,43 +267,45 @@ Beancount preparation system for SimpleFIN and generic CSV.
 
 - [ ] Add transaction manual-create flow.
 - [ ] Add edit flow for:
-  - [ ] date
-  - [ ] description
-  - [ ] amount
-  - [ ] account
+  - [x] date
+  - [x] description
+  - [x] amount
+  - [x] account
   - [ ] ledger account
-  - [ ] notes
-  - [ ] tags
-  - [ ] review status
-- [ ] Add soft ignore/delete behavior:
-  - [ ] ignored
-  - [ ] deleted
-  - [ ] excluded from export
-- [ ] Make re-import respect ignored/deleted source items.
+  - [x] notes
+  - [x] tags
+  - [x] review status
+- [x] Add soft ignore/delete behavior:
+  - [x] ignored
+  - [x] deleted
+  - [x] excluded from export
+- [x] Make re-import respect ignored/deleted source items.
 - [ ] Add edit audit metadata:
-  - [ ] created_at
-  - [ ] updated_at
+  - [x] created_at
+  - [x] updated_at
   - [ ] updated_by or actor label
   - [ ] edit reason if useful
 - [ ] Add optional edit history table for manual changes.
 
 ### Transaction Splits
 
-- [ ] Add `transaction_splits` table:
-  - [ ] parent transaction id
-  - [ ] amount
-  - [ ] currency
-  - [ ] ledger account
-  - [ ] memo
-  - [ ] notes
-  - [ ] ordering
-  - [ ] created_at
-  - [ ] updated_at
-- [ ] Treat splits as ledger postings, not as separate source transactions.
-- [ ] Enforce split sum equals parent transaction amount.
-- [ ] Add split editor in transaction detail page.
+- [x] Add `transaction_splits` table:
+  - [x] parent transaction id
+  - [x] amount
+  - [x] currency
+  - [x] ledger account
+  - [x] memo
+  - [x] notes
+  - [x] ordering
+  - [x] created_at
+  - [x] updated_at
+  - [x] split trace fields (`split_group_id`, `created_from`)
+- [x] Treat splits as ledger postings, not as separate source transactions.
+- [x] Enforce split sum equals parent transaction amount.
+- [x] Add split editor in transaction detail page.
 - [ ] Show split summary in lists and review queues.
-- [ ] Export split transactions as multi-posting Beancount entries.
+  - Progress: transaction/export queries expose split counts; review queue display still needs confirmation.
+- [x] Export split transactions as multi-posting Beancount entries.
 
 ### Classification And Review Semantics
 
@@ -313,32 +322,32 @@ Beancount preparation system for SimpleFIN and generic CSV.
 
 ### Ledger Intent / Export Candidate Layer
 
-- [ ] Introduce `LedgerIntent` or `ExportCandidate` DTO.
-- [ ] Change Beancount preflight to consume ledger intents instead of querying `transactions` directly.
-- [ ] Support ledger intents from:
-  - [ ] normal cash transactions
-  - [ ] split transactions
-  - [ ] confirmed transfers
-  - [ ] balance assertions
-- [ ] Preserve existing preflight checks and handoff writer.
+- [x] Introduce `LedgerIntent` or `ExportCandidate` DTO.
+- [x] Change Beancount preflight to consume ledger intents instead of querying `transactions` directly.
+- [x] Support ledger intents from:
+  - [x] normal cash transactions
+  - [x] split transactions
+  - [x] confirmed transfers
+  - [x] balance assertions
+- [x] Preserve existing preflight checks and handoff writer.
 - [ ] Let external Beancount validation or worker remain the final validation step.
 
 ### v2.0 Page Changes
 
-- [ ] `/` -> Command Center:
-  - [ ] import health
-  - [ ] review count
-  - [ ] export readiness
-  - [ ] recent blockers
-- [ ] `/import` -> Sources / Import:
-  - [ ] source connections
-  - [ ] import runs
-  - [ ] CSV upload/profile
-- [ ] `/review` -> Staging Review / Ledger Prep.
-- [ ] `/accounts` -> Accounts & Ledger Mapping.
-- [ ] `/beancount` -> Export Center.
-- [ ] Keep `/transactions` as a preparation work queue, not a ledger viewer.
-- [ ] Hide or move `/reports` to diagnostics/legacy navigation.
+- [x] `/` -> Command Center:
+  - [x] import health
+  - [x] review count
+  - [x] export readiness
+  - [x] recent blockers
+- [x] `/import` -> Sources / Import:
+  - [x] source connections
+  - [x] import runs
+  - [x] CSV upload/profile
+- [x] `/review` -> Staging Review / Ledger Prep.
+- [x] `/accounts` -> Accounts & Ledger Mapping.
+- [x] `/beancount` -> Export Center.
+- [x] Keep `/transactions` as a preparation work queue, not a ledger viewer.
+- [x] Hide or move `/reports` to diagnostics/legacy navigation.
 
 ## v2.1
 
@@ -353,14 +362,14 @@ Goal: make repeated operation reliable and auditable.
   - [ ] export target
 - [ ] Add “all reviewed not yet exported” export mode.
 - [ ] Add import run detail page:
-  - [ ] raw items
-  - [ ] normalized items
-  - [ ] errors
-  - [ ] duplicate/skipped counts
+  - [x] raw/staged item review
+  - [x] normalized editable fields
+  - [x] errors
+  - [x] duplicate/skipped counts
   - [ ] replay selected import run
 - [ ] Persist mapping profiles:
   - [ ] CSV profile
-  - [ ] source account mapping
+  - [x] source account mapping
   - [ ] default ledger account hints
 - [ ] Add complete audit log for:
   - [ ] manual edits
@@ -377,6 +386,7 @@ Goal: add Fidelity/investment ingestion conservatively after cash-transaction
 ingestion is stable.
 
 - [ ] Add Fidelity CSV raw import and parser profiles.
+  - Progress: fake brokerage CSV parser sample exists; investment ingestion models and export are not started.
 - [ ] Add investment staging models as needed:
   - [ ] `securities`
   - [ ] `investment_activities`
