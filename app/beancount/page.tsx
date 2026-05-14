@@ -64,6 +64,7 @@ interface BeancountPreflightResult {
     blockers: number
     reviewItems: number
     duplicateCandidates: number
+    previouslyExported?: number
   }
   blockers: PreflightIssue[]
   reviewItems: PreflightIssue[]
@@ -424,6 +425,7 @@ function SkippedList({ skipped }: { skipped: PreflightSkipped[] }) {
 
 export default function BeancountPage() {
   const [period, setPeriod] = useState(currentMonth)
+  const [excludeExported, setExcludeExported] = useState(false)
   const [result, setResult] = useState<BeancountPreflightResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -444,8 +446,9 @@ export default function BeancountPage() {
   const [decisionLoading, setDecisionLoading] = useState<'approve' | 'reject' | null>(null)
   const [decisionNote, setDecisionNote] = useState('')
 
-  const draftHref = `/api/export/beancount/draft?period=${encodeURIComponent(period)}`
-  const manifestHref = `/api/export/beancount/handoff-manifest?period=${encodeURIComponent(period)}`
+  const exportQuery = excludeExported ? '&excludeExported=1' : ''
+  const draftHref = `/api/export/beancount/draft?period=${encodeURIComponent(period)}${exportQuery}`
+  const manifestHref = `/api/export/beancount/handoff-manifest?period=${encodeURIComponent(period)}${exportQuery}`
   const handoffStatusHref = `/api/export/beancount/handoff/status?period=${encodeURIComponent(period)}`
 
   const loadPreflight = useCallback(async () => {
@@ -463,7 +466,7 @@ export default function BeancountPage() {
     setReviewState(null)
     setReviewError(null)
     try {
-      const res = await fetch(`/api/export/beancount/preflight?period=${encodeURIComponent(period)}`)
+      const res = await fetch(`/api/export/beancount/preflight?period=${encodeURIComponent(period)}${exportQuery}`)
       const data = (await res.json()) as BeancountPreflightResult | ApiError
       if (!res.ok) {
         setResult(null)
@@ -477,7 +480,7 @@ export default function BeancountPage() {
     } finally {
       setLoading(false)
     }
-  }, [period])
+  }, [period, exportQuery])
 
   async function loadDraftPreview() {
     setDraftLoading(true)
@@ -548,7 +551,7 @@ export default function BeancountPage() {
       const res = await fetch('/api/export/beancount/handoff', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ period, overwrite: true }),
+        body: JSON.stringify({ period, overwrite: true, excludeExported }),
       })
       const data = (await res.json().catch(() => ({}))) as Partial<HandoffWriteResult> & {
         error?: string
@@ -652,6 +655,50 @@ export default function BeancountPage() {
             }}
             className="rounded border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-slate-100"
           />
+          <div className="inline-flex rounded-md border border-slate-700 bg-slate-900 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setExcludeExported(false)
+                setResult(null)
+                setDraftText(null)
+                setDraftError(null)
+                setManifest(null)
+                setManifestError(null)
+                setManifestCopied(false)
+                setHandoffError(null)
+                setHandoffResult(null)
+                setReviewState(null)
+                setReviewError(null)
+              }}
+              className={`rounded px-3 py-1.5 text-sm ${
+                excludeExported ? 'text-slate-400 hover:text-slate-200' : 'bg-slate-700 text-slate-100'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setExcludeExported(true)
+                setResult(null)
+                setDraftText(null)
+                setDraftError(null)
+                setManifest(null)
+                setManifestError(null)
+                setManifestCopied(false)
+                setHandoffError(null)
+                setHandoffResult(null)
+                setReviewState(null)
+                setReviewError(null)
+              }}
+              className={`rounded px-3 py-1.5 text-sm ${
+                excludeExported ? 'bg-blue-700 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Not exported
+            </button>
+          </div>
           <button
             onClick={loadPreflight}
             disabled={loading}
@@ -911,7 +958,7 @@ export default function BeancountPage() {
         )}
       </section>
 
-      <BalanceAssertionPanel period={period} />
+      <BalanceAssertionPanel period={period} excludeExported={excludeExported} />
 
       {loading && !result ? (
         <div className="py-12 text-center text-slate-500">Loading...</div>
@@ -984,7 +1031,7 @@ export default function BeancountPage() {
           </section>
 
           {summary && (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-7">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-8">
               <SummaryCard label="Scanned" value={summary.transactionsScanned} />
               <SummaryCard label="Exportable" value={summary.exportableTransactions} tone="emerald" />
               <SummaryCard label="Merged" value={summary.mergedTransfers} tone="blue" />
@@ -992,6 +1039,7 @@ export default function BeancountPage() {
               <SummaryCard label="Blockers" value={summary.blockers} tone="red" />
               <SummaryCard label="Prep" value={summary.reviewItems} tone="amber" />
               <SummaryCard label="Duplicates" value={summary.duplicateCandidates} tone="violet" />
+              <SummaryCard label="Exported" value={summary.previouslyExported ?? 0} tone="blue" />
             </div>
           )}
 

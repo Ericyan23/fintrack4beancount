@@ -7,9 +7,10 @@ import {
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const period = req.nextUrl.searchParams.get('period') ?? currentBalanceAssertionPeriod()
+  const excludeExported = req.nextUrl.searchParams.get('excludeExported') === '1'
 
   try {
-    const preflight = runBalanceAssertionPreflight({ period })
+    const preflight = runBalanceAssertionPreflight({ period, excludeExported })
     if (preflight.blockers.length > 0) {
       return NextResponse.json({
         error: 'Balance assertion preflight has blockers',

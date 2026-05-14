@@ -70,6 +70,7 @@ interface BalanceAssertionPreflightResult {
     blockers: number
     reviewItems: number
     duplicateCandidates: number
+    previouslyExported?: number
   }
   blockers: BalanceAssertionIssue[]
   reviewItems: BalanceAssertionIssue[]
@@ -88,6 +89,7 @@ interface FormState {
 
 interface Props {
   period: string
+  excludeExported?: boolean
 }
 
 function periodEnd(period: string): string {
@@ -178,7 +180,7 @@ function IssueList({ title, issues }: { title: string; issues: BalanceAssertionI
   )
 }
 
-export default function BalanceAssertionPanel({ period }: Props) {
+export default function BalanceAssertionPanel({ period, excludeExported = false }: Props) {
   const [form, setForm] = useState<FormState>(() => defaultForm(period))
   const [accountOptions, setAccountOptions] = useState<AccountOption[]>([])
   const [ledgerAccounts, setLedgerAccounts] = useState<LedgerAccount[]>([])
@@ -196,7 +198,8 @@ export default function BalanceAssertionPanel({ period }: Props) {
   const [draftError, setDraftError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const draftHref = `/api/export/beancount/balance-assertions/draft?period=${encodeURIComponent(period)}`
+  const exportQuery = excludeExported ? '&excludeExported=1' : ''
+  const draftHref = `/api/export/beancount/balance-assertions/draft?period=${encodeURIComponent(period)}${exportQuery}`
 
   const ledgerAccountOptions = useMemo(() => {
     return ledgerAccounts.filter(account =>
@@ -218,7 +221,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
     setDraftError(null)
     setCopied(false)
     try {
-      const res = await fetch(`/api/export/beancount/balance-assertions/preflight?period=${encodeURIComponent(period)}`)
+      const res = await fetch(`/api/export/beancount/balance-assertions/preflight?period=${encodeURIComponent(period)}${exportQuery}`)
       const data = (await res.json().catch(() => ({}))) as Partial<BalanceAssertionPreflightResult> & { error?: string }
       if (!res.ok || typeof data.ok !== 'boolean') {
         setPreflight(null)
@@ -232,7 +235,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
     } finally {
       setPreflightLoading(false)
     }
-  }, [period])
+  }, [period, exportQuery])
 
   const loadAssertions = useCallback(async () => {
     setLoading(true)
@@ -552,7 +555,7 @@ export default function BalanceAssertionPanel({ period }: Props) {
         </div>
 
         {preflight && (
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-5">
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-6">
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
               scanned <span className="text-slate-200">{preflight.summary.assertionsScanned}</span>
             </div>
@@ -564,6 +567,9 @@ export default function BalanceAssertionPanel({ period }: Props) {
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
               duplicates <span className="text-amber-300">{preflight.summary.duplicateCandidates}</span>
+            </div>
+            <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
+              exported <span className="text-blue-300">{preflight.summary.previouslyExported ?? 0}</span>
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
               ledger balances <span className="text-slate-200">{preflight.ledger.balances}</span>

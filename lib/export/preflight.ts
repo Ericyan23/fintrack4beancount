@@ -13,6 +13,7 @@ import {
   ledgerIntentFromTransfer,
   type LedgerIntent,
 } from '@/lib/export/ledger-intents'
+import { loadPreviouslyExportedSourceIds } from '@/lib/export/export-runs'
 import { REVIEW_CATEGORY_NAMES } from '@/lib/classify/defaults'
 
 export type PreflightSeverity = 'blocker' | 'review'
@@ -90,6 +91,7 @@ export interface BeancountPreflightResult {
     blockers: number
     reviewItems: number
     duplicateCandidates: number
+    previouslyExported?: number
   }
   blockers: PreflightIssue[]
   reviewItems: PreflightIssue[]
@@ -707,6 +709,7 @@ function scaleDecimal(value: ParsedDecimal, targetScale: number): bigint {
 export function runBeancountPreflight(options: {
   period?: string
   beancountRoot?: string
+  excludeExported?: boolean
 } = {}): BeancountPreflightResult {
   const period = options.period ?? currentPeriod()
   const range = parsePeriod(period)
@@ -726,8 +729,12 @@ export function runBeancountPreflight(options: {
   const skipped: PreflightSkipped[] = []
   const mergedTransfers: PreflightTransfer[] = []
   const exportableTransactions: PreflightTransaction[] = []
+  const previouslyExportedSourceIds = options.excludeExported
+    ? loadPreviouslyExportedSourceIds({ exportTarget: 'beancount_handoff' })
+    : new Set<string>()
   const occupiedTransactionIds = new Set<string>()
   const duplicateLedgerPostings = new Set<string>()
+  let previouslyExported = 0
 
   for (const match of confirmedTransferMatches) {
     const outRow = match.outflow
@@ -739,6 +746,19 @@ export function runBeancountPreflight(options: {
     const pairSourceId = sourceIdForPair(outflow, inflow)
     const date = outflow.date <= inflow.date ? outflow.date : inflow.date
     const exportPeriod = periodFromDate(date)
+
+    if (previouslyExportedSourceIds.has(pairSourceId)) {
+      previouslyExported += 1
+      if (outflowInPeriod) {
+        occupiedTransactionIds.add(outflow.id)
+        skipped.push({ transactionId: outflow.id, reason: 'already_exported', transferMatchId: match.id })
+      }
+      if (inflowInPeriod) {
+        occupiedTransactionIds.add(inflow.id)
+        skipped.push({ transactionId: inflow.id, reason: 'already_exported', transferMatchId: match.id })
+      }
+      continue
+    }
 
     if (exportPeriod !== period) {
       if (outflowInPeriod) {
@@ -858,6 +878,12 @@ export function runBeancountPreflight(options: {
     const txn = toPreflightTransaction(row, splitPostingsByParentId.get(row.id))
     const hasSplitPostings = Boolean(txn.splitPostings?.length)
 
+    if (previouslyExportedSourceIds.has(txn.sourceId)) {
+      previouslyExported += 1
+      skipped.push({ transactionId: txn.id, reason: 'already_exported' })
+      continue
+    }
+
     if (row.status !== 'posted') {
       skipped.push({ transactionId: row.id, reason: `status_${row.status}` })
       continue
@@ -933,6 +959,7 @@ export function runBeancountPreflight(options: {
       blockers: blockers.length,
       reviewItems: reviewItems.length,
       duplicateCandidates: duplicateCandidates.length,
+      previouslyExported,
     },
     blockers,
     reviewItems,

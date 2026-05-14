@@ -11,6 +11,7 @@ import {
   exportCandidateFromBalanceAssertion,
   type ExportCandidateBalanceAssertion,
 } from '@/lib/export/ledger-intents'
+import { loadPreviouslyExportedSourceIds } from '@/lib/export/export-runs'
 
 export type BalanceAssertionSeverity = 'blocker' | 'review'
 
@@ -54,6 +55,7 @@ export interface BalanceAssertionPreflightResult {
     blockers: number
     reviewItems: number
     duplicateCandidates: number
+    previouslyExported?: number
   }
   blockers: BalanceAssertionIssue[]
   reviewItems: BalanceAssertionIssue[]
@@ -264,6 +266,7 @@ function markDraftDuplicates(
 export function runBalanceAssertionPreflight(options: {
   period?: string
   beancountRoot?: string
+  excludeExported?: boolean
 } = {}): BalanceAssertionPreflightResult {
   const period = options.period ?? currentBalanceAssertionPeriod()
   const range = parsePeriod(period)
@@ -274,8 +277,17 @@ export function runBalanceAssertionPreflight(options: {
   const reviewItems: BalanceAssertionIssue[] = []
   const duplicateCandidates: BalanceAssertionIssue[] = []
   const validCandidates: PreflightBalanceAssertion[] = []
+  const previouslyExportedSourceIds = options.excludeExported
+    ? loadPreviouslyExportedSourceIds({ exportTarget: 'beancount_handoff' })
+    : new Set<string>()
+  let previouslyExported = 0
 
   for (const assertion of rows) {
+    if (previouslyExportedSourceIds.has(assertion.sourceId)) {
+      previouslyExported += 1
+      continue
+    }
+
     let valid = true
     valid = validateAmount(assertion, blockers) && valid
     valid = validateLedgerAccount(snapshot, assertion, blockers) && valid
@@ -307,6 +319,7 @@ export function runBalanceAssertionPreflight(options: {
       blockers: blockers.length,
       reviewItems: reviewItems.length,
       duplicateCandidates: duplicateCandidates.length,
+      previouslyExported,
     },
     blockers,
     reviewItems,

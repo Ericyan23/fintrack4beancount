@@ -60,6 +60,7 @@ export interface WriteBeancountHandoffOptions {
   overwrite?: boolean
   generatedAt?: Date
   handoffRoot?: string | null
+  excludeExported?: boolean
   audit?: {
     actor?: string | null
     reason?: string | null
@@ -232,6 +233,7 @@ function insertExportRun(input: {
   handoffRoot: string
   generatedAt: Date
   overwrite: boolean
+  excludeExported: boolean
   manifest: BeancountHandoffManifest
   files: WrittenHandoffFile[]
   resetFiles: string[]
@@ -243,6 +245,7 @@ function insertExportRun(input: {
   const metadata = {
     generatedAt: input.generatedAt.toISOString(),
     overwrite: input.overwrite,
+    excludeExported: input.excludeExported,
     handoffRoot: input.handoffRoot,
     handoffDirectory: input.manifest.handoff.directory,
     beancountRoot: input.manifest.beancountRoot,
@@ -348,15 +351,16 @@ export function writeBeancountHandoff(
   const period = options.period ?? currentPeriod()
   const generatedAt = options.generatedAt ?? new Date()
   const overwrite = options.overwrite === true
+  const excludeExported = options.excludeExported === true
   const handoffRoot = resolveHandoffRoot(options.handoffRoot)
   assertIndependentHandoffRoot(handoffRoot)
 
-  const manifest = buildBeancountHandoffManifest({ period, generatedAt })
+  const manifest = buildBeancountHandoffManifest({ period, generatedAt, excludeExported })
   if (!manifest.ok) throw new HandoffPreflightError(manifest)
   if (overwrite) assertOverwriteAllowed(handoffRoot, manifest)
 
-  const transactionPreflight = runBeancountPreflight({ period })
-  const balancePreflight = runBalanceAssertionPreflight({ period })
+  const transactionPreflight = runBeancountPreflight({ period, excludeExported })
+  const balancePreflight = runBalanceAssertionPreflight({ period, excludeExported })
   const transactionDraft = renderBeancountDraft(transactionPreflight, { generatedAt })
   const balanceDraft = renderBalanceAssertionDraft(balancePreflight, { generatedAt })
   const combinedDraft = renderCombinedDraft(transactionDraft, balanceDraft)
@@ -382,6 +386,7 @@ export function writeBeancountHandoff(
     handoffRoot,
     generatedAt,
     overwrite,
+    excludeExported,
     manifest,
     files,
     resetFiles,

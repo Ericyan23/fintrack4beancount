@@ -4,9 +4,10 @@ import { currentPeriod, runBeancountPreflight } from '@/lib/export/preflight'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const period = req.nextUrl.searchParams.get('period') ?? currentPeriod()
+  const excludeExported = req.nextUrl.searchParams.get('excludeExported') === '1'
 
   try {
-    const preflight = runBeancountPreflight({ period })
+    const preflight = runBeancountPreflight({ period, excludeExported })
     if (preflight.blockers.length > 0) {
       return NextResponse.json({
         error: 'Beancount preflight has blockers',

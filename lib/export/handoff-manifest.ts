@@ -53,12 +53,21 @@ export function buildBeancountHandoffManifest(options: {
   period?: string
   generatedAt?: Date
   beancountRoot?: string
+  excludeExported?: boolean
 } = {}): BeancountHandoffManifest {
   const period = options.period ?? currentPeriod()
   const generatedAt = options.generatedAt ?? new Date()
   const beancountRoot = options.beancountRoot ?? defaultBeancountRoot()
-  const transactionPreflight = runBeancountPreflight({ period, beancountRoot })
-  const balancePreflight = runBalanceAssertionPreflight({ period, beancountRoot })
+  const transactionPreflight = runBeancountPreflight({
+    period,
+    beancountRoot,
+    excludeExported: options.excludeExported,
+  })
+  const balancePreflight = runBalanceAssertionPreflight({
+    period,
+    beancountRoot,
+    excludeExported: options.excludeExported,
+  })
   const snapshot = loadLedgerSnapshot(beancountRoot)
   const directory = path.posix.join(period, 'fintrack')
   const transactionSourceIds = transactionPreflight.exportableIntents.map(intent => intent.sourceId)

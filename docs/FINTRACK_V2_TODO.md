@@ -365,7 +365,8 @@ Goal: make repeated operation reliable and auditable.
   - [x] exported source ids
   - [x] export target
   - Progress: Beancount handoff creation writes an `export_runs` row with file manifest details, ledger revision, exported source ids, target, and audit metadata.
-- [ ] Add “all reviewed not yet exported” export mode.
+- [x] Add “all reviewed not yet exported” export mode.
+  - Progress: Export Center can run selected-period exports in not-yet-exported mode, filtering transaction and balance assertion source IDs already recorded in active `export_runs`.
 - [ ] Add import run detail page:
   - [x] raw/staged item review
   - [x] normalized editable fields
