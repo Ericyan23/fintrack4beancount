@@ -1,5 +1,7 @@
+import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
+import { sqlite } from '@/lib/db'
 import { renderBalanceAssertionDraft, runBalanceAssertionPreflight } from '@/lib/export/balance-assertions'
 import { defaultBeancountRoot } from '@/lib/export/beancount-ledger'
 import { renderBeancountDraft } from '@/lib/export/beancount'
@@ -10,6 +12,8 @@ import {
 import { currentPeriod, runBeancountPreflight } from '@/lib/export/preflight'
 
 type HandoffFileKind = 'manifest' | 'combinedDraft' | 'transactionDraft' | 'balanceAssertionDraft'
+const BEANCOUNT_HANDOFF_EXPORT_TARGET = 'beancount_handoff'
+const EXPORT_RUN_STATUS_WRITTEN = 'handoff_written'
 
 interface HandoffFilePlan {
   kind: HandoffFileKind
@@ -24,6 +28,22 @@ export interface WrittenHandoffFile {
   bytes: number
 }
 
+export interface HandoffExportRun {
+  id: string
+  period: string
+  status: string
+  exportRangeStart: string
+  exportRangeEnd: string
+  generatedFileNames: string[]
+  manifestPath: string
+  ledgerRevision: string
+  exportedSourceIds: string[]
+  exportTarget: string
+  metadata: Record<string, unknown>
+  createdAt: number
+  updatedAt: number
+}
+
 export interface WriteBeancountHandoffResult {
   ok: true
   period: string
@@ -32,6 +52,7 @@ export interface WriteBeancountHandoffResult {
   manifest: BeancountHandoffManifest
   files: WrittenHandoffFile[]
   resetFiles: string[]
+  exportRun: HandoffExportRun
 }
 
 export interface WriteBeancountHandoffOptions {
@@ -39,6 +60,10 @@ export interface WriteBeancountHandoffOptions {
   overwrite?: boolean
   generatedAt?: Date
   handoffRoot?: string | null
+  audit?: {
+    actor?: string | null
+    reason?: string | null
+  }
 }
 
 export class HandoffConfigError extends Error {}
@@ -183,6 +208,140 @@ function resetHandoffFiles(handoffRoot: string, manifest: BeancountHandoffManife
   return resetFiles
 }
 
+function generatedExportRunId(): string {
+  return `export-run-${crypto.randomUUID()}`
+}
+
+function unixTimestamp(date: Date): number {
+  return Math.floor(date.getTime() / 1000)
+}
+
+function cleanAuditText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+function relativeResetFiles(handoffRoot: string, resetFiles: string[]): string[] {
+  return resetFiles
+    .map(file => path.relative(handoffRoot, file).split(path.sep).join('/'))
+    .sort((a, b) => a.localeCompare(b))
+}
+
+function insertExportRun(input: {
+  period: string
+  handoffRoot: string
+  generatedAt: Date
+  overwrite: boolean
+  manifest: BeancountHandoffManifest
+  files: WrittenHandoffFile[]
+  resetFiles: string[]
+  dateRange: { start: string; end: string }
+  audit?: WriteBeancountHandoffOptions['audit']
+}): HandoffExportRun {
+  const timestamp = unixTimestamp(input.generatedAt)
+  const generatedFileNames = input.files.map(file => file.relativePath)
+  const metadata = {
+    generatedAt: input.generatedAt.toISOString(),
+    overwrite: input.overwrite,
+    handoffRoot: input.handoffRoot,
+    handoffDirectory: input.manifest.handoff.directory,
+    beancountRoot: input.manifest.beancountRoot,
+    counts: input.manifest.counts,
+    preflight: input.manifest.preflight,
+    files: input.files.map(file => ({
+      kind: file.kind,
+      relativePath: file.relativePath,
+      bytes: file.bytes,
+    })),
+    resetFiles: relativeResetFiles(input.handoffRoot, input.resetFiles),
+  }
+  const exportRun: HandoffExportRun = {
+    id: generatedExportRunId(),
+    period: input.period,
+    status: EXPORT_RUN_STATUS_WRITTEN,
+    exportRangeStart: input.dateRange.start,
+    exportRangeEnd: input.dateRange.end,
+    generatedFileNames,
+    manifestPath: input.manifest.handoff.manifestFile,
+    ledgerRevision: input.manifest.ledger.revision,
+    exportedSourceIds: input.manifest.sourceIds,
+    exportTarget: BEANCOUNT_HANDOFF_EXPORT_TARGET,
+    metadata,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+  const actor = cleanAuditText(input.audit?.actor) ?? 'local'
+  const reason = cleanAuditText(input.audit?.reason) ?? BEANCOUNT_HANDOFF_EXPORT_TARGET
+
+  sqlite.transaction(() => {
+    sqlite.prepare(`
+      INSERT INTO export_runs (
+        id,
+        period,
+        status,
+        export_range_start,
+        export_range_end,
+        generated_file_names,
+        manifest_path,
+        ledger_revision,
+        exported_source_ids,
+        export_target,
+        metadata,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      exportRun.id,
+      exportRun.period,
+      exportRun.status,
+      exportRun.exportRangeStart,
+      exportRun.exportRangeEnd,
+      JSON.stringify(exportRun.generatedFileNames),
+      exportRun.manifestPath,
+      exportRun.ledgerRevision,
+      JSON.stringify(exportRun.exportedSourceIds),
+      exportRun.exportTarget,
+      JSON.stringify(exportRun.metadata),
+      exportRun.createdAt,
+      exportRun.updatedAt,
+    )
+
+    sqlite.prepare(`
+      INSERT INTO audit_log (
+        entity_type,
+        entity_id,
+        action,
+        actor,
+        reason,
+        before_values,
+        after_values,
+        metadata,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'export_run',
+      exportRun.id,
+      'export_run_creation',
+      actor,
+      reason,
+      JSON.stringify({}),
+      JSON.stringify(exportRun),
+      JSON.stringify({
+        exportTarget: exportRun.exportTarget,
+        period: exportRun.period,
+        manifestPath: exportRun.manifestPath,
+        generatedFileCount: exportRun.generatedFileNames.length,
+        exportedSourceIdCount: exportRun.exportedSourceIds.length,
+      }),
+      timestamp,
+    )
+  })()
+
+  return exportRun
+}
+
 export function writeBeancountHandoff(
   options: WriteBeancountHandoffOptions = {},
 ): WriteBeancountHandoffResult {
@@ -218,6 +377,17 @@ export function writeBeancountHandoff(
 
   const resetFiles = overwrite ? resetHandoffFiles(handoffRoot, manifest) : []
   const files = plannedFiles.map(plan => writeFile(handoffRoot, plan, overwrite))
+  const exportRun = insertExportRun({
+    period,
+    handoffRoot,
+    generatedAt,
+    overwrite,
+    manifest,
+    files,
+    resetFiles,
+    dateRange: transactionPreflight.dateRange,
+    audit: options.audit,
+  })
 
   return {
     ok: true,
@@ -227,5 +397,6 @@ export function writeBeancountHandoff(
     manifest,
     files,
     resetFiles,
+    exportRun,
   }
 }

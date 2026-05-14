@@ -9,6 +9,8 @@ import { currentPeriod } from '@/lib/export/preflight'
 interface HandoffRequestBody {
   period?: string | null
   overwrite?: boolean | null
+  actor?: string | null
+  reason?: string | null
 }
 
 async function readBody(req: NextRequest): Promise<HandoffRequestBody> {
@@ -22,7 +24,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const overwrite = body.overwrite === true
 
   try {
-    const result = writeBeancountHandoff({ period, overwrite })
+    const result = writeBeancountHandoff({
+      period,
+      overwrite,
+      audit: {
+        actor: body.actor,
+        reason: body.reason,
+      },
+    })
     return NextResponse.json(result, {
       status: 201,
       headers: {

@@ -357,13 +357,14 @@ Beancount preparation system for SimpleFIN and generic CSV.
 
 Goal: make repeated operation reliable and auditable.
 
-- [ ] Add `export_runs`:
-  - [ ] export range
-  - [ ] generated file names
-  - [ ] manifest path
-  - [ ] ledger revision
-  - [ ] exported source ids
-  - [ ] export target
+- [x] Add `export_runs`:
+  - [x] export range
+  - [x] generated file names
+  - [x] manifest path
+  - [x] ledger revision
+  - [x] exported source ids
+  - [x] export target
+  - Progress: Beancount handoff creation writes an `export_runs` row with file manifest details, ledger revision, exported source ids, target, and audit metadata.
 - [ ] Add “all reviewed not yet exported” export mode.
 - [ ] Add import run detail page:
   - [x] raw/staged item review
@@ -384,7 +385,8 @@ Goal: make repeated operation reliable and auditable.
     - Progress: split replace/clear records `split_create`, `split_update`, and `split_delete` rows with actor, optional reason, and before/after split snapshots.
   - [x] rule application
     - Progress: rule-driven reclassification and post-import enrichment write `rule_application` audit entries with before/after classification fields and source provenance metadata.
-  - [ ] export run creation
+  - [x] export run creation
+    - Progress: successful Beancount handoff writes an `export_run_creation` audit entry linked to the `export_runs` row.
 - [ ] Merge or rename `/categories` into Ledger Accounts & Rules.
 - [ ] Improve rule management around ledger accounts and review statuses.
 

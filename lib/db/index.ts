@@ -696,6 +696,53 @@ function ensureTransactionSplitSchema(): void {
   `)
 }
 
+function ensureExportRunSchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS export_runs (
+      id TEXT PRIMARY KEY,
+      period TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'created',
+      export_range_start TEXT,
+      export_range_end TEXT,
+      generated_file_names TEXT NOT NULL DEFAULT '[]',
+      manifest_path TEXT,
+      ledger_revision TEXT,
+      exported_source_ids TEXT NOT NULL DEFAULT '[]',
+      export_target TEXT NOT NULL,
+      metadata TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `)
+
+  addColumnIfMissing('export_runs', 'period', `period TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('export_runs', 'status', `status TEXT NOT NULL DEFAULT 'created'`)
+  addColumnIfMissing('export_runs', 'export_range_start', `export_range_start TEXT`)
+  addColumnIfMissing('export_runs', 'export_range_end', `export_range_end TEXT`)
+  addColumnIfMissing('export_runs', 'generated_file_names', `generated_file_names TEXT NOT NULL DEFAULT '[]'`)
+  addColumnIfMissing('export_runs', 'manifest_path', `manifest_path TEXT`)
+  addColumnIfMissing('export_runs', 'ledger_revision', `ledger_revision TEXT`)
+  addColumnIfMissing('export_runs', 'exported_source_ids', `exported_source_ids TEXT NOT NULL DEFAULT '[]'`)
+  addColumnIfMissing('export_runs', 'export_target', `export_target TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('export_runs', 'metadata', `metadata TEXT`)
+  addColumnIfMissing('export_runs', 'created_at', `created_at INTEGER NOT NULL DEFAULT 0`)
+  addColumnIfMissing('export_runs', 'updated_at', `updated_at INTEGER NOT NULL DEFAULT 0`)
+
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS export_runs_period_idx
+    ON export_runs(period);
+
+    CREATE INDEX IF NOT EXISTS export_runs_status_idx
+    ON export_runs(status);
+
+    CREATE INDEX IF NOT EXISTS export_runs_created_idx
+    ON export_runs(created_at);
+
+    CREATE INDEX IF NOT EXISTS export_runs_target_period_idx
+    ON export_runs(export_target, period);
+  `)
+}
+
 function ensurePerformanceIndexes(): void {
   sqlite.exec(`
     CREATE INDEX IF NOT EXISTS transactions_posted_idx
@@ -792,6 +839,7 @@ ensureIngestionSchema()
 ensureTransactionEditHistorySchema()
 ensureAuditLogSchema()
 ensureTransactionSplitSchema()
+ensureExportRunSchema()
 ensurePerformanceIndexes()
 
 const accountTypeRows = sqlite.prepare(`

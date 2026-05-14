@@ -241,6 +241,27 @@ export const transactionSplits = sqliteTable('transaction_splits', {
   uniqueIndex('transaction_splits_parent_sort_idx').on(table.parentTransactionId, table.sortOrder),
 ])
 
+export const exportRuns = sqliteTable('export_runs', {
+  id:                 text('id').primaryKey(),
+  period:             text('period').notNull(),
+  status:             text('status').notNull().default('created'),
+  exportRangeStart:   text('export_range_start'),
+  exportRangeEnd:     text('export_range_end'),
+  generatedFileNames: text('generated_file_names', { mode: 'json' }).notNull().$type<string[]>(),
+  manifestPath:       text('manifest_path'),
+  ledgerRevision:     text('ledger_revision'),
+  exportedSourceIds:  text('exported_source_ids', { mode: 'json' }).notNull().$type<string[]>(),
+  exportTarget:       text('export_target').notNull(),
+  metadata:           text('metadata', { mode: 'json' }).$type<IngestionJsonObject>(),
+  createdAt:          integer('created_at').notNull(),
+  updatedAt:          integer('updated_at').notNull(),
+}, (table) => [
+  index('export_runs_period_idx').on(table.period),
+  index('export_runs_status_idx').on(table.status),
+  index('export_runs_created_idx').on(table.createdAt),
+  index('export_runs_target_period_idx').on(table.exportTarget, table.period),
+])
+
 export const importProfileMappings = sqliteTable('import_profile_mappings', {
   id:              integer('id').primaryKey({ autoIncrement: true }),
   importProfileId: text('import_profile_id').notNull().references(() => importProfiles.id),
@@ -345,5 +366,6 @@ export type ImportRun = typeof importRuns.$inferSelect
 export type RawImportItem = typeof rawImportItems.$inferSelect
 export type StagedTransaction = typeof stagedTransactions.$inferSelect
 export type TransactionSplit = typeof transactionSplits.$inferSelect
+export type ExportRun = typeof exportRuns.$inferSelect
 export type ImportProfile = typeof importProfiles.$inferSelect
 export type ImportProfileMapping = typeof importProfileMappings.$inferSelect

@@ -128,6 +128,7 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
     'transaction_splits',
     'transaction_edit_history',
     'audit_log',
+    'export_runs',
   ]) {
     assert.equal(
       scalar(`SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'table' AND name = '${table}'`),
@@ -234,6 +235,38 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
   }
   assert.equal(columnDefault('transaction_splits', 'created_from'), `'manual_split'`)
 
+  const exportRunColumns = columnNames('export_runs')
+  for (const column of [
+    'id',
+    'period',
+    'status',
+    'export_range_start',
+    'export_range_end',
+    'generated_file_names',
+    'manifest_path',
+    'ledger_revision',
+    'exported_source_ids',
+    'export_target',
+    'metadata',
+    'created_at',
+    'updated_at',
+  ]) {
+    assert.ok(exportRunColumns.includes(column), `missing export_runs.${column}`)
+  }
+
+  const exportRunIndexes = indexNames('export_runs')
+  for (const index of [
+    'export_runs_period_idx',
+    'export_runs_status_idx',
+    'export_runs_created_idx',
+    'export_runs_target_period_idx',
+  ]) {
+    assert.ok(exportRunIndexes.includes(index), `missing export_runs index ${index}`)
+  }
+  assert.equal(columnDefault('export_runs', 'status'), `'created'`)
+  assert.equal(columnDefault('export_runs', 'generated_file_names'), `'[]'`)
+  assert.equal(columnDefault('export_runs', 'exported_source_ids'), `'[]'`)
+
   const stagedTransactionColumns = columnNames('staged_transactions')
   for (const column of [
     'reconciliation_status',
@@ -323,6 +356,10 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM source_accounts`), 2)
   assert.equal(
     scalar(`SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'table' AND name = 'transaction_splits'`),
+    1,
+  )
+  assert.equal(
+    scalar(`SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'table' AND name = 'export_runs'`),
     1,
   )
 })
