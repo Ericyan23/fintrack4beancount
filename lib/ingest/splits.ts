@@ -45,6 +45,20 @@ interface NormalizedSplitInput {
   parsedAmount: ParsedDecimal
 }
 
+export class ParentTransactionNotFoundError extends Error {
+  constructor(parentTransactionId: string) {
+    super(`Parent transaction not found: ${parentTransactionId}`)
+    this.name = 'ParentTransactionNotFoundError'
+  }
+}
+
+export class TransactionSplitConflictError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TransactionSplitConflictError'
+  }
+}
+
 const splitSelectSql = `
   SELECT id,
          parent_transaction_id AS parentTransactionId,
@@ -96,6 +110,7 @@ const insertSplit = sqlite.prepare(`
 `)
 
 export function listTransactionSplits(parentTransactionId: string): TransactionSplitRecord[] {
+  assertParentTransactionExists(parentTransactionId)
   return sqlite.prepare(splitSelectSql).all(parentTransactionId) as TransactionSplitRecord[]
 }
 
@@ -106,8 +121,9 @@ export function replaceTransactionSplits(input: {
 }): TransactionSplitRecord[] {
   const parent = getParentTransaction(input.parentTransactionId)
   if (!parent) {
-    throw new Error(`Parent transaction not found: ${input.parentTransactionId}`)
+    throw new ParentTransactionNotFoundError(input.parentTransactionId)
   }
+  assertParentCanHaveSplits(input.parentTransactionId)
   if (input.splits.length < 2) {
     throw new Error('Transaction splits require at least 2 rows')
   }
@@ -156,6 +172,16 @@ export function replaceTransactionSplits(input: {
   return listTransactionSplits(input.parentTransactionId)
 }
 
+export function clearTransactionSplits(parentTransactionId: string): TransactionSplitRecord[] {
+  const parent = getParentTransaction(parentTransactionId)
+  if (!parent) {
+    throw new ParentTransactionNotFoundError(parentTransactionId)
+  }
+
+  deleteSplits.run(parentTransactionId)
+  return listTransactionSplits(parentTransactionId)
+}
+
 export function hasTransactionSplits(parentTransactionId: string): boolean {
   const row = sqlite.prepare(`
     SELECT 1 AS value
@@ -169,6 +195,28 @@ export function hasTransactionSplits(parentTransactionId: string): boolean {
 
 function getParentTransaction(parentTransactionId: string): ParentTransactionRow | undefined {
   return parentSelect.get(parentTransactionId) as ParentTransactionRow | undefined
+}
+
+function assertParentTransactionExists(parentTransactionId: string): void {
+  if (!getParentTransaction(parentTransactionId)) {
+    throw new ParentTransactionNotFoundError(parentTransactionId)
+  }
+}
+
+function assertParentCanHaveSplits(parentTransactionId: string): void {
+  const confirmedTransfer = sqlite.prepare(`
+    SELECT id
+    FROM transfer_matches
+    WHERE status = 'confirmed'
+      AND (outflow_transaction_id = ? OR inflow_transaction_id = ?)
+    LIMIT 1
+  `).get(parentTransactionId, parentTransactionId) as { id: number } | undefined
+
+  if (confirmedTransfer) {
+    throw new TransactionSplitConflictError(
+      `Transaction ${parentTransactionId} is part of confirmed transfer match ${confirmedTransfer.id}; clear the transfer before adding split postings`,
+    )
+  }
 }
 
 function normalizeSplits(

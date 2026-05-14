@@ -95,3 +95,74 @@ test('renders a stable Beancount draft snapshot', () => {
     readFixture('beancount', 'expected-draft.bean'),
   )
 })
+
+test('renders split transactions with parent source id and split counter-postings', () => {
+  const preflight: BeancountPreflightResult = {
+    ok: true,
+    period: '2026-04',
+    dateRange: { start: '2026-04-01', end: '2026-04-30' },
+    beancountRoot: '/tmp/beancount-test',
+    ledger: { filesScanned: 1, openAccounts: 3, sourceIds: 0 },
+    proposedStaging: 'staging/2026-04/fintrack/draft/2026-04.bean',
+    summary: {
+      transactionsScanned: 1,
+      exportableTransactions: 1,
+      mergedTransfers: 0,
+      skipped: 0,
+      blockers: 0,
+      reviewItems: 0,
+      duplicateCandidates: 0,
+    },
+    blockers: [],
+    reviewItems: [],
+    duplicateCandidates: [],
+    skipped: [],
+    exportableTransactions: [
+      transaction({
+        amount: '-10.00',
+        category: null,
+        splitPostings: [
+          {
+            id: 'split:csv:bank-csv-001:0',
+            parentTransactionId: 'csv:bank-csv-001',
+            amount: '-4.25',
+            currency: 'USD',
+            ledgerAccount: 'Expenses:Food:Coffee',
+            memo: 'Coffee',
+            notes: null,
+            sortOrder: 0,
+          },
+          {
+            id: 'split:csv:bank-csv-001:1',
+            parentTransactionId: 'csv:bank-csv-001',
+            amount: '-5.75',
+            currency: 'USD',
+            ledgerAccount: 'Expenses:Office',
+            memo: null,
+            notes: 'Supplies',
+            sortOrder: 1,
+          },
+        ],
+      }),
+    ],
+    mergedTransfers: [],
+  }
+
+  assert.equal(
+    renderBeancountDraft(preflight, { generatedAt: new Date('2026-05-13T12:00:00.000Z') }),
+    [
+      '; Generated: 2026-05-13T12:00:00.000Z',
+      '; Period: 2026-04',
+      '; Source: FinTrack',
+      '; Warning: draft only; review before committing to Beancount.',
+      '; Proposed staging: staging/2026-04/fintrack/draft/2026-04.bean',
+      '',
+      '2026-04-01 * "Coffee Shop \\"Downtown\\""',
+      '  source_id: "fintrack:acct-checking:csv:bank-csv-001"',
+      '  Assets:US:Banks:MainChecking                    -10.00 USD',
+      '  Expenses:Food:Coffee                            4.25 USD',
+      '  Expenses:Office                                 5.75 USD',
+      '',
+    ].join('\n'),
+  )
+})

@@ -5,6 +5,10 @@ import type { Transaction } from '@/lib/db/schema'
 import CategoryBadge from './CategoryBadge'
 import CategorySelect from './CategorySelect'
 
+type TransactionListRow = Transaction & {
+  splitCount?: number
+}
+
 function formatAmount(amount: string): { text: string; positive: boolean } {
   const num = parseFloat(amount)
   const positive = num > 0
@@ -22,12 +26,12 @@ function formatDate(ts: number): string {
   })
 }
 
-function hasPendingSuggestion(txn: Transaction): txn is Transaction & { suggestedCat: string } {
+function hasPendingSuggestion(txn: TransactionListRow): txn is TransactionListRow & { suggestedCat: string } {
   return !txn.category && typeof txn.suggestedCat === 'string' && txn.suggestedCat.length > 0
 }
 
 interface Props {
-  transactions: Transaction[]
+  transactions: TransactionListRow[]
   accounts?: Array<{ id: string; name: string }>
   onUpdate?: () => void
 }
@@ -61,12 +65,12 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
     }
   }, [onUpdate])
 
-  const confirmSuggested = useCallback(async (txn: Transaction) => {
+  const confirmSuggested = useCallback(async (txn: TransactionListRow) => {
     if (!txn.suggestedCat) return
     await updateCategory(txn.id, txn.suggestedCat)
   }, [updateCategory])
 
-  const ignoreSuggested = useCallback(async (txn: Transaction) => {
+  const ignoreSuggested = useCallback(async (txn: TransactionListRow) => {
     setLoading(prev => ({ ...prev, [txn.id]: true }))
     try {
       await fetch(`/api/transactions/${encodeURIComponent(txn.id)}`, {
@@ -215,6 +219,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
           const isEditing = editingId === txn.id
           const isSelected = selected.has(txn.id)
           const accountName = accountNames.get(txn.accountId)
+          const splitCount = txn.splitCount ?? 0
 
           return (
             <div
@@ -248,6 +253,11 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
                         )}
                         {txn.status === 'cancelled' && (
                           <span className="ml-2 text-slate-500">Cancelled</span>
+                        )}
+                        {splitCount > 0 && (
+                          <span className="ml-2 inline-flex items-center rounded-full border border-cyan-800/70 bg-cyan-950/50 px-1.5 py-0.5 text-cyan-300">
+                            Split · {splitCount} {splitCount === 1 ? 'posting' : 'postings'}
+                          </span>
                         )}
                       </p>
                     </div>

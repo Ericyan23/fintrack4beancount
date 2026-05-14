@@ -19,7 +19,11 @@ export interface TransactionFilters {
   amountMax?: number
 }
 
-export interface TransactionExportRow extends Transaction {
+export interface TransactionWithSplitSummary extends Transaction {
+  splitCount?: number
+}
+
+export interface TransactionExportRow extends TransactionWithSplitSummary {
   accountName: string | null
 }
 
@@ -39,6 +43,7 @@ interface RawTransactionRow {
   tags: string | null
   createdAt: number
   accountName?: string | null
+  splitCount?: number | null
 }
 
 export function parseTransactionFilters(searchParams: URLSearchParams): TransactionFilters {
@@ -144,7 +149,9 @@ function parseTags(value: string | null): string[] {
   }
 }
 
-export function mapTransactionRow(row: RawTransactionRow): Transaction {
+export function mapTransactionRow(row: RawTransactionRow): TransactionWithSplitSummary {
+  const splitCount = row.splitCount ?? 0
+
   return {
     id: row.id,
     accountId: row.accountId,
@@ -160,6 +167,7 @@ export function mapTransactionRow(row: RawTransactionRow): Transaction {
     notes: row.notes,
     tags: parseTags(row.tags),
     createdAt: row.createdAt,
+    ...(splitCount > 0 ? { splitCount } : {}),
   }
 }
 
@@ -177,18 +185,29 @@ const SELECT_TRANSACTION_FIELDS = `
   t.suggested_cat AS suggestedCat,
   t.notes,
   t.tags,
-  t.created_at AS createdAt
+  t.created_at AS createdAt,
+  COALESCE(split_counts.splitCount, 0) AS splitCount
+`
+
+const SPLIT_COUNT_JOIN = `
+  LEFT JOIN (
+    SELECT parent_transaction_id,
+           COUNT(*) AS splitCount
+    FROM transaction_splits
+    GROUP BY parent_transaction_id
+  ) split_counts ON split_counts.parent_transaction_id = t.id
 `
 
 export function listTransactions(
   filters: TransactionFilters,
   limit: number,
   offset: number,
-): { transactions: Transaction[]; total: number; hasMore: boolean } {
+): { transactions: TransactionWithSplitSummary[]; total: number; hasMore: boolean } {
   const { where, params } = buildTransactionWhere(filters)
   const rows = sqlite.prepare(`
     SELECT ${SELECT_TRANSACTION_FIELDS}
     FROM transactions t
+    ${SPLIT_COUNT_JOIN}
     WHERE ${where}
     ORDER BY t.posted DESC
     LIMIT ? OFFSET ?
@@ -213,6 +232,7 @@ export function listTransactionsForExport(filters: TransactionFilters): Transact
   const rows = sqlite.prepare(`
     SELECT ${SELECT_TRANSACTION_FIELDS}, a.name AS accountName
     FROM transactions t
+    ${SPLIT_COUNT_JOIN}
     LEFT JOIN accounts a ON a.id = t.account_id
     WHERE ${where}
     ORDER BY t.posted DESC

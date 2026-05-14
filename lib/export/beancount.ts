@@ -1,5 +1,6 @@
 import type {
   BeancountPreflightResult,
+  PreflightSplitPosting,
   PreflightTransaction,
   PreflightTransfer,
 } from '@/lib/export/preflight'
@@ -59,17 +60,34 @@ function requireCategory(txn: PreflightTransaction): string {
   return txn.category
 }
 
+function requireSplitAccount(split: PreflightSplitPosting, transactionId: string): string {
+  if (!split.ledgerAccount) {
+    throw new Error(`Missing split ledger account for transaction ${transactionId}`)
+  }
+  return split.ledgerAccount
+}
+
 function renderTransaction(txn: PreflightTransaction): string {
   const account = requireAccount(txn)
-  const category = requireCategory(txn)
   const amount = parseAmount(txn.amount, txn.id)
-
-  return [
+  const lines = [
     `${txn.date} * "${escapeBeancountString(txn.description)}"`,
     renderSourceId(txn.sourceId),
     postingLine(account, amount, txn.currency),
-    postingLine(category, -amount, txn.currency),
-  ].join('\n')
+  ]
+
+  if (txn.splitPostings?.length) {
+    for (const split of txn.splitPostings) {
+      const splitAccount = requireSplitAccount(split, txn.id)
+      const splitAmount = parseAmount(split.amount, split.id)
+      lines.push(postingLine(splitAccount, -splitAmount, split.currency))
+    }
+  } else {
+    const category = requireCategory(txn)
+    lines.push(postingLine(category, -amount, txn.currency))
+  }
+
+  return lines.join('\n')
 }
 
 function renderTransfer(transfer: PreflightTransfer): string {

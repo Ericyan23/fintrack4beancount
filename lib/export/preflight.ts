@@ -17,10 +17,22 @@ export interface PreflightIssue {
   code: string
   message: string
   transactionId?: string
+  splitId?: string
   transferMatchId?: number
   account?: string | null
   category?: string | null
   sourceId?: string
+}
+
+export interface PreflightSplitPosting {
+  id: string
+  parentTransactionId: string
+  amount: string
+  currency: string
+  ledgerAccount: string
+  memo: string | null
+  notes: string | null
+  sortOrder: number
 }
 
 export interface PreflightTransaction {
@@ -36,6 +48,7 @@ export interface PreflightTransaction {
   beancountAccount: string | null
   category: string | null
   currency: string
+  splitPostings?: PreflightSplitPosting[]
 }
 
 export interface PreflightTransfer {
@@ -103,6 +116,11 @@ interface TransferMatchRow {
   inflow: TransactionRow
 }
 
+interface ParsedDecimal {
+  unscaled: bigint
+  scale: number
+}
+
 const REVIEW_CATEGORIES = new Set(REVIEW_CATEGORY_NAMES)
 const DUPLICATE_POSTING_DATE_TOLERANCE_DAYS = 7
 const SUPPORTED_EXPORT_ACCOUNT_TYPES = new Set(['depository', 'credit'])
@@ -157,7 +175,10 @@ function sourceIdForPair(outflow: PreflightTransaction, inflow: PreflightTransac
   return `fintrack:pair:${digest}`
 }
 
-function toPreflightTransaction(row: TransactionRow): PreflightTransaction {
+function toPreflightTransaction(
+  row: TransactionRow,
+  splitPostings?: PreflightSplitPosting[],
+): PreflightTransaction {
   return {
     id: row.id,
     sourceId: sourceIdForTransaction(row),
@@ -171,6 +192,7 @@ function toPreflightTransaction(row: TransactionRow): PreflightTransaction {
     beancountAccount: row.beancountAccount,
     category: row.category,
     currency: row.currency,
+    ...(splitPostings && splitPostings.length > 0 ? { splitPostings } : {}),
   }
 }
 
@@ -195,6 +217,34 @@ function loadTransactions(startTs: number, endTs: number): TransactionRow[] {
       AND t.status != 'cancelled'
     ORDER BY t.posted ASC, t.id ASC
   `).all(startTs, endTs) as TransactionRow[]
+}
+
+function loadSplitPostings(parentTransactionIds: string[]): Map<string, PreflightSplitPosting[]> {
+  if (parentTransactionIds.length === 0) return new Map()
+
+  const placeholders = parentTransactionIds.map(() => '?').join(', ')
+  const rows = sqlite.prepare(`
+    SELECT
+      id,
+      parent_transaction_id AS parentTransactionId,
+      amount,
+      currency,
+      ledger_account AS ledgerAccount,
+      memo,
+      notes,
+      sort_order AS sortOrder
+    FROM transaction_splits
+    WHERE parent_transaction_id IN (${placeholders})
+    ORDER BY parent_transaction_id ASC, sort_order ASC, id ASC
+  `).all(...parentTransactionIds) as PreflightSplitPosting[]
+
+  const byParentId = new Map<string, PreflightSplitPosting[]>()
+  for (const row of rows) {
+    const existing = byParentId.get(row.parentTransactionId) ?? []
+    existing.push(row)
+    byParentId.set(row.parentTransactionId, existing)
+  }
+  return byParentId
 }
 
 function loadConfirmedTransferMatches(startTs: number, endTs: number): TransferMatchRow[] {
@@ -388,6 +438,124 @@ function validateCategory(
   return true
 }
 
+function validateSplitPostingAccounts(
+  snapshot: LedgerSnapshot,
+  txn: PreflightTransaction,
+  issueBase: Omit<PreflightIssue, 'severity' | 'code' | 'message'>,
+  blockers: PreflightIssue[],
+): boolean {
+  let valid = true
+
+  for (const split of txn.splitPostings ?? []) {
+    const account = split.ledgerAccount || null
+    const state = accountStateOn(snapshot, account, txn.date)
+    if (state.ok) continue
+
+    const code = !account
+      ? 'missing_split_account'
+      : state.reason === 'missing'
+      ? 'split_account_not_open'
+      : state.reason === 'not_yet_open'
+        ? 'split_account_not_yet_open'
+        : 'split_account_closed'
+
+    addIssue(blockers, {
+      ...issueBase,
+      splitId: split.id,
+      code,
+      account,
+      category: account,
+      message: account
+        ? `${account} is not open on ${txn.date}`
+        : 'Split posting is missing ledger account',
+    }, 'blocker')
+    valid = false
+  }
+
+  return valid
+}
+
+function validateSplitPostingTotals(
+  txn: PreflightTransaction,
+  issueBase: Omit<PreflightIssue, 'severity' | 'code' | 'message'>,
+  blockers: PreflightIssue[],
+): boolean {
+  const splits = txn.splitPostings ?? []
+  if (splits.length === 0) return true
+
+  let valid = true
+  if (splits.length < 2) {
+    addIssue(blockers, {
+      ...issueBase,
+      code: 'split_count_invalid',
+      message: 'Split transactions require at least two split postings',
+    }, 'blocker')
+    valid = false
+  }
+
+  for (const split of splits) {
+    if (split.currency !== txn.currency) {
+      addIssue(blockers, {
+        ...issueBase,
+        splitId: split.id,
+        code: 'split_currency_mismatch',
+        account: split.ledgerAccount,
+        category: split.ledgerAccount,
+        message: `Split posting currency ${split.currency} does not match parent transaction currency ${txn.currency}`,
+      }, 'blocker')
+      valid = false
+    }
+  }
+
+  try {
+    const parent = parseDecimalString(txn.amount, 'Parent transaction amount')
+    const parsedSplits = splits.map(split => parseDecimalString(split.amount, `Split posting ${split.id} amount`))
+    const scale = Math.max(parent.scale, ...parsedSplits.map(split => split.scale))
+    const parentValue = scaleDecimal(parent, scale)
+    const splitValue = parsedSplits.reduce(
+      (total, split) => total + scaleDecimal(split, scale),
+      BigInt(0),
+    )
+
+    if (splitValue !== parentValue) {
+      addIssue(blockers, {
+        ...issueBase,
+        code: 'split_amount_mismatch',
+        message: 'Split posting amounts must sum exactly to the parent transaction amount',
+      }, 'blocker')
+      valid = false
+    }
+  } catch (error) {
+    addIssue(blockers, {
+      ...issueBase,
+      code: 'split_amount_invalid',
+      message: error instanceof Error ? error.message : 'Split posting amount is invalid',
+    }, 'blocker')
+    valid = false
+  }
+
+  return valid
+}
+
+function validateSplitPostingsNotOnConfirmedTransfer(
+  splitPostingsByParentId: Map<string, PreflightSplitPosting[]>,
+  transaction: PreflightTransaction,
+  transferMatchId: number,
+  blockers: PreflightIssue[],
+): boolean {
+  const splits = splitPostingsByParentId.get(transaction.id) ?? []
+  if (splits.length === 0) return true
+
+  addIssue(blockers, {
+    code: 'confirmed_transfer_has_splits',
+    transactionId: transaction.id,
+    splitId: splits[0]?.id,
+    transferMatchId,
+    message: 'Confirmed transfer sides cannot have split postings; clear the split or unconfirm the transfer before export',
+  }, 'blocker')
+  return false
+}
+
 function validateDuplicateSourceId(
   snapshot: LedgerSnapshot,
   sourceId: string,
@@ -483,6 +651,53 @@ function validateTransactionSign(
   }
 }
 
+function validateSplitPostingSigns(
+  txn: PreflightTransaction,
+  reviewItems: PreflightIssue[],
+): void {
+  for (const split of txn.splitPostings ?? []) {
+    const amount = Number.parseFloat(split.amount)
+    if (!Number.isFinite(amount)) continue
+    if (amount > 0 && split.ledgerAccount.startsWith('Expenses:')) {
+      addIssue(reviewItems, {
+        code: 'positive_expense',
+        transactionId: txn.id,
+        splitId: split.id,
+        category: split.ledgerAccount,
+        message: 'Positive split amount uses an Expenses account; confirm this is a refund or correction',
+      }, 'review')
+    }
+    if (amount < 0 && split.ledgerAccount.startsWith('Income:')) {
+      addIssue(reviewItems, {
+        code: 'negative_income',
+        transactionId: txn.id,
+        splitId: split.id,
+        category: split.ledgerAccount,
+        message: 'Negative split amount uses an Income account; confirm this is a reversal or correction',
+      }, 'review')
+    }
+  }
+}
+
+
+function parseDecimalString(value: string, label: string): ParsedDecimal {
+  if (!/^-?\d+(?:\.\d+)?$/.test(value)) {
+    throw new Error(`${label} must be a decimal string`)
+  }
+
+  const negative = value.startsWith('-')
+  const unsigned = negative ? value.slice(1) : value
+  const [whole, fraction = ''] = unsigned.split('.')
+  const digits = `${whole}${fraction}`
+  const unscaled = BigInt(digits) * (negative ? BigInt(-1) : BigInt(1))
+
+  return { unscaled, scale: fraction.length }
+}
+
+function scaleDecimal(value: ParsedDecimal, targetScale: number): bigint {
+  return value.unscaled * BigInt(10) ** BigInt(targetScale - value.scale)
+}
+
 export function runBeancountPreflight(options: {
   period?: string
   beancountRoot?: string
@@ -492,6 +707,13 @@ export function runBeancountPreflight(options: {
   const beancountRoot = options.beancountRoot ?? defaultBeancountRoot()
   const snapshot = loadLedgerSnapshot(beancountRoot)
   const rows = loadTransactions(range.startTs, range.endTs)
+  const confirmedTransferMatches = loadConfirmedTransferMatches(range.startTs, range.endTs)
+  const splitParentIds = new Set(rows.map(row => row.id))
+  for (const match of confirmedTransferMatches) {
+    splitParentIds.add(match.outflow.id)
+    splitParentIds.add(match.inflow.id)
+  }
+  const splitPostingsByParentId = loadSplitPostings([...splitParentIds])
   const blockers: PreflightIssue[] = []
   const reviewItems: PreflightIssue[] = []
   const duplicateCandidates: PreflightIssue[] = []
@@ -501,7 +723,7 @@ export function runBeancountPreflight(options: {
   const occupiedTransactionIds = new Set<string>()
   const duplicateLedgerPostings = new Set<string>()
 
-  for (const match of loadConfirmedTransferMatches(range.startTs, range.endTs)) {
+  for (const match of confirmedTransferMatches) {
     const outRow = match.outflow
     const inRow = match.inflow
     const outflow = toPreflightTransaction(outRow)
@@ -571,6 +793,18 @@ export function runBeancountPreflight(options: {
       transactionId: inflow.id,
       transferMatchId: match.id,
     }, blockers, duplicateCandidates, duplicateLedgerPostings) && valid
+    valid = validateSplitPostingsNotOnConfirmedTransfer(
+      splitPostingsByParentId,
+      outflow,
+      match.id,
+      blockers,
+    ) && valid
+    valid = validateSplitPostingsNotOnConfirmedTransfer(
+      splitPostingsByParentId,
+      inflow,
+      match.id,
+      blockers,
+    ) && valid
 
     if (outflow.currency !== inflow.currency) {
       addIssue(blockers, {
@@ -615,7 +849,8 @@ export function runBeancountPreflight(options: {
 
   for (const row of rows) {
     if (occupiedTransactionIds.has(row.id)) continue
-    const txn = toPreflightTransaction(row)
+    const txn = toPreflightTransaction(row, splitPostingsByParentId.get(row.id))
+    const hasSplitPostings = Boolean(txn.splitPostings?.length)
 
     if (row.status !== 'posted') {
       skipped.push({ transactionId: row.id, reason: `status_${row.status}` })
@@ -633,11 +868,17 @@ export function runBeancountPreflight(options: {
       transactionId: txn.id,
       sourceId: txn.sourceId,
     }, blockers, duplicateCandidates) && valid
+    valid = validateSplitPostingAccounts(snapshot, txn, {
+      transactionId: txn.id,
+    }, blockers) && valid
+    valid = validateSplitPostingTotals(txn, {
+      transactionId: txn.id,
+    }, blockers) && valid
     const isNotExistingPosting = validateDuplicatePosting(snapshot, txn, {
       transactionId: txn.id,
     }, blockers, duplicateCandidates, duplicateLedgerPostings)
 
-    if (txn.category?.startsWith('Transfer:')) {
+    if (!hasSplitPostings && txn.category?.startsWith('Transfer:')) {
       if (!isNotExistingPosting) continue
       addIssue(blockers, {
         code: 'unmatched_transfer',
@@ -648,11 +889,15 @@ export function runBeancountPreflight(options: {
       continue
     }
 
-    valid = validateCategory(snapshot, txn.category, txn.date, {
-      transactionId: txn.id,
-    }, blockers) && valid
+    if (!hasSplitPostings) {
+      valid = validateCategory(snapshot, txn.category, txn.date, {
+        transactionId: txn.id,
+      }, blockers) && valid
+      validateTransactionSign(txn, reviewItems)
+    } else {
+      validateSplitPostingSigns(txn, reviewItems)
+    }
     valid = isNotExistingPosting && valid
-    validateTransactionSign(txn, reviewItems)
 
     if (valid) exportableTransactions.push(txn)
   }

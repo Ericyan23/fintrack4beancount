@@ -141,6 +141,33 @@ function countRows(table: string): number {
   return row.value
 }
 
+function confirmTransfer(outflowTransactionId: string, inflowTransactionId: string): void {
+  sqlite.prepare(`
+    INSERT INTO transfer_matches (
+      outflow_transaction_id,
+      inflow_transaction_id,
+      kind,
+      status,
+      confidence,
+      date_delta_days,
+      reason,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    outflowTransactionId,
+    inflowTransactionId,
+    'internal',
+    'confirmed',
+    100,
+    0,
+    'test confirmed transfer',
+    1775001600,
+    1775001600,
+  )
+}
+
 beforeEach(() => {
   resetDb()
 })
@@ -307,6 +334,30 @@ test('split currency must match the parent transaction account currency', () => 
       ],
     }),
     /currency must match parent transaction currency USD/,
+  )
+
+  assert.equal(countRows('transaction_splits'), 0)
+})
+
+test('confirmed transfer parents reject new split rows without writing splits', () => {
+  const outflowId = insertParentTransaction({ id: 'txn-split-transfer-out', amount: '-10.00' })
+  const inflowAccountId = insertAccount('acct-split-transfer-in', 'USD')
+  const inflowId = insertParentTransaction({
+    id: 'txn-split-transfer-in',
+    accountId: inflowAccountId,
+    amount: '10.00',
+  })
+  confirmTransfer(outflowId, inflowId)
+
+  assert.throws(
+    () => replaceTransactionSplits({
+      parentTransactionId: outflowId,
+      splits: [
+        { amount: '-4.00', ledgerAccount: 'Expenses:Food' },
+        { amount: '-6.00', ledgerAccount: 'Expenses:Home' },
+      ],
+    }),
+    /part of confirmed transfer match/,
   )
 
   assert.equal(countRows('transaction_splits'), 0)
