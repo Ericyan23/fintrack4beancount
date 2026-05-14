@@ -24,6 +24,14 @@ export async function POST(_req: NextRequest, { params }: RouteParams): Promise<
     return NextResponse.json({ error: 'No suitable category was matched. Check your API key configuration' }, { status: 422 })
   }
 
-  db.update(transactions).set({ suggestedCat: suggested }).where(eq(transactions.id, id)).run()
-  return NextResponse.json({ suggestedCat: suggested })
+  db.update(transactions)
+    .set({
+      suggestedLedgerAccount: suggested,
+      suggestedCat: suggested,
+      classifier: 'ai',
+      suggestedAt: Math.floor(Date.now() / 1000),
+    })
+    .where(eq(transactions.id, id))
+    .run()
+  return NextResponse.json({ suggestedCat: suggested, suggestedLedgerAccount: suggested })
 }

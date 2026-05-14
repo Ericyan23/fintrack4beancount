@@ -77,7 +77,14 @@ function countReviewTransactions(): number {
     SELECT COUNT(*) AS count
     FROM transactions
     WHERE status = 'posted'
-      AND (category IS NULL OR category IN (${placeholders}))
+      AND (
+        ledger_account IS NULL
+        OR review_status = 'needs_review'
+        OR (
+          review_status IS NULL
+          AND (category IS NULL OR category IN (${placeholders}))
+        )
+      )
   `).get(...REVIEW_CATEGORY_NAMES) as ScalarRow
   return row.count
 }
@@ -87,7 +94,7 @@ function countCanonical(): { total: number; categorized: number; pending: number
     SELECT
       COUNT(*)                                               AS total,
       SUM(CASE WHEN status = 'pending'                THEN 1 ELSE 0 END) AS pending,
-      SUM(CASE WHEN status = 'posted' AND category IS NOT NULL THEN 1 ELSE 0 END) AS categorized
+      SUM(CASE WHEN status = 'posted' AND ledger_account IS NOT NULL THEN 1 ELSE 0 END) AS categorized
     FROM transactions
   `).get() as { total: number; categorized: number; pending: number }
   return row

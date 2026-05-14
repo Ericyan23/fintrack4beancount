@@ -131,6 +131,12 @@ export const transactions = sqliteTable('transactions', {
   status:       text('status').notNull().default('posted'), // 'pending' | 'posted' | 'cancelled'
   category:     text('category'),
   suggestedCat: text('suggested_cat'),
+  ledgerAccount: text('ledger_account'),
+  reviewStatus: text('review_status'), // 'needs_review' | 'reviewed'
+  suggestedLedgerAccount: text('suggested_ledger_account'),
+  classifier: text('classifier'),
+  confidence: integer('confidence'),
+  suggestedAt: integer('suggested_at'),
   notes:        text('notes'),
   tags:         text('tags', { mode: 'json' }).$type<string[]>(),
   createdAt:    integer('created_at').notNull(),
@@ -143,6 +149,9 @@ export const transactions = sqliteTable('transactions', {
   uniqueIndex('transactions_source_connection_item_key_idx')
     .on(table.sourceConnectionId, table.sourceItemKey),
   index('transactions_source_item_key_idx').on(table.sourceItemKey),
+  index('transactions_ledger_account_status_idx').on(table.ledgerAccount, table.status),
+  index('transactions_review_status_idx').on(table.reviewStatus),
+  index('transactions_suggested_ledger_status_idx').on(table.suggestedLedgerAccount, table.status),
 ])
 
 export const stagedTransactions = sqliteTable('staged_transactions', {

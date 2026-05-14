@@ -3,12 +3,18 @@ import { after, beforeEach, test } from 'node:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import type { NextRequest } from 'next/server'
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-review-groups-'))
 process.env.DB_PATH = path.join(tempDir, 'fintrack.db')
 
 const { sqlite } = require('../lib/db') as typeof import('../lib/db')
 const { loadReviewGroups } = require('../lib/review') as typeof import('../lib/review')
+const reviewRoute = require('../app/api/review/route') as typeof import('../app/api/review/route')
+
+function request(pathname: string, init?: RequestInit): NextRequest {
+  return new Request(`http://localhost${pathname}`, init) as NextRequest
+}
 
 function resetDb(): void {
   sqlite.exec(`
@@ -50,6 +56,9 @@ function insertReviewTransaction(input: {
   amount?: string
   description?: string
   category?: string | null
+  ledgerAccount?: string | null
+  reviewStatus?: string | null
+  suggestedLedgerAccount?: string | null
 }): void {
   sqlite.prepare(`
     INSERT INTO transactions (
@@ -64,12 +73,15 @@ function insertReviewTransaction(input: {
       status,
       category,
       suggested_cat,
+      ledger_account,
+      review_status,
+      suggested_ledger_account,
       notes,
       tags,
       created_at,
       updated_at
     )
-    VALUES (?, ?, 'manual', ?, ?, ?, ?, 0, 'posted', ?, NULL, NULL, NULL, ?, ?)
+    VALUES (?, ?, 'manual', ?, ?, ?, ?, 0, 'posted', ?, NULL, ?, ?, ?, NULL, NULL, ?, ?)
   `).run(
     input.id,
     input.accountId,
@@ -78,6 +90,9 @@ function insertReviewTransaction(input: {
     input.amount ?? '-15.00',
     input.description ?? 'Split Review Merchant',
     input.category ?? null,
+    input.ledgerAccount ?? null,
+    input.reviewStatus ?? null,
+    input.suggestedLedgerAccount ?? null,
     1775001600,
     1775001600,
   )
@@ -138,4 +153,61 @@ test('review groups include split summaries without duplicating parent transacti
   assert.equal(payload.groups[0].transactions.length, 1)
   assert.equal(payload.groups[0].transactions[0].id, 'txn-review-split')
   assert.equal(payload.groups[0].transactions[0].splitCount, 2)
+})
+
+test('review apply writes ledger account semantics while preserving category compatibility', async () => {
+  const accountId = insertAccount()
+  insertReviewTransaction({
+    id: 'txn-review-apply',
+    accountId,
+    category: 'Expenses:Review',
+    reviewStatus: 'needs_review',
+    suggestedLedgerAccount: 'Expenses:Food:Restaurants',
+  })
+
+  const before = loadReviewGroups()
+  assert.equal(before.summary.transactions, 1)
+  assert.equal(before.groups[0].suggestedCategories[0].category, 'Expenses:Food:Restaurants')
+
+  const response = await reviewRoute.POST(
+    request('/api/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transactionIds: ['txn-review-apply'],
+        category: 'Expenses:Food:Restaurants',
+        createRule: false,
+      }),
+    }),
+  )
+  const payload = await response.json() as { changed?: number; ledgerAccount?: string }
+  const row = sqlite.prepare(`
+    SELECT
+      category,
+      suggested_cat AS suggestedCat,
+      ledger_account AS ledgerAccount,
+      review_status AS reviewStatus,
+      suggested_ledger_account AS suggestedLedgerAccount,
+      classifier
+    FROM transactions
+    WHERE id = 'txn-review-apply'
+  `).get() as {
+    category: string | null
+    suggestedCat: string | null
+    ledgerAccount: string | null
+    reviewStatus: string | null
+    suggestedLedgerAccount: string | null
+    classifier: string | null
+  }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.changed, 1)
+  assert.equal(payload.ledgerAccount, 'Expenses:Food:Restaurants')
+  assert.equal(row.ledgerAccount, 'Expenses:Food:Restaurants')
+  assert.equal(row.reviewStatus, 'reviewed')
+  assert.equal(row.category, 'Expenses:Food:Restaurants')
+  assert.equal(row.suggestedLedgerAccount, null)
+  assert.equal(row.suggestedCat, null)
+  assert.equal(row.classifier, 'manual_review')
+  assert.equal(loadReviewGroups().summary.transactions, 0)
 })

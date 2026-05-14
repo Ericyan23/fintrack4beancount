@@ -6,7 +6,7 @@ function countUnclassified() {
   const row = sqlite.prepare(`
     SELECT COUNT(*) AS total
     FROM transactions
-    WHERE category IS NULL AND status = 'posted'
+    WHERE ledger_account IS NULL AND status = 'posted'
   `).get() as { total: number }
   return row.total
 }

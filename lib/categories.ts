@@ -112,8 +112,8 @@ export function loadCategoriesWithStats(): CategoryRow[] {
     SELECT
       c.name,
       c.is_default,
-      (SELECT COUNT(*) FROM transactions t WHERE t.category = c.name AND t.status != 'cancelled') AS transactions,
-      (SELECT COUNT(*) FROM transactions s WHERE s.suggested_cat = c.name AND s.status != 'cancelled') AS suggestions,
+      (SELECT COUNT(*) FROM transactions t WHERE (t.ledger_account = c.name OR t.category = c.name) AND t.status != 'cancelled') AS transactions,
+      (SELECT COUNT(*) FROM transactions s WHERE (s.suggested_ledger_account = c.name OR s.suggested_cat = c.name) AND s.status != 'cancelled') AS suggestions,
       (SELECT COUNT(*) FROM rules r WHERE r.category = c.name) AS rules
     FROM categories c
     ORDER BY c.name
@@ -164,7 +164,7 @@ export function getCategoryImpact(name: string): CategoryImpact {
   if (name === 'Uncategorized') {
     const row = sqlite.prepare(`
       SELECT
-        COUNT(CASE WHEN (category IS NULL OR category = '') AND status != 'cancelled' THEN 1 END) as transactions,
+        COUNT(CASE WHEN (ledger_account IS NULL OR ledger_account = '') AND status != 'cancelled' THEN 1 END) as transactions,
         0 as suggestions,
         0 as rules
       FROM transactions
@@ -174,10 +174,10 @@ export function getCategoryImpact(name: string): CategoryImpact {
 
   return sqlite.prepare(`
     SELECT
-      (SELECT COUNT(*) FROM transactions WHERE category = ? AND status != 'cancelled') as transactions,
-      (SELECT COUNT(*) FROM transactions WHERE suggested_cat = ? AND status != 'cancelled') as suggestions,
+      (SELECT COUNT(*) FROM transactions WHERE (ledger_account = ? OR category = ?) AND status != 'cancelled') as transactions,
+      (SELECT COUNT(*) FROM transactions WHERE (suggested_ledger_account = ? OR suggested_cat = ?) AND status != 'cancelled') as suggestions,
       (SELECT COUNT(*) FROM rules WHERE category = ?) as rules
-  `).get(name, name, name) as CategoryImpact
+  `).get(name, name, name, name, name) as CategoryImpact
 }
 
 function validateName(name: string): string | null {
@@ -225,6 +225,8 @@ export function renameCategory(from: string, to: string): { error?: string } {
     sqlite.prepare('INSERT OR IGNORE INTO categories (name, is_default) VALUES (?, 0)').run(to)
     sqlite.prepare(`UPDATE transactions SET category = ? WHERE category = ?`).run(to, from)
     sqlite.prepare(`UPDATE transactions SET suggested_cat = ? WHERE suggested_cat = ?`).run(to, from)
+    sqlite.prepare(`UPDATE transactions SET ledger_account = ? WHERE ledger_account = ?`).run(to, from)
+    sqlite.prepare(`UPDATE transactions SET suggested_ledger_account = ? WHERE suggested_ledger_account = ?`).run(to, from)
     sqlite.prepare(`UPDATE rules SET category = ? WHERE category = ?`).run(to, from)
     sqlite.prepare('DELETE FROM categories WHERE name = ?').run(from)
   })()
@@ -242,6 +244,8 @@ export function mergeCategories(source: string, target: string): { count: number
     const result = sqlite.prepare(`UPDATE transactions SET category = ? WHERE category = ?`).run(target, source)
     count = result.changes
     sqlite.prepare(`UPDATE transactions SET suggested_cat = ? WHERE suggested_cat = ?`).run(target, source)
+    sqlite.prepare(`UPDATE transactions SET ledger_account = ? WHERE ledger_account = ?`).run(target, source)
+    sqlite.prepare(`UPDATE transactions SET suggested_ledger_account = ? WHERE suggested_ledger_account = ?`).run(target, source)
     sqlite.prepare(`UPDATE rules SET category = ? WHERE category = ?`).run(target, source)
     sqlite.prepare('DELETE FROM categories WHERE name = ?').run(source)
   })()

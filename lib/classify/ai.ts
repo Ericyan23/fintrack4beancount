@@ -125,18 +125,23 @@ export async function suggestCategoriesForUncategorized(): Promise<void> {
   const unclassified = db
     .select()
     .from(transactions)
-    .where(isNull(transactions.category))
+    .where(isNull(transactions.ledgerAccount))
     .limit(20)
     .all()
 
-  const noSuggestion = unclassified.filter(t => !t.suggestedCat)
+  const noSuggestion = unclassified.filter(t => !t.suggestedLedgerAccount)
   if (noSuggestion.length === 0) return
 
   for (const txn of noSuggestion) {
     const suggested = await classifyByAI(txn.description)
     if (suggested) {
       db.update(transactions)
-        .set({ suggestedCat: suggested })
+        .set({
+          suggestedLedgerAccount: suggested,
+          suggestedCat: suggested,
+          classifier: 'ai',
+          suggestedAt: Math.floor(Date.now() / 1000),
+        })
         .where(eq(transactions.id, txn.id))
         .run()
     }
@@ -151,12 +156,17 @@ export async function suggestCategoriesForBatch(ids: string[]): Promise<void> {
 
   for (const id of ids) {
     const [txn] = db.select().from(transactions).where(eq(transactions.id, id)).all()
-    if (!txn || txn.category || txn.suggestedCat) continue
+    if (!txn || txn.ledgerAccount || txn.suggestedLedgerAccount) continue
 
     const suggested = await classifyByAI(txn.description)
     if (suggested) {
       db.update(transactions)
-        .set({ suggestedCat: suggested })
+        .set({
+          suggestedLedgerAccount: suggested,
+          suggestedCat: suggested,
+          classifier: 'ai',
+          suggestedAt: Math.floor(Date.now() / 1000),
+        })
         .where(eq(transactions.id, id))
         .run()
     }

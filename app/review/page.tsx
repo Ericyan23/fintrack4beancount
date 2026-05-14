@@ -12,6 +12,9 @@ interface ReviewTransaction {
   accountName: string
   category: string | null
   suggestedCat: string | null
+  ledgerAccount: string | null
+  reviewStatus: string | null
+  suggestedLedgerAccount: string | null
   splitCount: number
 }
 
@@ -190,7 +193,7 @@ export default function ReviewPage() {
         <div>
           <h1 className="text-xl font-bold">Ledger Prep</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Resolve category gaps and review markers before Beancount export.
+            Resolve ledger account gaps and review markers before Beancount export.
           </p>
         </div>
         <button
@@ -213,7 +216,7 @@ export default function ReviewPage() {
             <p className="mt-1 text-2xl font-bold tabular-nums text-blue-300">{summary.groups}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Missing category</p>
+            <p className="text-xs text-slate-400">Missing ledger account</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-red-300">{summary.uncategorized}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
@@ -350,7 +353,7 @@ export default function ReviewPage() {
                   <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
                     <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_minmax(260px,1fr)]">
                       <div>
-                        <label className="mb-1 block text-xs text-slate-400">Target category</label>
+                        <label className="mb-1 block text-xs text-slate-400">Target ledger account</label>
                         <CategorySelect
                           value={form.category}
                           onChange={category => updateForm(group, { category })}

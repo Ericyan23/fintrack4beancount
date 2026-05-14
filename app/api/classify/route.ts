@@ -63,7 +63,7 @@ function countRemainingUnclassified(): number {
   const row = sqlite.prepare(`
     SELECT COUNT(*) AS total
     FROM transactions
-    WHERE category IS NULL AND status = 'posted'
+    WHERE ledger_account IS NULL AND status = 'posted'
   `).get() as { total: number }
   return row.total
 }
@@ -90,7 +90,11 @@ export async function POST(): Promise<Response> {
       const unclassified = db
         .select()
         .from(transactions)
-        .where(and(isNull(transactions.suggestedCat), eq(transactions.status, 'posted'), isNull(transactions.category)))
+        .where(and(
+          isNull(transactions.suggestedLedgerAccount),
+          eq(transactions.status, 'posted'),
+          isNull(transactions.ledgerAccount),
+        ))
         .all()
 
       if (unclassified.length === 0) {
@@ -103,8 +107,13 @@ export async function POST(): Promise<Response> {
       const groups = groupByDescription(unclassified)
       const updateSuggestion = sqlite.prepare(`
         UPDATE transactions
-        SET suggested_cat = ?
-        WHERE id = ? AND category IS NULL AND suggested_cat IS NULL
+        SET suggested_ledger_account = ?,
+            suggested_cat = ?,
+            classifier = 'ai',
+            suggested_at = ?
+        WHERE id = ?
+          AND ledger_account IS NULL
+          AND suggested_ledger_account IS NULL
       `)
 
       send(controller, {
@@ -120,8 +129,9 @@ export async function POST(): Promise<Response> {
         try {
           const cat = await classifyByAI(group.label, cats)
           if (cat) {
+            const timestamp = Math.floor(Date.now() / 1000)
             for (const txn of group.transactions) {
-              suggested += updateSuggestion.run(cat, txn.id).changes
+              suggested += updateSuggestion.run(cat, cat, timestamp, txn.id).changes
             }
           }
         } catch (err) {

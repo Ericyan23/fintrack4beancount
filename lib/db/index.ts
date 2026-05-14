@@ -7,6 +7,7 @@ import { detectAccountType } from '../accounts'
 import {
   DEFAULT_CLASSIFICATION_RULES,
   LEGACY_CATEGORY_MAP,
+  REVIEW_CATEGORY_NAMES,
   loadDefaultCategoryNames,
 } from '../classify/defaults'
 
@@ -55,12 +56,18 @@ const sqlite: Database.Database =
         transacted_at INTEGER,
         amount TEXT NOT NULL,
         description TEXT NOT NULL,
-        pending INTEGER NOT NULL DEFAULT 0,
-        category TEXT,
-        suggested_cat TEXT,
-        notes TEXT,
-        tags TEXT,
-        created_at INTEGER NOT NULL
+      pending INTEGER NOT NULL DEFAULT 0,
+      category TEXT,
+      suggested_cat TEXT,
+      ledger_account TEXT,
+      review_status TEXT,
+      suggested_ledger_account TEXT,
+      classifier TEXT,
+      confidence INTEGER,
+      suggested_at INTEGER,
+      notes TEXT,
+      tags TEXT,
+      created_at INTEGER NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS transfer_matches (
@@ -437,6 +444,12 @@ function ensureIngestionSchema(): void {
   addColumnIfMissing('transactions', 'raw_item_id', `raw_item_id TEXT REFERENCES raw_import_items(id)`)
   addColumnIfMissing('transactions', 'normalizer_version', `normalizer_version TEXT`)
   addColumnIfMissing('transactions', 'updated_at', `updated_at INTEGER`)
+  addColumnIfMissing('transactions', 'ledger_account', `ledger_account TEXT`)
+  addColumnIfMissing('transactions', 'review_status', `review_status TEXT`)
+  addColumnIfMissing('transactions', 'suggested_ledger_account', `suggested_ledger_account TEXT`)
+  addColumnIfMissing('transactions', 'classifier', `classifier TEXT`)
+  addColumnIfMissing('transactions', 'confidence', `confidence INTEGER`)
+  addColumnIfMissing('transactions', 'suggested_at', `suggested_at INTEGER`)
   addColumnIfMissing('staged_transactions', 'reconciliation_status', `reconciliation_status TEXT`)
   addColumnIfMissing(
     'staged_transactions',
@@ -514,9 +527,52 @@ function ensureIngestionSchema(): void {
 
     CREATE INDEX IF NOT EXISTS transactions_source_item_key_idx
     ON transactions(source_item_key);
+
+    CREATE INDEX IF NOT EXISTS transactions_ledger_account_status_idx
+    ON transactions(ledger_account, status);
+
+    CREATE INDEX IF NOT EXISTS transactions_review_status_idx
+    ON transactions(review_status);
+
+    CREATE INDEX IF NOT EXISTS transactions_suggested_ledger_status_idx
+    ON transactions(suggested_ledger_account, status);
   `)
 
   backfillLegacyIngestionSources()
+}
+
+function backfillLedgerPrepSemantics(): void {
+  const reviewPlaceholders = REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')
+
+  sqlite.prepare(`
+    UPDATE transactions
+    SET ledger_account = category
+    WHERE ledger_account IS NULL
+      AND category IS NOT NULL
+      AND category != ''
+      AND category NOT IN (${reviewPlaceholders})
+  `).run(...REVIEW_CATEGORY_NAMES)
+
+  sqlite.prepare(`
+    UPDATE transactions
+    SET suggested_ledger_account = suggested_cat
+    WHERE suggested_ledger_account IS NULL
+      AND suggested_cat IS NOT NULL
+      AND suggested_cat != ''
+      AND suggested_cat NOT IN (${reviewPlaceholders})
+  `).run(...REVIEW_CATEGORY_NAMES)
+
+  sqlite.prepare(`
+    UPDATE transactions
+    SET review_status = CASE
+      WHEN COALESCE(ledger_account, '') != '' THEN 'reviewed'
+      WHEN category IS NOT NULL
+        AND category != ''
+        AND category NOT IN (${reviewPlaceholders}) THEN 'reviewed'
+      ELSE 'needs_review'
+    END
+    WHERE review_status IS NULL
+  `).run(...REVIEW_CATEGORY_NAMES)
 }
 
 function ensureTransactionSplitSchema(): void {
@@ -584,6 +640,15 @@ function ensurePerformanceIndexes(): void {
 
     CREATE INDEX IF NOT EXISTS transactions_suggested_status_idx
     ON transactions(suggested_cat, status);
+
+    CREATE INDEX IF NOT EXISTS transactions_ledger_account_status_idx
+    ON transactions(ledger_account, status);
+
+    CREATE INDEX IF NOT EXISTS transactions_review_status_idx
+    ON transactions(review_status);
+
+    CREATE INDEX IF NOT EXISTS transactions_suggested_ledger_status_idx
+    ON transactions(suggested_ledger_account, status);
 
     CREATE INDEX IF NOT EXISTS transactions_pending_cleanup_idx
     ON transactions(account_id, status, created_at);
@@ -690,19 +755,33 @@ for (const name of legacyCategoryTargets) seedStmt.run(name)
 
 const updateTransactionCategory = sqlite.prepare('UPDATE transactions SET category = ? WHERE category = ?')
 const updateTransactionSuggestion = sqlite.prepare('UPDATE transactions SET suggested_cat = ? WHERE suggested_cat = ?')
+const updateTransactionLedgerAccount = sqlite.prepare('UPDATE transactions SET ledger_account = ? WHERE ledger_account = ?')
+const updateTransactionLedgerSuggestion = sqlite.prepare(`
+  UPDATE transactions SET suggested_ledger_account = ? WHERE suggested_ledger_account = ?
+`)
 const updateRuleCategory = sqlite.prepare('UPDATE rules SET category = ? WHERE category = ?')
 const deleteUnusedCategory = sqlite.prepare(`
   DELETE FROM categories
   WHERE name = ?
-    AND NOT EXISTS (SELECT 1 FROM transactions WHERE category = ? OR suggested_cat = ?)
+    AND NOT EXISTS (
+      SELECT 1 FROM transactions
+      WHERE category = ?
+        OR suggested_cat = ?
+        OR ledger_account = ?
+        OR suggested_ledger_account = ?
+    )
     AND NOT EXISTS (SELECT 1 FROM rules WHERE category = ?)
 `)
 for (const [legacyName, targetName] of Object.entries(LEGACY_CATEGORY_MAP)) {
   updateTransactionCategory.run(targetName, legacyName)
   updateTransactionSuggestion.run(targetName, legacyName)
+  updateTransactionLedgerAccount.run(targetName, legacyName)
+  updateTransactionLedgerSuggestion.run(targetName, legacyName)
   updateRuleCategory.run(targetName, legacyName)
-  deleteUnusedCategory.run(legacyName, legacyName, legacyName, legacyName)
+  deleteUnusedCategory.run(legacyName, legacyName, legacyName, legacyName, legacyName, legacyName)
 }
+
+backfillLedgerPrepSemantics()
 
 // Migrate custom categories from old settings JSON blob (one-time)
 const oldCustomRaw = sqlite.prepare(`SELECT value FROM settings WHERE key = 'user_categories'`).get() as { value: string } | undefined

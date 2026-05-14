@@ -215,11 +215,11 @@ function loadTransferTransactions(): CandidateTxn[] {
       t.posted,
       t.amount,
       t.description,
-      t.category
+      COALESCE(NULLIF(t.ledger_account, ''), t.category) AS category
     FROM transactions t
     JOIN accounts a ON a.id = t.account_id
     WHERE t.status = 'posted'
-      AND t.category LIKE 'Transfer:%'
+      AND COALESCE(NULLIF(t.ledger_account, ''), t.category) LIKE 'Transfer:%'
   `).all() as Array<Omit<CandidateTxn, 'cents'>>
 
   return rows
@@ -365,7 +365,7 @@ export function listTransferMatches(status?: TransferMatchStatus | 'all'): Trans
       out_t.posted AS out_posted,
       out_t.amount AS out_amount,
       out_t.description AS out_description,
-      out_t.category AS out_category,
+      COALESCE(NULLIF(out_t.ledger_account, ''), out_t.category) AS out_category,
 
       in_t.id AS in_id,
       in_t.account_id AS in_accountId,
@@ -376,7 +376,7 @@ export function listTransferMatches(status?: TransferMatchStatus | 'all'): Trans
       in_t.posted AS in_posted,
       in_t.amount AS in_amount,
       in_t.description AS in_description,
-      in_t.category AS in_category
+      COALESCE(NULLIF(in_t.ledger_account, ''), in_t.category) AS in_category
     FROM transfer_matches m
     JOIN transactions out_t ON out_t.id = m.outflow_transaction_id
     JOIN accounts out_a ON out_a.id = out_t.account_id
@@ -466,11 +466,11 @@ export function listUnmatchedTransferTransactions(): TransferTxn[] {
       t.posted,
       t.amount,
       t.description,
-      t.category
+      COALESCE(NULLIF(t.ledger_account, ''), t.category) AS category
     FROM transactions t
     JOIN accounts a ON a.id = t.account_id
     WHERE t.status = 'posted'
-      AND t.category LIKE 'Transfer:%'
+      AND COALESCE(NULLIF(t.ledger_account, ''), t.category) LIKE 'Transfer:%'
       AND NOT EXISTS (
         SELECT 1
         FROM transfer_matches m

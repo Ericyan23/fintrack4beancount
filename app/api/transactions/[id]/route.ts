@@ -19,6 +19,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   const body = (await req.json()) as {
     category?: string | null
     suggestedCat?: string | null
+    ledgerAccount?: string | null
+    reviewStatus?: string | null
+    suggestedLedgerAccount?: string | null
     notes?: string | null
     tags?: string[]
   }
@@ -26,21 +29,54 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   type TxnUpdate = {
     category?: string | null
     suggestedCat?: string | null
+    ledgerAccount?: string | null
+    reviewStatus?: string | null
+    suggestedLedgerAccount?: string | null
+    classifier?: string | null
+    confidence?: number | null
+    suggestedAt?: number | null
+    updatedAt?: number
     notes?: string | null
     tags?: string[]
   }
   const update: TxnUpdate = {}
   if ('category' in body) {
     update.category = body.category
-    if (body.category) update.suggestedCat = null
+    update.ledgerAccount = body.category
+    update.reviewStatus = body.category ? 'reviewed' : 'needs_review'
+    if (body.category) {
+      update.suggestedCat = null
+      update.suggestedLedgerAccount = null
+      update.classifier = 'manual_edit'
+      update.confidence = null
+      update.suggestedAt = null
+    }
+  }
+  if ('ledgerAccount' in body) {
+    update.ledgerAccount = body.ledgerAccount
+    update.category = body.ledgerAccount
+    update.reviewStatus = body.ledgerAccount ? 'reviewed' : 'needs_review'
+    if (body.ledgerAccount) {
+      update.suggestedCat = null
+      update.suggestedLedgerAccount = null
+      update.classifier = 'manual_edit'
+      update.confidence = null
+      update.suggestedAt = null
+    }
   }
   if ('suggestedCat' in body) update.suggestedCat = body.suggestedCat
+  if ('suggestedLedgerAccount' in body) {
+    update.suggestedLedgerAccount = body.suggestedLedgerAccount
+    update.suggestedCat = body.suggestedLedgerAccount
+  }
+  if ('reviewStatus' in body) update.reviewStatus = body.reviewStatus
   if ('notes' in body) update.notes = body.notes
   if ('tags' in body) update.tags = body.tags
 
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
   }
+  update.updatedAt = Math.floor(Date.now() / 1000)
 
   db.update(transactions)
     .set(update)

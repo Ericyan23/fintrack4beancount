@@ -69,6 +69,11 @@ function createLegacyDatabase(): void {
       'csv:legacy-002', 'acct-legacy-checking', 'csv', 1775088000,
       '-12.00', 'Legacy CSV Lunch', 0, 1775088000
     );
+
+    UPDATE transactions
+    SET category = 'Expenses:Food:Restaurants',
+        suggested_cat = 'Expenses:Auto:Fuel'
+    WHERE id = 'csv:legacy-002';
   `)
   legacy.close()
 }
@@ -137,8 +142,21 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
     'raw_item_id',
     'normalizer_version',
     'updated_at',
+    'ledger_account',
+    'review_status',
+    'suggested_ledger_account',
+    'classifier',
+    'confidence',
+    'suggested_at',
   ]) {
     assert.ok(transactionColumns.includes(column), `missing transactions.${column}`)
+  }
+  for (const index of [
+    'transactions_ledger_account_status_idx',
+    'transactions_review_status_idx',
+    'transactions_suggested_ledger_status_idx',
+  ]) {
+    assert.ok(indexNames('transactions').includes(index), `missing transactions index ${index}`)
   }
 
   const transactionSplitColumns = columnNames('transaction_splits')
@@ -195,6 +213,9 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
            normalizer_version AS normalizerVersion,
            import_run_id AS importRunId,
            raw_item_id AS rawItemId,
+           ledger_account AS ledgerAccount,
+           review_status AS reviewStatus,
+           suggested_ledger_account AS suggestedLedgerAccount,
            amount,
            description
     FROM transactions
@@ -208,6 +229,9 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
     normalizerVersion: string | null
     importRunId: string | null
     rawItemId: string | null
+    ledgerAccount: string | null
+    reviewStatus: string | null
+    suggestedLedgerAccount: string | null
     amount: string
     description: string
   }>
@@ -222,6 +246,9 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
       normalizerVersion: 'legacy-csv-v1',
       importRunId: null,
       rawItemId: null,
+      ledgerAccount: 'Expenses:Food:Restaurants',
+      reviewStatus: 'reviewed',
+      suggestedLedgerAccount: 'Expenses:Auto:Fuel',
       amount: '-12.00',
       description: 'Legacy CSV Lunch',
     },
@@ -234,6 +261,9 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
       normalizerVersion: 'legacy-simplefin-v1',
       importRunId: null,
       rawItemId: null,
+      ledgerAccount: null,
+      reviewStatus: 'needs_review',
+      suggestedLedgerAccount: null,
       amount: '-4.50',
       description: 'Legacy Coffee',
     },
