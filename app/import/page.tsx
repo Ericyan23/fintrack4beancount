@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 type ImportField =
   | 'date'
@@ -50,6 +51,12 @@ interface StageImportResult {
   errors: Array<{ rowNumber: number; error: string }>
 }
 
+interface SimpleFinStageResult {
+  success: boolean
+  importRunId?: string
+  error?: string
+}
+
 const FIELD_LABELS: Array<[ImportField, string, boolean]> = [
   ['date', 'Date', true],
   ['amount', 'Amount', true],
@@ -63,6 +70,7 @@ const FIELD_LABELS: Array<[ImportField, string, boolean]> = [
 ]
 
 export default function ImportPage() {
+  const router = useRouter()
   const [accounts, setAccounts] = useState<AccountInfo[]>([])
   const [csv, setCsv] = useState('')
   const [filename, setFilename] = useState('')
@@ -72,6 +80,7 @@ export default function ImportPage() {
   const [result, setResult] = useState<StageImportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [simpleFinLoading, setSimpleFinLoading] = useState(false)
 
   useEffect(() => {
     fetch('/api/accounts')
@@ -129,6 +138,25 @@ export default function ImportPage() {
     }
   }
 
+  async function stageSimpleFin() {
+    setSimpleFinLoading(true)
+    setError(null)
+    setResult(null)
+    try {
+      const res = await fetch('/api/import/simplefin/stage', {
+        method: 'POST',
+      })
+      const payload = (await res.json().catch(() => ({}))) as SimpleFinStageResult
+      if (!res.ok || !payload.importRunId) {
+        setError(payload.error ?? 'SimpleFIN staging failed')
+        return
+      }
+      router.push(`/import/runs/${encodeURIComponent(payload.importRunId)}`)
+    } finally {
+      setSimpleFinLoading(false)
+    }
+  }
+
   return (
     <div className="max-w-5xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
@@ -155,6 +183,23 @@ export default function ImportPage() {
           </Link>
         </div>
       )}
+
+      <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">SimpleFIN</p>
+            <h2 className="mt-1 text-base font-semibold text-slate-100">Stage latest import</h2>
+            <p className="mt-1 text-sm text-slate-400">Latest transactions into Ledger Prep.</p>
+          </div>
+          <button
+            onClick={stageSimpleFin}
+            disabled={loading || simpleFinLoading}
+            className="self-start rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50 md:self-auto"
+          >
+            {simpleFinLoading ? 'Staging...' : 'Stage SimpleFIN'}
+          </button>
+        </div>
+      </div>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-3">
@@ -198,7 +243,7 @@ export default function ImportPage() {
           <p className="text-xs text-slate-500 truncate">{filename || 'No file selected'}</p>
           <button
             onClick={() => runPreview()}
-            disabled={!csv || loading}
+            disabled={!csv || loading || simpleFinLoading}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded-md"
           >
             {loading ? 'Processing...' : 'Preview'}
@@ -280,7 +325,7 @@ export default function ImportPage() {
           <div className="flex justify-end">
             <button
               onClick={stageRows}
-              disabled={loading || !mapping.date || !mapping.amount || !mapping.description}
+              disabled={loading || simpleFinLoading || !mapping.date || !mapping.amount || !mapping.description}
               className="px-5 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm rounded-md"
             >
               {loading ? 'Staging...' : 'Stage import'}
