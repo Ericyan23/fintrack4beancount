@@ -506,6 +506,52 @@ function ensureIngestionSchema(): void {
   backfillLegacyIngestionSources()
 }
 
+function ensureTransactionSplitSchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS transaction_splits (
+      id TEXT PRIMARY KEY,
+      parent_transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+      split_group_id TEXT NOT NULL,
+      amount TEXT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      ledger_account TEXT NOT NULL,
+      memo TEXT,
+      notes TEXT,
+      sort_order INTEGER NOT NULL,
+      created_from TEXT NOT NULL DEFAULT 'manual_split',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `)
+
+  addColumnIfMissing(
+    'transaction_splits',
+    'parent_transaction_id',
+    `parent_transaction_id TEXT REFERENCES transactions(id) ON DELETE CASCADE`,
+  )
+  addColumnIfMissing('transaction_splits', 'split_group_id', `split_group_id TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('transaction_splits', 'amount', `amount TEXT NOT NULL DEFAULT '0'`)
+  addColumnIfMissing('transaction_splits', 'currency', `currency TEXT NOT NULL DEFAULT 'USD'`)
+  addColumnIfMissing('transaction_splits', 'ledger_account', `ledger_account TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('transaction_splits', 'memo', `memo TEXT`)
+  addColumnIfMissing('transaction_splits', 'notes', `notes TEXT`)
+  addColumnIfMissing('transaction_splits', 'sort_order', `sort_order INTEGER NOT NULL DEFAULT 0`)
+  addColumnIfMissing('transaction_splits', 'created_from', `created_from TEXT NOT NULL DEFAULT 'manual_split'`)
+  addColumnIfMissing('transaction_splits', 'created_at', `created_at INTEGER NOT NULL DEFAULT 0`)
+  addColumnIfMissing('transaction_splits', 'updated_at', `updated_at INTEGER NOT NULL DEFAULT 0`)
+
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS transaction_splits_parent_idx
+    ON transaction_splits(parent_transaction_id);
+
+    CREATE INDEX IF NOT EXISTS transaction_splits_group_idx
+    ON transaction_splits(split_group_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS transaction_splits_parent_sort_idx
+    ON transaction_splits(parent_transaction_id, sort_order);
+  `)
+}
+
 function ensurePerformanceIndexes(): void {
   sqlite.exec(`
     CREATE INDEX IF NOT EXISTS transactions_posted_idx
@@ -590,6 +636,7 @@ sqlite.exec(`
 `)
 
 ensureIngestionSchema()
+ensureTransactionSplitSchema()
 ensurePerformanceIndexes()
 
 const accountTypeRows = sqlite.prepare(`

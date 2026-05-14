@@ -41,6 +41,16 @@ function createLegacyDatabase(): void {
       created_at INTEGER NOT NULL
     );
 
+    CREATE TABLE transaction_splits (
+      id TEXT PRIMARY KEY,
+      parent_transaction_id TEXT,
+      amount TEXT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      ledger_account TEXT NOT NULL,
+      sort_order INTEGER NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     INSERT INTO accounts (
       id, name, currency, balance, balance_date, conn_id, account_type, updated_at
     )
@@ -73,6 +83,17 @@ function columnNames(table: string): string[] {
   return sqlite!.prepare(`PRAGMA table_info(${table})`).all().map(row => (row as { name: string }).name)
 }
 
+function indexNames(table: string): string[] {
+  return sqlite!.prepare(`PRAGMA index_list(${table})`).all().map(row => (row as { name: string }).name)
+}
+
+function columnDefault(table: string, column: string): string | null {
+  const row = sqlite!.prepare(`PRAGMA table_info(${table})`)
+    .all()
+    .find(info => (info as { name: string }).name === column) as { dflt_value: string | null } | undefined
+  return row?.dflt_value ?? null
+}
+
 function scalar(sql: string): number {
   const row = sqlite!.prepare(sql).get() as { value: number }
   return row.value
@@ -99,6 +120,7 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
     'staged_transactions',
     'import_profiles',
     'import_profile_mappings',
+    'transaction_splits',
   ]) {
     assert.equal(
       scalar(`SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'table' AND name = '${table}'`),
@@ -118,6 +140,34 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
   ]) {
     assert.ok(transactionColumns.includes(column), `missing transactions.${column}`)
   }
+
+  const transactionSplitColumns = columnNames('transaction_splits')
+  for (const column of [
+    'id',
+    'parent_transaction_id',
+    'split_group_id',
+    'amount',
+    'currency',
+    'ledger_account',
+    'memo',
+    'notes',
+    'sort_order',
+    'created_from',
+    'created_at',
+    'updated_at',
+  ]) {
+    assert.ok(transactionSplitColumns.includes(column), `missing transaction_splits.${column}`)
+  }
+
+  const transactionSplitIndexes = indexNames('transaction_splits')
+  for (const index of [
+    'transaction_splits_parent_idx',
+    'transaction_splits_group_idx',
+    'transaction_splits_parent_sort_idx',
+  ]) {
+    assert.ok(transactionSplitIndexes.includes(index), `missing transaction_splits index ${index}`)
+  }
+  assert.equal(columnDefault('transaction_splits', 'created_from'), `'manual_split'`)
 
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM sources`), 2)
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM source_connections`), 2)
@@ -181,4 +231,8 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM sources`), 2)
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM source_connections`), 2)
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM source_accounts`), 2)
+  assert.equal(
+    scalar(`SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'table' AND name = 'transaction_splits'`),
+    1,
+  )
 })

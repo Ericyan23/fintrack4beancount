@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 
 type StagedRow = Record<string, unknown>
-type RowAction = 'save' | 'ignore' | 'delete'
+type RowAction = 'save' | 'ignore' | 'delete' | 'restore'
 type SummaryKey = 'raw' | 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted' | 'error' | 'canonical'
 type Summary = Record<SummaryKey, number | null>
 
@@ -42,6 +42,7 @@ interface PromoteNotice {
 const SUMMARY_KEYS: SummaryKey[] = ['raw', 'staged', 'ready', 'merged', 'ignored', 'deleted', 'error', 'canonical']
 const ELIGIBLE_STATUSES = new Set(['staged', 'ready'])
 const LOCKED_STATUSES = new Set(['merged', 'canonical', 'ignored', 'deleted'])
+const RESTORABLE_STATUSES = new Set(['ignored', 'deleted'])
 
 const COMPACT_FIELD_CLASS =
   'h-8 w-full rounded border border-slate-600 bg-slate-900/70 px-2 text-xs text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60'
@@ -350,6 +351,10 @@ function rowIsLocked(row: StagedRow): boolean {
   return LOCKED_STATUSES.has(rowStatus(row).toLowerCase())
 }
 
+function rowIsRestorable(row: StagedRow): boolean {
+  return RESTORABLE_STATUSES.has(rowStatus(row).toLowerCase())
+}
+
 function collectErrors(value: unknown): string[] {
   if (!Array.isArray(value)) return []
 
@@ -616,6 +621,10 @@ export default function ImportRunPage() {
     await mutateStagedRow(row, key, 'delete', 'Delete', { method: 'DELETE' })
   }
 
+  async function restoreRow(row: StagedRow, key: string) {
+    await mutateStagedRow(row, key, 'restore', 'Restore', { method: 'POST' }, '/restore')
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -737,6 +746,7 @@ export default function ImportRunPage() {
                 const status = rowStatus(row)
                 const draft = drafts[key] ?? draftFromRow(row)
                 const locked = rowIsLocked(row)
+                const restorable = rowIsRestorable(row)
                 const busyAction = rowActions[key]
                 const disabled = locked || Boolean(busyAction)
                 const hasSelectedAccount = accounts.some(account => account.id === draft.accountId)
@@ -850,7 +860,15 @@ export default function ImportRunPage() {
                       {validationErrors}
                     </span>
                     <span className="space-y-1">
-                      {locked ? (
+                      {restorable ? (
+                        <button
+                          onClick={() => restoreRow(row, key)}
+                          disabled={Boolean(busyAction)}
+                          className="rounded-md border border-emerald-800 bg-emerald-950/50 px-2 py-1 text-xs text-emerald-200 hover:bg-emerald-900/70 disabled:opacity-60"
+                        >
+                          {busyAction === 'restore' ? actionLabel : 'Restore'}
+                        </button>
+                      ) : locked ? (
                         <span className="text-xs text-slate-500">Locked</span>
                       ) : (
                         <span className="flex flex-wrap gap-1.5">

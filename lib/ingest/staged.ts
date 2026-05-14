@@ -292,3 +292,43 @@ export function deleteStagedTransaction(
 ): StagedTransactionMutationResult {
   return setStagedStatus(input, 'deleted')
 }
+
+export function restoreStagedTransaction(
+  input: ScopedStagedTransactionInput,
+): StagedTransactionMutationResult {
+  return sqlite.transaction(() => {
+    const row = selectScopedStagedTransaction(sqlite, input)
+    if (!row) {
+      throw new StagedTransactionNotFoundError(input.importRunId, input.stagedTransactionId)
+    }
+    if (row.status !== 'ignored' && row.status !== 'deleted') {
+      throw new StagedTransactionConflictError(input.stagedTransactionId, row.status)
+    }
+
+    const validationErrors = validateRequiredFields(row)
+    const status: 'error' | 'ready' = validationErrors.length > 0 ? 'error' : 'ready'
+    const updatedAt = nowSeconds()
+
+    sqlite.prepare(`
+      UPDATE staged_transactions
+      SET status = ?,
+          validation_errors = ?,
+          updated_at = ?
+      WHERE id = ?
+        AND import_run_id = ?
+    `).run(
+      status,
+      JSON.stringify(validationErrors),
+      updatedAt,
+      input.stagedTransactionId,
+      input.importRunId,
+    )
+
+    return {
+      id: row.id,
+      status,
+      validationErrors,
+      updatedAt,
+    }
+  })()
+}

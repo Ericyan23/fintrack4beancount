@@ -16,7 +16,9 @@ import {
   insertRawImportItem,
   insertStagedTransaction,
 } from '@/lib/ingest/store'
-import type { IngestionJsonObject } from '@/lib/ingest/types'
+import type { IngestionJsonObject, StagedTransactionStatus } from '@/lib/ingest/types'
+
+type FinalStagedDisposition = Extract<StagedTransactionStatus, 'ignored' | 'deleted'>
 
 export interface CsvStageImportError {
   rowNumber: number
@@ -41,6 +43,10 @@ interface AccountRow {
 interface AccountLookup {
   byId: Map<string, AccountRow>
   byName: Map<string, AccountRow>
+}
+
+interface FinalStagedDispositionRow {
+  status: StagedTransactionStatus
 }
 
 function lookupAccounts(): AccountLookup {
@@ -103,6 +109,24 @@ function normalizedPayload(row: CsvNormalizedTransaction): IngestionJsonObject {
   }
 }
 
+function selectHistoricalFinalDisposition(
+  sourceConnectionId: string,
+  sourceItemKey: string,
+  currentImportRunId: string,
+): FinalStagedDisposition | null {
+  const row = sqlite.prepare(`
+    SELECT status
+    FROM staged_transactions
+    WHERE source_connection_id = ?
+      AND source_item_key = ?
+      AND (import_run_id IS NULL OR import_run_id != ?)
+    ORDER BY updated_at DESC, created_at DESC, rowid DESC
+    LIMIT 1
+  `).get(sourceConnectionId, sourceItemKey, currentImportRunId) as FinalStagedDispositionRow | undefined
+
+  return row?.status === 'ignored' || row?.status === 'deleted' ? row.status : null
+}
+
 export function stageTransactionsCsv(
   csvText: string,
   mappingInput: CsvImportMapping,
@@ -153,13 +177,17 @@ export function stageTransactionsCsv(
       ? buildCsvSourceItemKey(row, sourceAccount.id)
       : null
     const validationErrors = rowErrors(row, account)
+    const finalDisposition = sourceItemKey
+      ? selectHistoricalFinalDisposition(connection.id, sourceItemKey, run.id)
+      : null
+    const effectiveValidationErrors = finalDisposition ? [] : validationErrors
     const raw = insertRawImportItem({
       importRunId: run.id,
       sourceAccountId: sourceAccount?.id ?? null,
       externalId: row.externalId,
       sourceItemKey: sourceItemKey ?? rawRowSourceItemKey(row),
       rawPayload: row.rawPayload,
-      status: validationErrors.length > 0 ? 'error' : 'staged',
+      status: finalDisposition ? 'ignored' : validationErrors.length > 0 ? 'error' : 'staged',
     })
 
     if (raw.status === 'duplicate') {
@@ -168,7 +196,7 @@ export function stageTransactionsCsv(
     }
 
     rawInserted++
-    if (validationErrors.length > 0 || !sourceItemKey) {
+    if (!finalDisposition && (validationErrors.length > 0 || !sourceItemKey)) {
       errors.push(...validationErrors.map(error => ({ rowNumber: row.rowNumber, error })))
     }
 
@@ -185,15 +213,15 @@ export function stageTransactionsCsv(
       currency: account?.currency ?? null,
       description: row.description || null,
       pending: row.pending,
-      status: validationErrors.length > 0 || !sourceItemKey ? 'error' : 'staged',
+      status: finalDisposition ?? (validationErrors.length > 0 || !sourceItemKey ? 'error' : 'staged'),
       category: row.category,
       notes: row.notes,
       tags: row.tags,
       normalizedPayload: normalizedPayload({ ...row, sourceItemKey }),
-      validationErrors,
+      validationErrors: effectiveValidationErrors,
       normalizerVersion: 'csv-normalizer-v1',
     })
-    if (validationErrors.length === 0 && sourceItemKey) staged++
+    if (!finalDisposition && validationErrors.length === 0 && sourceItemKey) staged++
   }
 
   finishImportRun({

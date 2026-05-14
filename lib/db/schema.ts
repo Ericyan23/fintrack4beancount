@@ -176,6 +176,25 @@ export const stagedTransactions = sqliteTable('staged_transactions', {
   index('staged_transactions_account_idx').on(table.accountId),
 ])
 
+export const transactionSplits = sqliteTable('transaction_splits', {
+  id:                  text('id').primaryKey(),
+  parentTransactionId: text('parent_transaction_id').notNull().references(() => transactions.id, { onDelete: 'cascade' }),
+  splitGroupId:        text('split_group_id').notNull(),
+  amount:              text('amount').notNull(),
+  currency:            text('currency').notNull().default('USD'),
+  ledgerAccount:       text('ledger_account').notNull(),
+  memo:                text('memo'),
+  notes:               text('notes'),
+  sortOrder:           integer('sort_order').notNull(),
+  createdFrom:         text('created_from').notNull().default('manual_split'),
+  createdAt:           integer('created_at').notNull(),
+  updatedAt:           integer('updated_at').notNull(),
+}, (table) => [
+  index('transaction_splits_parent_idx').on(table.parentTransactionId),
+  index('transaction_splits_group_idx').on(table.splitGroupId),
+  uniqueIndex('transaction_splits_parent_sort_idx').on(table.parentTransactionId, table.sortOrder),
+])
+
 export const importProfileMappings = sqliteTable('import_profile_mappings', {
   id:              integer('id').primaryKey({ autoIncrement: true }),
   importProfileId: text('import_profile_id').notNull().references(() => importProfiles.id),
@@ -277,5 +296,6 @@ export type SourceAccount = typeof sourceAccounts.$inferSelect
 export type ImportRun = typeof importRuns.$inferSelect
 export type RawImportItem = typeof rawImportItems.$inferSelect
 export type StagedTransaction = typeof stagedTransactions.$inferSelect
+export type TransactionSplit = typeof transactionSplits.$inferSelect
 export type ImportProfile = typeof importProfiles.$inferSelect
 export type ImportProfileMapping = typeof importProfileMappings.$inferSelect
