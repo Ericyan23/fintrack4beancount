@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import LanguageSwitcher from './LanguageSwitcher'
-import SyncButton from './SyncButton'
 
 const tabs = [
   { href: '/', label: 'Command Center', icon: '🏠' },
@@ -14,6 +13,7 @@ const tabs = [
   { href: '/beancount', label: 'Export Center', icon: 'B' },
   { href: '/accounts', label: 'Account Mapping', icon: '🏦' },
   { href: '/rules', label: 'Rules', icon: '📋' },
+  { href: '/categories', label: 'Categories', icon: '🏷️' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ]
 
@@ -44,7 +44,6 @@ export default function NavBar() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <LanguageSwitcher />
-          <SyncButton />
         </div>
       </nav>
 
@@ -71,7 +70,6 @@ export default function NavBar() {
         <span className="font-bold text-lg text-blue-400">FinTrack</span>
         <div className="flex items-center gap-2">
           <LanguageSwitcher />
-          <SyncButton />
         </div>
       </div>
     </>
