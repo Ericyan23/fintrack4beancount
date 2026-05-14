@@ -360,6 +360,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
           {txn.status === 'pending' && <p className="text-amber-400">⚠ Pending</p>}
           {txn.status === 'cancelled' && <p className="text-slate-500">✕ Cancelled</p>}
           <p>Source: {txn.source}</p>
+          {txn.updatedBy && <p>Last edited by: {txn.updatedBy}</p>}
         </div>
       </div>
 

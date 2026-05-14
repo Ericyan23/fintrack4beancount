@@ -67,7 +67,8 @@ const sqlite: Database.Database =
       suggested_at INTEGER,
       notes TEXT,
       tags TEXT,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      updated_by TEXT
       );
 
       CREATE TABLE IF NOT EXISTS transfer_matches (
@@ -450,6 +451,7 @@ function ensureIngestionSchema(): void {
   addColumnIfMissing('transactions', 'classifier', `classifier TEXT`)
   addColumnIfMissing('transactions', 'confidence', `confidence INTEGER`)
   addColumnIfMissing('transactions', 'suggested_at', `suggested_at INTEGER`)
+  addColumnIfMissing('transactions', 'updated_by', `updated_by TEXT`)
   addColumnIfMissing('staged_transactions', 'reconciliation_status', `reconciliation_status TEXT`)
   addColumnIfMissing(
     'staged_transactions',
@@ -573,6 +575,41 @@ function backfillLedgerPrepSemantics(): void {
     END
     WHERE review_status IS NULL
   `).run(...REVIEW_CATEGORY_NAMES)
+}
+
+function ensureTransactionEditHistorySchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS transaction_edit_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+      actor TEXT NOT NULL,
+      reason TEXT,
+      fields TEXT NOT NULL,
+      before_values TEXT NOT NULL,
+      after_values TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `)
+
+  addColumnIfMissing(
+    'transaction_edit_history',
+    'transaction_id',
+    `transaction_id TEXT REFERENCES transactions(id) ON DELETE CASCADE`,
+  )
+  addColumnIfMissing('transaction_edit_history', 'actor', `actor TEXT NOT NULL DEFAULT 'local'`)
+  addColumnIfMissing('transaction_edit_history', 'reason', `reason TEXT`)
+  addColumnIfMissing('transaction_edit_history', 'fields', `fields TEXT NOT NULL DEFAULT '[]'`)
+  addColumnIfMissing('transaction_edit_history', 'before_values', `before_values TEXT NOT NULL DEFAULT '{}'`)
+  addColumnIfMissing('transaction_edit_history', 'after_values', `after_values TEXT NOT NULL DEFAULT '{}'`)
+  addColumnIfMissing('transaction_edit_history', 'created_at', `created_at INTEGER NOT NULL DEFAULT 0`)
+
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS transaction_edit_history_transaction_idx
+    ON transaction_edit_history(transaction_id);
+
+    CREATE INDEX IF NOT EXISTS transaction_edit_history_created_idx
+    ON transaction_edit_history(created_at);
+  `)
 }
 
 function ensureTransactionSplitSchema(): void {
@@ -714,6 +751,7 @@ sqlite.exec(`
 `)
 
 ensureIngestionSchema()
+ensureTransactionEditHistorySchema()
 ensureTransactionSplitSchema()
 ensurePerformanceIndexes()
 

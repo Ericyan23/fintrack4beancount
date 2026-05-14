@@ -272,7 +272,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] description
   - [x] amount
   - [x] account
-  - [ ] ledger account
+  - [x] ledger account
   - [x] notes
   - [x] tags
   - [x] review status
@@ -284,9 +284,10 @@ Beancount preparation system for SimpleFIN and generic CSV.
 - [ ] Add edit audit metadata:
   - [x] created_at
   - [x] updated_at
-  - [ ] updated_by or actor label
-  - [ ] edit reason if useful
-- [ ] Add optional edit history table for manual changes.
+  - [x] updated_by or actor label
+  - [x] edit reason if useful
+- [x] Add optional edit history table for manual changes.
+  - Progress: transaction detail PATCH records actor, optional reason, changed fields, and before/after values in `transaction_edit_history`.
 
 ### Transaction Splits
 
@@ -376,6 +377,7 @@ Goal: make repeated operation reliable and auditable.
   - [ ] default ledger account hints
 - [ ] Add complete audit log for:
   - [ ] manual edits
+    - Progress: transaction detail manual edits now write `transaction_edit_history`; staged edits, ignore/restore, splits, rules, and exports still need coverage.
   - [ ] ignore/unignore
   - [ ] split create/update/delete
   - [ ] rule application

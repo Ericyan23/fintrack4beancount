@@ -48,6 +48,7 @@ interface RawTransactionRow {
   notes: string | null
   tags: string | null
   createdAt: number
+  updatedBy: string | null
   accountName?: string | null
   splitCount?: number | null
 }
@@ -203,6 +204,7 @@ export function mapTransactionRow(row: RawTransactionRow): TransactionWithSplitS
     notes: row.notes,
     tags: parseTags(row.tags),
     createdAt: row.createdAt,
+    updatedBy: row.updatedBy,
     ...(splitCount > 0 ? { splitCount } : {}),
   }
 }
@@ -228,6 +230,7 @@ const SELECT_TRANSACTION_FIELDS = `
   t.notes,
   t.tags,
   t.created_at AS createdAt,
+  t.updated_by AS updatedBy,
   COALESCE(split_counts.splitCount, 0) AS splitCount
 `
 

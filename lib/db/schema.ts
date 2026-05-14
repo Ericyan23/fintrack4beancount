@@ -141,6 +141,7 @@ export const transactions = sqliteTable('transactions', {
   tags:         text('tags', { mode: 'json' }).$type<string[]>(),
   createdAt:    integer('created_at').notNull(),
   updatedAt:    integer('updated_at'),
+  updatedBy:    text('updated_by'),
 }, (table) => [
   index('transactions_source_connection_idx').on(table.sourceConnectionId),
   index('transactions_source_account_idx').on(table.sourceAccountId),
@@ -152,6 +153,20 @@ export const transactions = sqliteTable('transactions', {
   index('transactions_ledger_account_status_idx').on(table.ledgerAccount, table.status),
   index('transactions_review_status_idx').on(table.reviewStatus),
   index('transactions_suggested_ledger_status_idx').on(table.suggestedLedgerAccount, table.status),
+])
+
+export const transactionEditHistory = sqliteTable('transaction_edit_history', {
+  id:            integer('id').primaryKey({ autoIncrement: true }),
+  transactionId: text('transaction_id').notNull().references(() => transactions.id, { onDelete: 'cascade' }),
+  actor:         text('actor').notNull(),
+  reason:        text('reason'),
+  fields:        text('fields', { mode: 'json' }).notNull().$type<string[]>(),
+  beforeValues:  text('before_values', { mode: 'json' }).notNull().$type<IngestionJsonObject>(),
+  afterValues:   text('after_values', { mode: 'json' }).notNull().$type<IngestionJsonObject>(),
+  createdAt:     integer('created_at').notNull(),
+}, (table) => [
+  index('transaction_edit_history_transaction_idx').on(table.transactionId),
+  index('transaction_edit_history_created_idx').on(table.createdAt),
 ])
 
 export const stagedTransactions = sqliteTable('staged_transactions', {
@@ -298,6 +313,7 @@ type TransactionProvenanceKeys =
   | 'updatedAt'
 export type Transaction = Omit<TransactionSelect, TransactionProvenanceKeys> &
   Partial<Pick<TransactionSelect, TransactionProvenanceKeys>>
+export type TransactionEditHistory = typeof transactionEditHistory.$inferSelect
 export type TransferMatch = typeof transferMatches.$inferSelect
 export type Category = typeof categories.$inferSelect
 export type Rule = typeof rules.$inferSelect

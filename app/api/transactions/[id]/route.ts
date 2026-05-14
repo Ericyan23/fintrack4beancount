@@ -1,10 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { transactions } from '@/lib/db/schema'
+import { transactionEditHistory, transactions } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
 interface RouteParams {
   params: Promise<{ id: string }>
+}
+
+function actorLabel(value: unknown): string {
+  if (typeof value !== 'string') return 'local'
+  const trimmed = value.trim()
+  return trimmed || 'local'
+}
+
+function optionalText(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed || null
+}
+
+function valuesEqual(left: unknown, right: unknown): boolean {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return JSON.stringify(left ?? null) === JSON.stringify(right ?? null)
+  }
+  return left === right
 }
 
 export async function GET(_req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
@@ -24,6 +43,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     suggestedLedgerAccount?: string | null
     notes?: string | null
     tags?: string[]
+    actor?: string | null
+    editReason?: string | null
   }
 
   type TxnUpdate = {
@@ -36,9 +57,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     confidence?: number | null
     suggestedAt?: number | null
     updatedAt?: number
+    updatedBy?: string | null
     notes?: string | null
     tags?: string[]
   }
+
+  const [existing] = db.select().from(transactions).where(eq(transactions.id, id)).all()
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
   const update: TxnUpdate = {}
   if ('category' in body) {
     update.category = body.category
@@ -76,12 +102,47 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
   }
-  update.updatedAt = Math.floor(Date.now() / 1000)
 
-  db.update(transactions)
-    .set(update)
-    .where(eq(transactions.id, id))
-    .run()
+  const existingRecord = existing as Record<string, unknown>
+  const updateRecord = update as Record<string, unknown>
+  const changedFields = Object.keys(updateRecord).filter(field => (
+    updateRecord[field] !== undefined && !valuesEqual(existingRecord[field], updateRecord[field])
+  ))
+
+  if (changedFields.length === 0) {
+    return NextResponse.json(existing)
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000)
+  const actor = actorLabel(body.actor)
+  update.updatedAt = timestamp
+  update.updatedBy = actor
+
+  const beforeValues: Record<string, unknown> = {}
+  const afterValues: Record<string, unknown> = {}
+  for (const field of changedFields) {
+    beforeValues[field] = existingRecord[field] ?? null
+    afterValues[field] = updateRecord[field] ?? null
+  }
+
+  db.transaction((tx) => {
+    tx.update(transactions)
+      .set(update)
+      .where(eq(transactions.id, id))
+      .run()
+
+    tx.insert(transactionEditHistory)
+      .values({
+        transactionId: id,
+        actor,
+        reason: optionalText(body.editReason),
+        fields: changedFields,
+        beforeValues,
+        afterValues,
+        createdAt: timestamp,
+      })
+      .run()
+  })
 
   const [updated] = db.select().from(transactions).where(eq(transactions.id, id)).all()
   return NextResponse.json(updated)
