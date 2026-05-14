@@ -50,6 +50,13 @@ interface PromoteNotice {
   errors: string[]
 }
 
+interface ReplayNotice {
+  importRunId: string
+  reviewUrl: string
+  rawReplayed: number
+  stagedReplayed: number
+}
+
 type RowStatusFilter = 'attention' | 'all' | 'error' | 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted'
 
 const SUMMARY_KEYS: SummaryKey[] = ['raw', 'staged', 'ready', 'merged', 'ignored', 'deleted', 'error', 'canonical']
@@ -509,8 +516,10 @@ export default function ImportRunPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [promoting, setPromoting] = useState(false)
+  const [replaying, setReplaying] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<PromoteNotice | null>(null)
+  const [replayNotice, setReplayNotice] = useState<ReplayNotice | null>(null)
 
   const loadAccounts = useCallback(async () => {
     setAccountsLoading(true)
@@ -650,6 +659,7 @@ export default function ImportRunPage() {
     setPromoting(true)
     setError(null)
     setNotice(null)
+    setReplayNotice(null)
 
     try {
       const res = await fetch(`/api/import/runs/${encodeURIComponent(runId)}/promote`, {
@@ -670,6 +680,41 @@ export default function ImportRunPage() {
       setError('Unable to promote staged rows')
     } finally {
       setPromoting(false)
+    }
+  }
+
+  async function replayRun() {
+    if (!runId) return
+
+    setReplaying(true)
+    setError(null)
+    setNotice(null)
+    setReplayNotice(null)
+
+    try {
+      const res = await fetch(`/api/import/runs/${encodeURIComponent(runId)}/replay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'import_run_detail_replay' }),
+      })
+      const payload = await readJson(res)
+
+      if (!res.ok) {
+        setError(responseError(res, payload, 'Replay'))
+        return
+      }
+
+      const replay = isRecord(payload) && isRecord(payload.replay) ? payload.replay : {}
+      setReplayNotice({
+        importRunId: stringValue(getFirst(isRecord(payload) ? payload : {}, ['importRunId'])) || stringValue(replay.importRunId),
+        reviewUrl: stringValue(getFirst(isRecord(payload) ? payload : {}, ['reviewUrl'])) || '/import',
+        rawReplayed: numberValue(replay.rawReplayed) ?? 0,
+        stagedReplayed: numberValue(replay.stagedReplayed) ?? 0,
+      })
+    } catch {
+      setError('Unable to replay import run')
+    } finally {
+      setReplaying(false)
     }
   }
 
@@ -925,6 +970,23 @@ export default function ImportRunPage() {
         </div>
       )}
 
+      {replayNotice && (
+        <div className="rounded-md border border-blue-800 bg-blue-900/30 px-3 py-2 text-sm text-blue-100">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span>
+              Replayed {replayNotice.rawReplayed} raw item{replayNotice.rawReplayed !== 1 ? 's' : ''} into a new import run.
+            </span>
+            <span className="text-xs text-blue-200/80">
+              {replayNotice.stagedReplayed} staged row{replayNotice.stagedReplayed !== 1 ? 's' : ''} created.
+            </span>
+            <Link href={replayNotice.reviewUrl} className="text-xs font-medium underline hover:no-underline">
+              Open replay
+            </Link>
+          </div>
+          <div className="mt-1 font-mono text-xs text-blue-200/80">{replayNotice.importRunId}</div>
+        </div>
+      )}
+
       <section className="rounded-xl border border-slate-700 bg-slate-800 p-5">
         {loading ? (
           <p className="text-sm text-slate-500">Loading import run...</p>
@@ -944,13 +1006,22 @@ export default function ImportRunPage() {
                 {runInfo?.created && <span>Created: {runInfo.created}</span>}
               </div>
             </div>
-            <button
-              onClick={promoteRun}
-              disabled={loading || refreshing || promoting || !runId || Boolean(promoteBlockReason)}
-              className="self-start rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-60 md:self-auto"
-            >
-              {promoting ? 'Promoting...' : `Promote eligible rows${eligibleCount ? ` (${eligibleCount})` : ''}`}
-            </button>
+            <div className="flex flex-wrap gap-2 md:justify-end">
+              <button
+                onClick={replayRun}
+                disabled={loading || refreshing || promoting || replaying || !runId}
+                className="self-start rounded-md border border-blue-800 bg-blue-950/60 px-4 py-2 text-sm font-medium text-blue-100 hover:bg-blue-900/70 disabled:opacity-60 md:self-auto"
+              >
+                {replaying ? 'Replaying...' : 'Replay run'}
+              </button>
+              <button
+                onClick={promoteRun}
+                disabled={loading || refreshing || promoting || replaying || !runId || Boolean(promoteBlockReason)}
+                className="self-start rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-60 md:self-auto"
+              >
+                {promoting ? 'Promoting...' : `Promote eligible rows${eligibleCount ? ` (${eligibleCount})` : ''}`}
+              </button>
+            </div>
             {promoteBlockReason && (
               <p className="text-xs text-amber-300 md:max-w-[220px] md:text-right">{promoteBlockReason}</p>
             )}

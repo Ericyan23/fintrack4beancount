@@ -372,7 +372,8 @@ Goal: make repeated operation reliable and auditable.
   - [x] normalized editable fields
   - [x] errors
   - [x] duplicate/skipped counts
-  - [ ] replay selected import run
+  - [x] replay selected import run
+    - Progress: import run detail can create a new review run from stored raw/staged archive without writing canonical transactions.
 - [ ] Persist mapping profiles:
   - [ ] CSV profile
   - [x] source account mapping

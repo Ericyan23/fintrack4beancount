@@ -22,6 +22,10 @@ interface PromoteRoute {
   POST(req: NextRequest, context: RouteContext): Promise<Response>
 }
 
+interface ReplayRoute {
+  POST(req: NextRequest, context: RouteContext): Promise<Response>
+}
+
 function request(pathname: string, init?: RequestInit): NextRequest {
   return new Request(`http://localhost${pathname}`, init) as NextRequest
 }
@@ -32,6 +36,7 @@ function params(id: string): RouteContext {
 
 function resetDb(): void {
   sqlite.exec(`
+    DELETE FROM audit_log;
     DELETE FROM staged_transactions;
     DELETE FROM transfer_matches;
     DELETE FROM transactions;
@@ -418,6 +423,116 @@ test('POST /api/import/runs/:id/promote delegates to promoteStagedTransactions',
   assert.equal(typeof payload.promoted, 'number')
   assert.equal(typeof payload.skipped, 'number')
   assert.ok(Array.isArray(payload.errors))
+})
+
+test('POST /api/import/runs/:id/replay creates a new staged review run from raw archive', async () => {
+  const { runId } = seedImportRun()
+  const replayRoute = require('../app/api/import/runs/[id]/replay/route') as ReplayRoute
+  const response = await replayRoute.POST(
+    request(`/api/import/runs/${runId}/replay`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actor: 'tester', reason: 'regression replay' }),
+    }),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    importRunId: string
+    reviewUrl: string
+    replay: {
+      sourceImportRunId: string
+      rawReplayed: number
+      stagedReplayed: number
+      skippedStagedRows: number
+    }
+  }
+
+  assert.equal(response.status, 201)
+  assert.notEqual(payload.importRunId, runId)
+  assert.equal(payload.reviewUrl, `/import/runs/${encodeURIComponent(payload.importRunId)}`)
+  assert.equal(payload.replay.sourceImportRunId, runId)
+  assert.equal(payload.replay.rawReplayed, 4)
+  assert.equal(payload.replay.stagedReplayed, 4)
+  assert.equal(payload.replay.skippedStagedRows, 0)
+
+  const replayRun = sqlite.prepare(`
+    SELECT source_connection_id AS sourceConnectionId,
+           status,
+           item_count AS itemCount
+    FROM import_runs
+    WHERE id = ?
+  `).get(payload.importRunId) as { sourceConnectionId: string; status: string; itemCount: number }
+  assert.deepEqual(replayRun, {
+    sourceConnectionId: 'connection-api-csv',
+    status: 'completed',
+    itemCount: 4,
+  })
+
+  const newRawCount = sqlite.prepare(`
+    SELECT COUNT(*) AS value
+    FROM raw_import_items
+    WHERE import_run_id = ?
+  `).get(payload.importRunId) as { value: number }
+  assert.equal(newRawCount.value, 4)
+
+  const replayRows = sqlite.prepare(`
+    SELECT source_item_key AS sourceItemKey,
+           status,
+           account_id AS accountId,
+           transaction_id AS transactionId,
+           validation_errors AS validationErrors
+    FROM staged_transactions
+    WHERE import_run_id = ?
+    ORDER BY source_item_key ASC
+  `).all(payload.importRunId) as Array<{
+    sourceItemKey: string
+    status: string
+    accountId: string | null
+    transactionId: string | null
+    validationErrors: string
+  }>
+
+  assert.deepEqual(replayRows.map(row => [row.sourceItemKey, row.status]), [
+    ['key-error', 'error'],
+    ['key-merged', 'merged'],
+    ['key-ready', 'ready'],
+    ['key-staged', 'staged'],
+  ])
+  const errorRow = replayRows.find(row => row.sourceItemKey === 'key-error')
+  assert.ok(errorRow)
+  assert.equal(errorRow.accountId, 'acct-api-checking')
+  assert.deepEqual(JSON.parse(errorRow.validationErrors) as string[], ['Missing required field: posted'])
+
+  const mergedRow = replayRows.find(row => row.sourceItemKey === 'key-merged')
+  assert.ok(mergedRow)
+  assert.equal(mergedRow.transactionId, 'txn-merged')
+  assert.deepEqual(JSON.parse(mergedRow.validationErrors) as string[], [])
+
+  const auditRow = sqlite.prepare(`
+    SELECT action,
+           actor,
+           reason,
+           metadata
+    FROM audit_log
+    WHERE entity_type = 'import_run'
+      AND entity_id = ?
+  `).get(payload.importRunId) as { action: string; actor: string; reason: string; metadata: string }
+  assert.equal(auditRow.action, 'import_run_replay')
+  assert.equal(auditRow.actor, 'tester')
+  assert.equal(auditRow.reason, 'regression replay')
+  assert.equal((JSON.parse(auditRow.metadata) as { sourceImportRunId: string }).sourceImportRunId, runId)
+})
+
+test('POST /api/import/runs/:id/replay returns 404 JSON for a missing run', async () => {
+  const replayRoute = require('../app/api/import/runs/[id]/replay/route') as ReplayRoute
+  const response = await replayRoute.POST(
+    request('/api/import/runs/missing-run/replay', { method: 'POST' }),
+    params('missing-run'),
+  )
+  const payload = await response.json() as { error?: string }
+
+  assert.equal(response.status, 404)
+  assert.equal(payload.error, 'Import run not found')
 })
 
 // ── GET /api/import/runs (list) ───────────────────────────────────────────────
