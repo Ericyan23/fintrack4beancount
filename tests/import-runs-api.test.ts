@@ -259,6 +259,7 @@ test('GET /api/import/runs/:id returns the import run and review summary', async
     ready: 1,
     merged: 1,
     ignored: 0,
+    deleted: 0,
     error: 1,
     canonical: 1,
   })

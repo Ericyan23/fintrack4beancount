@@ -32,6 +32,7 @@ interface ImportRunSummary {
   ready: number
   merged: number
   ignored: number
+  deleted: number
   error: number
   canonical: number
 }
@@ -82,6 +83,7 @@ function loadSummary(importRunId: string): ImportRunSummary {
     ready: 0,
     merged: 0,
     ignored: 0,
+    deleted: 0,
     error: 0,
     canonical: countCanonicalTransactions(importRunId),
   }

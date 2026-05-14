@@ -5,8 +5,25 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 
 type StagedRow = Record<string, unknown>
-type SummaryKey = 'raw' | 'staged' | 'ready' | 'merged' | 'ignored' | 'error' | 'canonical'
+type RowAction = 'save' | 'ignore' | 'delete'
+type SummaryKey = 'raw' | 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted' | 'error' | 'canonical'
 type Summary = Record<SummaryKey, number | null>
+
+interface AccountInfo {
+  id: string
+  name: string
+}
+
+interface EditDraft {
+  accountId: string
+  posted: string
+  amount: string
+  description: string
+  category: string
+  notes: string
+  tags: string
+  pending: boolean
+}
 
 interface RunInfo {
   id: string
@@ -22,8 +39,12 @@ interface PromoteNotice {
   errors: string[]
 }
 
-const SUMMARY_KEYS: SummaryKey[] = ['raw', 'staged', 'ready', 'merged', 'ignored', 'error', 'canonical']
+const SUMMARY_KEYS: SummaryKey[] = ['raw', 'staged', 'ready', 'merged', 'ignored', 'deleted', 'error', 'canonical']
 const ELIGIBLE_STATUSES = new Set(['staged', 'ready'])
+const LOCKED_STATUSES = new Set(['merged', 'canonical', 'ignored', 'deleted'])
+
+const COMPACT_FIELD_CLASS =
+  'h-8 w-full rounded border border-slate-600 bg-slate-900/70 px-2 text-xs text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60'
 
 const SUMMARY_SOURCE_KEYS: Record<SummaryKey, string[]> = {
   raw: ['raw', 'rawRows', 'rawCount', 'rawInserted'],
@@ -31,6 +52,7 @@ const SUMMARY_SOURCE_KEYS: Record<SummaryKey, string[]> = {
   ready: ['ready', 'readyRows', 'readyCount'],
   merged: ['merged', 'mergedRows', 'mergedCount'],
   ignored: ['ignored', 'ignoredRows', 'ignoredCount'],
+  deleted: ['deleted', 'deletedRows', 'deletedCount'],
   error: ['error', 'errors', 'errorRows', 'errorCount'],
   canonical: ['canonical', 'canonicalRows', 'canonicalCount'],
 }
@@ -54,6 +76,16 @@ function numberValue(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed
   }
   return null
+}
+
+function booleanValue(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return value !== 0
+  if (typeof value === 'string' && value.trim()) {
+    const normalized = value.trim().toLowerCase()
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'pending'
+  }
+  return false
 }
 
 function getFirst(record: Record<string, unknown>, keys: string[]): unknown {
@@ -101,6 +133,21 @@ function extractStagedRows(payload: unknown): StagedRow[] {
   return []
 }
 
+function extractAccounts(payload: unknown): AccountInfo[] {
+  const source = isRecord(payload) && Array.isArray(payload.accounts) ? payload.accounts : Array.isArray(payload) ? payload : []
+
+  return source
+    .filter(isRecord)
+    .map(account => {
+      const id = stringValue(account.id)
+      return {
+        id,
+        name: stringValue(account.name, account.displayName, account.institutionName) || id,
+      }
+    })
+    .filter(account => account.id)
+}
+
 function summaryRecords(payload: unknown): Record<string, unknown>[] {
   if (!isRecord(payload)) return []
 
@@ -130,6 +177,7 @@ function normalizeSummary(payloads: unknown[], rows: StagedRow[]): Summary {
     ready: null,
     merged: null,
     ignored: null,
+    deleted: null,
     error: null,
     canonical: null,
   }
@@ -157,7 +205,7 @@ function normalizeSummary(payloads: unknown[], rows: StagedRow[]): Summary {
   }, {})
 
   if (summary.staged === null) summary.staged = rows.length
-  for (const key of ['ready', 'merged', 'ignored', 'error', 'canonical'] satisfies SummaryKey[]) {
+  for (const key of ['ready', 'merged', 'ignored', 'deleted', 'error', 'canonical'] satisfies SummaryKey[]) {
     if (summary[key] === null && statusCounts[key] !== undefined) summary[key] = statusCounts[key]
   }
 
@@ -192,17 +240,89 @@ function formatDateTime(value: unknown): string {
   return ''
 }
 
-function formatPosted(value: unknown): string {
+function utcDateInputValue(date: Date): string {
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function dateInputValue(value: unknown): string {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const millis = value > 10_000_000_000 ? value : value * 1000
-    return new Date(millis).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    return utcDateInputValue(new Date(millis))
   }
-  if (typeof value === 'string' && value.trim()) return value.trim()
-  return '-'
+  if (typeof value === 'string' && value.trim()) {
+    const trimmed = value.trim()
+    const match = trimmed.match(/^\d{4}-\d{2}-\d{2}/)
+    if (match) return match[0]
+
+    const parsed = Date.parse(trimmed)
+    if (Number.isFinite(parsed)) return utcDateInputValue(new Date(parsed))
+  }
+  return ''
+}
+
+function dateInputToEpochSeconds(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed)
+  if (!match) return null
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const millis = Date.UTC(year, month - 1, day)
+  const date = new Date(millis)
+
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  return Math.floor(millis / 1000)
 }
 
 function rowText(row: StagedRow, keys: string[], fallback = '-'): string {
   return stringValue(getFirst(row, keys)) || fallback
+}
+
+function rowId(row: StagedRow): string {
+  return stringValue(getFirst(row, ['id']))
+}
+
+function tagsInputValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+      .map(item => item.trim())
+      .join(', ')
+  }
+  return stringValue(value)
+}
+
+function parseTagsInput(value: string): string[] {
+  return value
+    .split(/[;,]/)
+    .map(tag => tag.trim())
+    .filter(Boolean)
+}
+
+function draftFromRow(row: StagedRow): EditDraft {
+  return {
+    accountId: stringValue(getFirst(row, ['accountId', 'account_id'])),
+    posted: dateInputValue(getFirst(row, ['posted', 'postedAt', 'posted_at', 'date'])),
+    amount: stringValue(getFirst(row, ['amount', 'amountText', 'normalizedAmount'])),
+    description: rowText(row, ['description', 'name', 'memo'], ''),
+    category: rowText(row, ['category', 'suggestedCategory', 'canonicalCategory'], ''),
+    notes: rowText(row, ['notes', 'note', 'memo'], ''),
+    tags: tagsInputValue(getFirst(row, ['tags', 'tagList'])),
+    pending: booleanValue(getFirst(row, ['pending', 'isPending'])),
+  }
 }
 
 function rowValidationErrors(row: StagedRow): string {
@@ -211,18 +331,6 @@ function rowValidationErrors(row: StagedRow): string {
 
   const messages = value.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
   return messages.length > 0 ? messages.join('; ') : '-'
-}
-
-function rowAccount(row: StagedRow): string {
-  const account = rowText(row, ['accountName', 'account', 'accountId', 'canonicalAccountName'], '')
-  const sourceAccount = rowText(
-    row,
-    ['sourceAccountName', 'sourceAccount', 'source_account', 'sourceAccountId', 'source_account_id'],
-    '',
-  )
-
-  if (account && sourceAccount && account !== sourceAccount) return `${account} / ${sourceAccount}`
-  return account || sourceAccount || '-'
 }
 
 function statusClass(status: string): string {
@@ -236,6 +344,10 @@ function statusClass(status: string): string {
 
 function rowKey(row: StagedRow, index: number): string {
   return stringValue(getFirst(row, ['id', 'rawItemId', 'raw_item_id', 'externalId', 'external_id', 'rowNumber'])) || `row-${index}`
+}
+
+function rowIsLocked(row: StagedRow): boolean {
+  return LOCKED_STATUSES.has(rowStatus(row).toLowerCase())
 }
 
 function collectErrors(value: unknown): string[] {
@@ -272,11 +384,38 @@ export default function ImportRunPage() {
   const [runInfo, setRunInfo] = useState<RunInfo | null>(null)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [rows, setRows] = useState<StagedRow[]>([])
+  const [accounts, setAccounts] = useState<AccountInfo[]>([])
+  const [accountsLoading, setAccountsLoading] = useState(false)
+  const [accountsError, setAccountsError] = useState<string | null>(null)
+  const [drafts, setDrafts] = useState<Record<string, EditDraft>>({})
+  const [rowActions, setRowActions] = useState<Record<string, RowAction>>({})
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [promoting, setPromoting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<PromoteNotice | null>(null)
+
+  const loadAccounts = useCallback(async () => {
+    setAccountsLoading(true)
+    setAccountsError(null)
+
+    try {
+      const res = await fetch('/api/accounts')
+      const payload = await readJson(res)
+
+      if (!res.ok) {
+        setAccountsError(responseError(res, payload, 'Accounts'))
+        return
+      }
+
+      setAccounts(extractAccounts(payload))
+    } catch {
+      setAccountsError('Unable to load accounts')
+    } finally {
+      setAccountsLoading(false)
+    }
+  }, [])
 
   const loadRun = useCallback(async (initial = false) => {
     if (!runId) {
@@ -308,6 +447,7 @@ export default function ImportRunPage() {
       const nextRows = extractStagedRows(stagedPayload)
       setRunInfo(normalizeRun(runPayload, runId))
       setRows(nextRows)
+      setRowErrors({})
       setSummary(normalizeSummary([runPayload, stagedPayload], nextRows))
     } catch {
       setError('Unable to load staged import review data')
@@ -320,6 +460,20 @@ export default function ImportRunPage() {
   useEffect(() => {
     loadRun(true)
   }, [loadRun])
+
+  useEffect(() => {
+    loadAccounts()
+  }, [loadAccounts])
+
+  useEffect(() => {
+    setDrafts(() => {
+      const nextDrafts: Record<string, EditDraft> = {}
+      rows.forEach((row, index) => {
+        nextDrafts[rowKey(row, index)] = draftFromRow(row)
+      })
+      return nextDrafts
+    })
+  }, [rows])
 
   const eligibleCount = useMemo(() => {
     if (summary && (summary.staged !== null || summary.ready !== null)) {
@@ -355,6 +509,111 @@ export default function ImportRunPage() {
     } finally {
       setPromoting(false)
     }
+  }
+
+  function updateDraft(key: string, updates: Partial<EditDraft>) {
+    setDrafts(prev => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] ?? {
+          accountId: '',
+          posted: '',
+          amount: '',
+          description: '',
+          category: '',
+          notes: '',
+          tags: '',
+          pending: false,
+        }),
+        ...updates,
+      },
+    }))
+  }
+
+  function setRowActionState(key: string, action: RowAction | null) {
+    setRowActions(prev => {
+      const next = { ...prev }
+      if (action) next[key] = action
+      else delete next[key]
+      return next
+    })
+  }
+
+  function setRowErrorState(key: string, message: string | null) {
+    setRowErrors(prev => {
+      const next = { ...prev }
+      if (message) next[key] = message
+      else delete next[key]
+      return next
+    })
+  }
+
+  async function mutateStagedRow(
+    row: StagedRow,
+    key: string,
+    action: RowAction,
+    label: string,
+    init: RequestInit,
+    suffix = '',
+  ) {
+    if (!runId) return
+
+    const stagedRowId = rowId(row)
+    if (!stagedRowId) {
+      setRowErrorState(key, 'Missing staged row id')
+      return
+    }
+
+    setRowActionState(key, action)
+    setRowErrorState(key, null)
+    setError(null)
+    setNotice(null)
+
+    try {
+      const res = await fetch(
+        `/api/import/runs/${encodeURIComponent(runId)}/staged/${encodeURIComponent(stagedRowId)}${suffix}`,
+        init,
+      )
+      const payload = await readJson(res)
+
+      if (!res.ok) {
+        setRowErrorState(key, responseError(res, payload, label))
+        return
+      }
+
+      await loadRun(false)
+    } catch {
+      setRowErrorState(key, `Unable to ${label.toLowerCase()} staged row`)
+    } finally {
+      setRowActionState(key, null)
+    }
+  }
+
+  async function saveRow(row: StagedRow, key: string) {
+    const draft = drafts[key] ?? draftFromRow(row)
+
+    await mutateStagedRow(row, key, 'save', 'Save', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accountId: draft.accountId || null,
+        posted: dateInputToEpochSeconds(draft.posted),
+        amount: draft.amount.trim() || null,
+        description: draft.description.trim(),
+        category: draft.category.trim() || null,
+        notes: draft.notes.trim() || null,
+        tags: parseTagsInput(draft.tags),
+        pending: draft.pending,
+      }),
+    })
+  }
+
+  async function ignoreRow(row: StagedRow, key: string) {
+    await mutateStagedRow(row, key, 'ignore', 'Ignore', { method: 'POST' }, '/ignore')
+  }
+
+  async function deleteRow(row: StagedRow, key: string) {
+    await mutateStagedRow(row, key, 'delete', 'Delete', { method: 'DELETE' })
   }
 
   return (
@@ -447,7 +706,10 @@ export default function ImportRunPage() {
 
       <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
         <div className="flex items-center justify-between gap-3 border-b border-slate-700 px-4 py-3">
-          <h2 className="text-sm font-medium text-slate-300">Staged rows</h2>
+          <div>
+            <h2 className="text-sm font-medium text-slate-300">Staged rows</h2>
+            {accountsError && <p className="mt-1 text-xs text-amber-300">{accountsError}</p>}
+          </div>
           <span className="text-xs text-slate-500">{rows.length} rows</span>
         </div>
         {loading ? (
@@ -456,47 +718,166 @@ export default function ImportRunPage() {
           <p className="px-4 py-8 text-center text-sm text-slate-500">No staged rows returned for this import run.</p>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[1200px]">
-              <div className="grid grid-cols-[110px_120px_120px_minmax(220px,1fr)_minmax(180px,1fr)_160px_minmax(180px,1fr)_minmax(180px,1fr)] gap-3 border-b border-slate-700 px-4 py-2 text-xs text-slate-500">
+            <div className="min-w-[2050px]">
+              <div className="grid grid-cols-[100px_220px_130px_130px_minmax(260px,1fr)_180px_220px_190px_90px_minmax(220px,1fr)_190px] gap-3 border-b border-slate-700 px-4 py-2 text-xs text-slate-500">
                 <span>Status</span>
+                <span>Account</span>
                 <span>Posted</span>
                 <span>Amount</span>
                 <span>Description</span>
-                <span>Account / source account</span>
                 <span>Category</span>
                 <span>Notes</span>
+                <span>Tags</span>
+                <span>Pending</span>
                 <span>Validation</span>
+                <span>Actions</span>
               </div>
               {rows.map((row, index) => {
+                const key = rowKey(row, index)
                 const status = rowStatus(row)
+                const draft = drafts[key] ?? draftFromRow(row)
+                const locked = rowIsLocked(row)
+                const busyAction = rowActions[key]
+                const disabled = locked || Boolean(busyAction)
+                const hasSelectedAccount = accounts.some(account => account.id === draft.accountId)
+                const sourceAccount = rowText(
+                  row,
+                  ['sourceAccountName', 'sourceAccount', 'source_account', 'sourceAccountId', 'source_account_id'],
+                  '',
+                )
+                const currentAccountName = rowText(row, ['accountName', 'account', 'canonicalAccountName'], draft.accountId)
+                const validationErrors = rowValidationErrors(row)
+                const actionLabel = busyAction ? `${busyAction[0].toUpperCase()}${busyAction.slice(1)}...` : ''
+
                 return (
                   <div
-                    key={rowKey(row, index)}
-                    className="grid grid-cols-[110px_120px_120px_minmax(220px,1fr)_minmax(180px,1fr)_160px_minmax(180px,1fr)_minmax(180px,1fr)] gap-3 border-b border-slate-700 px-4 py-2 text-sm last:border-b-0"
+                    key={key}
+                    className="grid grid-cols-[100px_220px_130px_130px_minmax(260px,1fr)_180px_220px_190px_90px_minmax(220px,1fr)_190px] items-start gap-3 border-b border-slate-700 px-4 py-2 text-sm last:border-b-0"
                   >
                     <span>
                       <span className={`inline-flex max-w-full rounded-full border px-2 py-0.5 text-xs ${statusClass(status)}`}>
                         <span className="truncate">{status}</span>
                       </span>
                     </span>
-                    <span className="text-slate-300">
-                      {formatPosted(getFirst(row, ['posted', 'postedAt', 'posted_at', 'date']))}
+                    <span className="space-y-1">
+                      <select
+                        value={draft.accountId}
+                        onChange={event => updateDraft(key, { accountId: event.target.value })}
+                        disabled={disabled}
+                        className={COMPACT_FIELD_CLASS}
+                      >
+                        <option value="">{accountsLoading ? 'Loading accounts...' : 'Unmatched account'}</option>
+                        {draft.accountId && !hasSelectedAccount && (
+                          <option value={draft.accountId}>{currentAccountName}</option>
+                        )}
+                        {accounts.map(account => (
+                          <option key={account.id} value={account.id}>
+                            {account.name}
+                          </option>
+                        ))}
+                      </select>
+                      {sourceAccount && (
+                        <span className="block truncate text-[11px] text-slate-500">Source: {sourceAccount}</span>
+                      )}
                     </span>
-                    <span className="tabular-nums text-slate-100">
-                      {rowText(row, ['amount', 'amountText', 'normalizedAmount'])}
+                    <span>
+                      <input
+                        type="date"
+                        value={draft.posted}
+                        onChange={event => updateDraft(key, { posted: event.target.value })}
+                        disabled={disabled}
+                        className={COMPACT_FIELD_CLASS}
+                        aria-label="Posted date"
+                      />
                     </span>
-                    <span className="truncate text-slate-300">
-                      {rowText(row, ['description', 'name', 'memo'])}
+                    <span>
+                      <input
+                        value={draft.amount}
+                        onChange={event => updateDraft(key, { amount: event.target.value })}
+                        disabled={disabled}
+                        className={`${COMPACT_FIELD_CLASS} tabular-nums`}
+                        aria-label="Amount"
+                      />
                     </span>
-                    <span className="truncate text-slate-400">{rowAccount(row)}</span>
-                    <span className="truncate text-slate-300">
-                      {rowText(row, ['category', 'suggestedCategory', 'canonicalCategory'])}
+                    <span>
+                      <input
+                        value={draft.description}
+                        onChange={event => updateDraft(key, { description: event.target.value })}
+                        disabled={disabled}
+                        className={COMPACT_FIELD_CLASS}
+                        aria-label="Description"
+                      />
                     </span>
-                    <span className="truncate text-slate-400">
-                      {rowText(row, ['notes', 'note', 'memo'])}
+                    <span>
+                      <input
+                        value={draft.category}
+                        onChange={event => updateDraft(key, { category: event.target.value })}
+                        disabled={disabled}
+                        className={COMPACT_FIELD_CLASS}
+                        aria-label="Category"
+                      />
                     </span>
-                    <span className="truncate text-red-200">
-                      {rowValidationErrors(row)}
+                    <span>
+                      <input
+                        value={draft.notes}
+                        onChange={event => updateDraft(key, { notes: event.target.value })}
+                        disabled={disabled}
+                        className={COMPACT_FIELD_CLASS}
+                        aria-label="Notes"
+                      />
+                    </span>
+                    <span>
+                      <input
+                        value={draft.tags}
+                        onChange={event => updateDraft(key, { tags: event.target.value })}
+                        disabled={disabled}
+                        placeholder="tag1, tag2"
+                        className={COMPACT_FIELD_CLASS}
+                        aria-label="Tags"
+                      />
+                    </span>
+                    <span className="flex h-8 items-center">
+                      <input
+                        type="checkbox"
+                        checked={draft.pending}
+                        onChange={event => updateDraft(key, { pending: event.target.checked })}
+                        disabled={disabled}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label="Pending"
+                      />
+                    </span>
+                    <span className={validationErrors === '-' ? 'truncate text-slate-500' : 'text-red-200'}>
+                      {validationErrors}
+                    </span>
+                    <span className="space-y-1">
+                      {locked ? (
+                        <span className="text-xs text-slate-500">Locked</span>
+                      ) : (
+                        <span className="flex flex-wrap gap-1.5">
+                          <button
+                            onClick={() => saveRow(row, key)}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+                          >
+                            {busyAction === 'save' ? actionLabel : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => ignoreRow(row, key)}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
+                          >
+                            {busyAction === 'ignore' ? actionLabel : 'Ignore'}
+                          </button>
+                          <button
+                            onClick={() => deleteRow(row, key)}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md border border-red-900 bg-red-950/50 px-2 py-1 text-xs text-red-200 hover:bg-red-900/70 disabled:opacity-60"
+                          >
+                            {busyAction === 'delete' ? actionLabel : 'Delete'}
+                          </button>
+                        </span>
+                      )}
+                      {rowErrors[key] && <span className="block text-xs text-red-200">{rowErrors[key]}</span>}
                     </span>
                   </div>
                 )

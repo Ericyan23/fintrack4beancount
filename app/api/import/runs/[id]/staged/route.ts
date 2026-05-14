@@ -9,13 +9,17 @@ interface StagedImportRunRow {
   id: string
   status: string
   accountId: string | null
+  accountName: string | null
   sourceAccountId: string | null
   sourceAccountName: string | null
+  externalId: string | null
   posted: number | null
   amount: string | null
   description: string | null
+  pending: boolean
   category: string | null
   notes: string | null
+  tags: string[]
   transactionId: string | null
   rawItemId: string | null
   sourceItemKey: string | null
@@ -23,7 +27,9 @@ interface StagedImportRunRow {
   updatedAt: number
 }
 
-interface StagedImportRunDbRow extends Omit<StagedImportRunRow, 'validationErrors'> {
+interface StagedImportRunDbRow extends Omit<StagedImportRunRow, 'pending' | 'tags' | 'validationErrors'> {
+  pending: number
+  tags: string | null
   validationErrors: string | null
 }
 
@@ -41,19 +47,25 @@ function loadStagedRows(importRunId: string): StagedImportRunRow[] {
       staged_transactions.id,
       staged_transactions.status,
       staged_transactions.account_id AS accountId,
+      accounts.name AS accountName,
       staged_transactions.source_account_id AS sourceAccountId,
       source_accounts.name AS sourceAccountName,
+      staged_transactions.external_id AS externalId,
       staged_transactions.posted,
       staged_transactions.amount,
       staged_transactions.description,
+      staged_transactions.pending,
       staged_transactions.category,
       staged_transactions.notes,
+      staged_transactions.tags,
       staged_transactions.transaction_id AS transactionId,
       staged_transactions.raw_item_id AS rawItemId,
       staged_transactions.source_item_key AS sourceItemKey,
       staged_transactions.validation_errors AS validationErrors,
       staged_transactions.updated_at AS updatedAt
     FROM staged_transactions
+    LEFT JOIN accounts
+      ON accounts.id = staged_transactions.account_id
     LEFT JOIN source_accounts
       ON source_accounts.id = staged_transactions.source_account_id
     WHERE staged_transactions.import_run_id = ?
@@ -65,8 +77,20 @@ function loadStagedRows(importRunId: string): StagedImportRunRow[] {
 
   return rows.map(row => ({
     ...row,
+    pending: Boolean(row.pending),
+    tags: parseTags(row.tags),
     validationErrors: parseValidationErrors(row.validationErrors),
   }))
+}
+
+function parseTags(value: string | null): string[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 function parseValidationErrors(value: string | null): string[] {
