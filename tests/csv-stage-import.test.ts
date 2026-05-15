@@ -185,18 +185,110 @@ test('archives invalid rows and stages them with validation errors', () => {
   assert.equal(countRows('transactions'), 0)
 
   const staged = sqlite.prepare(`
-    SELECT status, validation_errors AS validationErrors, source_account_id AS sourceAccountId
+    SELECT status,
+           validation_errors AS validationErrors,
+           source_account_id AS sourceAccountId,
+           source_item_key AS sourceItemKey,
+           normalized_payload AS normalizedPayload
     FROM staged_transactions
     LIMIT 1
   `).get() as {
     status: string
     validationErrors: string
-    sourceAccountId: string | null
+    sourceAccountId: string
+    sourceItemKey: string
+    normalizedPayload: string
+  }
+  const raw = sqlite.prepare(`
+    SELECT source_account_id AS sourceAccountId,
+           source_item_key AS sourceItemKey
+    FROM raw_import_items
+    LIMIT 1
+  `).get() as {
+    sourceAccountId: string
+    sourceItemKey: string
+  }
+  const sourceAccount = sqlite.prepare(`
+    SELECT external_account_id AS externalAccountId,
+           name,
+           fintrack_account_id AS fintrackAccountId
+    FROM source_accounts
+    WHERE id = ?
+  `).get(staged.sourceAccountId) as {
+    externalAccountId: string
+    name: string
+    fintrackAccountId: string | null
+  }
+  const normalizedPayload = JSON.parse(staged.normalizedPayload) as {
+    sourceAccountId: string
+    sourceItemKey: string
   }
 
   assert.equal(staged.status, 'error')
   assert.deepEqual(JSON.parse(staged.validationErrors), ['Unable to match account'])
-  assert.equal(staged.sourceAccountId, null)
+  assert.ok(staged.sourceAccountId)
+  assert.equal(staged.sourceAccountId, raw.sourceAccountId)
+  assert.equal(staged.sourceItemKey, raw.sourceItemKey)
+  assert.ok(staged.sourceItemKey.startsWith(`source-account:${encodeURIComponent(staged.sourceAccountId)}:hash:`))
+  assert.equal(sourceAccount.externalAccountId, 'Unknown Account')
+  assert.equal(sourceAccount.name, 'Unknown Account')
+  assert.equal(sourceAccount.fintrackAccountId, null)
+  assert.equal(normalizedPayload.sourceAccountId, staged.sourceAccountId)
+  assert.equal(normalizedPayload.sourceItemKey, staged.sourceItemKey)
+})
+
+test('uses an existing CSV source-account mapping when staging a later import', () => {
+  const csv = [
+    'Date,Description,Amount,Account,Category,Status',
+    '2026-05-01,Coffee Shop,-3.50,Unknown Account,Expenses:Food:Coffee,posted',
+  ].join('\n')
+  const firstImport = stageTransactionsCsv(csv, {})
+  const firstStaged = sqlite.prepare(`
+    SELECT source_account_id AS sourceAccountId,
+           source_item_key AS sourceItemKey
+    FROM staged_transactions
+    WHERE import_run_id = ?
+    LIMIT 1
+  `).get(firstImport.importRunId) as {
+    sourceAccountId: string
+    sourceItemKey: string
+  }
+
+  sqlite.prepare(`
+    UPDATE source_accounts
+    SET fintrack_account_id = ?
+    WHERE id = ?
+  `).run('acct-checking', firstStaged.sourceAccountId)
+
+  const secondImport = stageTransactionsCsv(csv, {})
+
+  assert.equal(secondImport.totalRows, 1)
+  assert.equal(secondImport.rawInserted, 1)
+  assert.equal(secondImport.staged, 1)
+  assert.deepEqual(secondImport.errors, [])
+
+  const secondStaged = sqlite.prepare(`
+    SELECT account_id AS accountId,
+           source_account_id AS sourceAccountId,
+           source_item_key AS sourceItemKey,
+           status,
+           validation_errors AS validationErrors
+    FROM staged_transactions
+    WHERE import_run_id = ?
+    LIMIT 1
+  `).get(secondImport.importRunId) as {
+    accountId: string
+    sourceAccountId: string
+    sourceItemKey: string
+    status: string
+    validationErrors: string
+  }
+
+  assert.equal(secondStaged.accountId, 'acct-checking')
+  assert.equal(secondStaged.sourceAccountId, firstStaged.sourceAccountId)
+  assert.equal(secondStaged.sourceItemKey, firstStaged.sourceItemKey)
+  assert.equal(secondStaged.status, 'staged')
+  assert.deepEqual(JSON.parse(secondStaged.validationErrors), [])
 })
 
 test('uses the default account when the CSV has no account column', () => {

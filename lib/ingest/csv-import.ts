@@ -52,6 +52,32 @@ interface FinalStagedDispositionRow {
   status: StagedTransactionStatus
 }
 
+function ensureCsvSourceAccount(
+  row: CsvNormalizedTransaction,
+  account: AccountRow | null,
+  sourceConnectionId: string,
+  defaultAccountId?: string,
+) {
+  const externalAccountId = account?.id ?? row.externalAccountId.trim()
+  if (!externalAccountId) return null
+
+  const sourceAccountName = account?.name ?? (row.accountName.trim() || null)
+
+  return ensureSourceAccount({
+    sourceConnectionId,
+    fintrackAccountId: account?.id ?? null,
+    externalAccountId,
+    name: sourceAccountName,
+    currency: account?.currency ?? null,
+    rawPayload: {
+      accountName: row.accountName,
+      externalAccountId: row.externalAccountId || null,
+      defaultAccountId: defaultAccountId ?? null,
+      matchedAccountId: account?.id ?? null,
+    },
+  })
+}
+
 function lookupAccounts(): AccountLookup {
   const rows = sqlite.prepare(`
     SELECT id, name, currency
@@ -103,6 +129,7 @@ function normalizedPayload(row: CsvNormalizedTransaction): IngestionJsonObject {
     description: row.description,
     accountName: row.accountName,
     externalAccountId: row.externalAccountId,
+    sourceAccountId: row.sourceAccountId,
     pending: row.pending,
     status: row.status,
     category: row.category,
@@ -183,20 +210,12 @@ export function stageTransactionsCsv(
   const errors: CsvStageImportError[] = []
 
   for (const row of normalized.rows) {
-    const account = resolveAccount(row.accountName, defaultAccountId, lookup)
-    const sourceAccount = account
-      ? ensureSourceAccount({
-          sourceConnectionId: connection.id,
-          fintrackAccountId: account.id,
-          externalAccountId: account.id,
-          name: account.name,
-          currency: account.currency,
-          rawPayload: {
-            accountName: row.accountName,
-            defaultAccountId: defaultAccountId ?? null,
-          },
-        })
+    const matchedAccount = resolveAccount(row.accountName, defaultAccountId, lookup)
+    const sourceAccount = ensureCsvSourceAccount(row, matchedAccount, connection.id, defaultAccountId)
+    const mappedAccount = sourceAccount?.fintrackAccountId
+      ? lookup.byId.get(sourceAccount.fintrackAccountId) ?? null
       : null
+    const account = matchedAccount ?? mappedAccount
     const sourceItemKey = sourceAccount
       ? buildCsvSourceItemKey(row, sourceAccount.id)
       : null
@@ -239,14 +258,19 @@ export function stageTransactionsCsv(
       sourceItemKey,
       posted: row.posted,
       amount: row.amount,
-      currency: account?.currency ?? null,
+      currency: account?.currency ?? sourceAccount?.currency ?? null,
       description: row.description || null,
       pending: row.pending,
       status: finalDisposition ?? (validationErrors.length > 0 || !sourceItemKey ? 'error' : 'staged'),
       category,
       notes: row.notes,
       tags: row.tags,
-      normalizedPayload: normalizedPayload({ ...row, sourceItemKey, category }),
+      normalizedPayload: normalizedPayload({
+        ...row,
+        sourceAccountId: sourceAccount?.id ?? null,
+        sourceItemKey,
+        category,
+      }),
       validationErrors: effectiveValidationErrors,
       normalizerVersion,
     })
@@ -262,7 +286,7 @@ export function stageTransactionsCsv(
         sourceItemKey,
         tradeDate: row.posted,
         amount: row.amount,
-        currency: account?.currency ?? null,
+        currency: account?.currency ?? sourceAccount?.currency ?? null,
         normalizerVersion,
         validationErrors: effectiveValidationErrors,
         activity: row.investmentActivity,

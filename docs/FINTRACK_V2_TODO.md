@@ -240,7 +240,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] `Enrich`
   - [x] `Export`
 - [x] Move generic CSV import to the ingestion service first.
-  - Progress: staged CSV import uses ingestion; compatibility `/api/import/transactions` now stages and returns legacy count fields.
+  - Progress: staged CSV import uses ingestion; compatibility `/api/import/transactions` now stages and returns legacy count fields. CSV rows with unmapped account names now still create source account provenance and stable source item keys so account mapping can repair them without losing source identity.
 - [x] Then move SimpleFIN sync to the ingestion service.
   - Progress: SimpleFIN staging uses ingestion; compatibility `/api/sync` and scheduler now stage through the shared ingestion helper.
 - [x] Retire direct-write `lib/sync/simplefin.ts` by splitting replacement work into:
