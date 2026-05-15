@@ -261,7 +261,7 @@ test('preflight emits and renders reviewed buy-to-open option activity', () => {
   assert.match(draft, /Expenses:Fees:Financial\s+0\.65 USD/)
 })
 
-test('sell-to-close option activity renders security, cash, fees, and inferred PnL posting', () => {
+test('preflight blocks sell-to-close option activity without explicit lot, cost basis, or override', () => {
   insertSecurity({
     id: 'security-sell-close-put',
     sourceSymbol: '-FCT250620P45',
@@ -283,53 +283,24 @@ test('sell-to-close option activity renders security, cash, fees, and inferred P
   })
 
   const result = runBeancountPreflight({ period: '2026-04', beancountRoot })
-  const intent = result.exportableIntents[0]
-  const draft = renderBeancountDraft(result, { generatedAt: new Date('2026-05-15T12:00:00.000Z') })
 
-  assert.equal(result.ok, true)
-  assert.equal(result.reviewItems.length, 1)
-  assert.equal(result.reviewItems[0].code, 'investment_pnl_requires_lot_review')
-  assert.equal(intent.kind, 'investment_activity')
-  assert.deepEqual(intent.postings.map(posting => ({
-    account: posting.account,
-    amount: posting.amount,
-    currency: posting.currency,
-    role: posting.role,
-    price: posting.price,
-  })), [
-    {
-      account: 'Assets:US:Fidelity:Brokerage',
-      amount: '-1',
-      currency: 'FCT250620P45',
-      role: 'investment_security',
-      price: { amount: '210.00', currency: 'USD' },
-    },
-    {
-      account: 'Assets:US:Fidelity:Brokerage',
-      amount: '209.35',
-      currency: 'USD',
-      role: 'investment_cash',
-      price: undefined,
-    },
-    {
-      account: 'Expenses:Fees:Financial',
-      amount: '0.65',
-      currency: 'USD',
-      role: 'investment_fee',
-      price: undefined,
-    },
-    {
-      account: 'Income:Investments:Trading',
-      amount: null,
-      currency: null,
-      role: 'investment_pnl',
-      price: undefined,
-    },
-  ])
-  assert.match(draft, /Assets:US:Fidelity:Brokerage\s+-1 FCT250620P45 @ 210\.00 USD/)
-  assert.match(draft, /Assets:US:Fidelity:Brokerage\s+209\.35 USD/)
-  assert.match(draft, /Expenses:Fees:Financial\s+0\.65 USD/)
-  assert.match(draft, /\n  Income:Investments:Trading\n/)
+  assert.equal(result.ok, false)
+  assert.equal(result.reviewItems.length, 0)
+  assert.equal(result.summary.exportableInvestmentActivities, 0)
+  assert.equal(result.exportableInvestmentActivities?.length, 0)
+  assert.equal(result.exportableIntents.length, 0)
+  assert.equal(result.blockers.length, 1)
+  assert.equal(result.blockers[0].code, 'investment_pnl_requires_lot_review')
+  assert.equal(result.blockers[0].severity, 'blocker')
+  assert.equal(result.blockers[0].investmentActivityId, 'investment-sell-close-put')
+  assert.match(
+    result.blockers[0].message,
+    /requires explicit lot, cost basis, or manual override/,
+  )
+  assert.throws(
+    () => renderBeancountDraft(result, { generatedAt: new Date('2026-05-15T12:00:00.000Z') }),
+    /Cannot render Beancount draft while preflight has blockers/,
+  )
 })
 
 test('dividend activity renders cash and dividend income postings', () => {

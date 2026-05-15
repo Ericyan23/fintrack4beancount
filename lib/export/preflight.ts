@@ -1059,12 +1059,13 @@ function validateInvestmentActivity(
       ...issueBase,
       account: INVESTMENT_PNL_ACCOUNT,
     }, blockers) && valid
-    addIssue(reviewItems, {
+    addIssue(blockers, {
       ...issueBase,
       code: 'investment_pnl_requires_lot_review',
       account: INVESTMENT_PNL_ACCOUNT,
-      message: 'Investment sell/close export uses an inferred PnL posting until lot and cost basis support is implemented',
-    }, 'review')
+      message: 'Investment sell/close export requires explicit lot, cost basis, or manual override before Beancount handoff',
+    }, 'blocker')
+    valid = false
   }
 
   if (isReinvestDividendActivity(activity)) {

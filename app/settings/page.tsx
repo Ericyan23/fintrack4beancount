@@ -89,17 +89,7 @@ export default function SettingsPage() {
       <form onSubmit={save} className="space-y-5">
         {/* SimpleFIN */}
         <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
-          <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-slate-300">SimpleFIN configuration</h2>
-          <a
-            href="https://beta-bridge.simplefin.org/my-account"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-blue-400 hover:text-blue-300"
-          >
-            Manage accounts →
-          </a>
-        </div>
 
           <div>
             <label className="text-xs text-slate-400 block mb-1">Access URL</label>
