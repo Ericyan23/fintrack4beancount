@@ -15,6 +15,8 @@ const runRoute = require('../app/api/import/runs/[id]/route') as typeof import('
 const stagedRoute = require('../app/api/import/runs/[id]/staged/route') as typeof import('../app/api/import/runs/[id]/staged/route')
 const investmentActivitiesRoute = require('../app/api/import/runs/[id]/investment-activities/route') as typeof import('../app/api/import/runs/[id]/investment-activities/route')
 const investmentActivityRoute = require('../app/api/import/runs/[id]/investment-activities/[activityId]/route') as typeof import('../app/api/import/runs/[id]/investment-activities/[activityId]/route')
+const securitiesRoute = require('../app/api/import/runs/[id]/securities/route') as typeof import('../app/api/import/runs/[id]/securities/route')
+const securityRoute = require('../app/api/import/runs/[id]/securities/[securityId]/route') as typeof import('../app/api/import/runs/[id]/securities/[securityId]/route')
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -22,6 +24,10 @@ interface RouteContext {
 
 interface InvestmentActivityRouteContext {
   params: Promise<{ id: string; activityId: string }>
+}
+
+interface SecurityRouteContext {
+  params: Promise<{ id: string; securityId: string }>
 }
 
 interface PromoteRoute {
@@ -42,6 +48,10 @@ function params(id: string): RouteContext {
 
 function investmentActivityParams(id: string, activityId: string): InvestmentActivityRouteContext {
   return { params: Promise.resolve({ id, activityId }) }
+}
+
+function securityParams(id: string, securityId: string): SecurityRouteContext {
+  return { params: Promise.resolve({ id, securityId }) }
 }
 
 function resetDb(): void {
@@ -644,6 +654,174 @@ test('PATCH /api/import/runs/:id/investment-activities/:activityId rejects inval
 
   assert.equal(response.status, 400)
   assert.equal(payload.error, 'status must be blocked, needs_review, reviewed, or ignored')
+})
+
+test('GET /api/import/runs/:id/securities returns securities needing Beancount mapping', async () => {
+  const { runId } = seedImportRun()
+  seedInvestmentActivity(runId)
+  const response = await securitiesRoute.GET(
+    request(`/api/import/runs/${runId}/securities`),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    securities: Array<{
+      id: string
+      sourceSymbol: string
+      name: string
+      instrumentType: string
+      underlyingSymbol: string
+      contractSymbol: string
+      optionType: string
+      expirationDate: string
+      strikePrice: string
+      beancountCommodity: string | null
+      suggestedCommodity: string
+      activityCount: number
+      blockedCount: number
+      needsReviewCount: number
+      reviewedCount: number
+      ignoredCount: number
+    }>
+  }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.securities.length, 1)
+
+  const security = payload.securities[0]
+  assert.equal(security.id, 'security-api-option')
+  assert.equal(security.sourceSymbol, '-FCT250620C50')
+  assert.equal(security.name, 'FICTCORP CALL')
+  assert.equal(security.instrumentType, 'option')
+  assert.equal(security.underlyingSymbol, 'FCT')
+  assert.equal(security.contractSymbol, '-FCT250620C50')
+  assert.equal(security.optionType, 'call')
+  assert.equal(security.expirationDate, '2025-06-20')
+  assert.equal(security.strikePrice, '50')
+  assert.equal(security.beancountCommodity, null)
+  assert.equal(security.suggestedCommodity, 'FCT250620C50')
+  assert.equal(security.activityCount, 1)
+  assert.equal(security.blockedCount, 1)
+  assert.equal(security.needsReviewCount, 0)
+  assert.equal(security.reviewedCount, 0)
+  assert.equal(security.ignoredCount, 0)
+})
+
+test('GET /api/import/runs/:id/securities returns 404 JSON for a missing run', async () => {
+  const response = await securitiesRoute.GET(
+    request('/api/import/runs/missing-run/securities'),
+    params('missing-run'),
+  )
+  const payload = await response.json() as { error?: string }
+
+  assert.equal(response.status, 404)
+  assert.equal(payload.error, 'Import run not found')
+})
+
+test('PATCH /api/import/runs/:id/securities/:securityId maps Beancount commodity with audit', async () => {
+  const { runId } = seedImportRun()
+  seedInvestmentActivity(runId)
+  const response = await securityRoute.PATCH(
+    request(`/api/import/runs/${runId}/securities/security-api-option`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        beancountCommodity: 'fct250620c50',
+        actor: 'tester',
+        reason: 'map option commodity',
+      }),
+    }),
+    securityParams(runId, 'security-api-option'),
+  )
+  const payload = await response.json() as {
+    security: {
+      id: string
+      beancountCommodity: string
+      suggestedCommodity: string
+    }
+  }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.security.id, 'security-api-option')
+  assert.equal(payload.security.beancountCommodity, 'FCT250620C50')
+  assert.equal(payload.security.suggestedCommodity, 'FCT250620C50')
+
+  const row = sqlite.prepare(`
+    SELECT beancount_commodity AS beancountCommodity
+    FROM securities
+    WHERE id = ?
+  `).get('security-api-option') as { beancountCommodity: string }
+  assert.equal(row.beancountCommodity, 'FCT250620C50')
+
+  const audit = sqlite.prepare(`
+    SELECT action,
+           actor,
+           reason,
+           before_values AS beforeValues,
+           after_values AS afterValues,
+           metadata
+    FROM audit_log
+    WHERE entity_type = 'security'
+      AND entity_id = 'security-api-option'
+  `).get() as {
+    action: string
+    actor: string
+    reason: string
+    beforeValues: string
+    afterValues: string
+    metadata: string
+  }
+  assert.equal(audit.action, 'security_mapping_update')
+  assert.equal(audit.actor, 'tester')
+  assert.equal(audit.reason, 'map option commodity')
+  assert.equal((JSON.parse(audit.beforeValues) as { security: { beancountCommodity: string | null } }).security.beancountCommodity, null)
+  assert.equal((JSON.parse(audit.afterValues) as { security: { beancountCommodity: string } }).security.beancountCommodity, 'FCT250620C50')
+  assert.equal((JSON.parse(audit.metadata) as { importRunId: string }).importRunId, runId)
+})
+
+test('PATCH /api/import/runs/:id/securities/:securityId clears Beancount commodity mapping', async () => {
+  const { runId } = seedImportRun()
+  seedInvestmentActivity(runId)
+  sqlite.prepare(`
+    UPDATE securities
+    SET beancount_commodity = 'FCT250620C50'
+    WHERE id = 'security-api-option'
+  `).run()
+
+  const response = await securityRoute.PATCH(
+    request(`/api/import/runs/${runId}/securities/security-api-option`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ beancountCommodity: null }),
+    }),
+    securityParams(runId, 'security-api-option'),
+  )
+  const payload = await response.json() as {
+    security: {
+      beancountCommodity: string | null
+      suggestedCommodity: string
+    }
+  }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.security.beancountCommodity, null)
+  assert.equal(payload.security.suggestedCommodity, 'FCT250620C50')
+})
+
+test('PATCH /api/import/runs/:id/securities/:securityId rejects invalid commodity symbols', async () => {
+  const { runId } = seedImportRun()
+  seedInvestmentActivity(runId)
+  const response = await securityRoute.PATCH(
+    request(`/api/import/runs/${runId}/securities/security-api-option`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ beancountCommodity: 'bad commodity' }),
+    }),
+    securityParams(runId, 'security-api-option'),
+  )
+  const payload = await response.json() as { error?: string }
+
+  assert.equal(response.status, 400)
+  assert.equal(payload.error, 'beancountCommodity must be a Beancount commodity symbol or null')
 })
 
 const promoteServicePath = path.join(process.cwd(), 'lib', 'ingest', 'promote.ts')

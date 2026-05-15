@@ -421,7 +421,8 @@ ingestion is stable.
   - [x] Transfer
   - [ ] Position or balance assertion
   - Progress: Fidelity activity metadata now records activity type, instrument type, option open/close position effect, option type, expiration, strike, quantity, prices, fees, settlement date, and blocked review status.
-- [ ] Add security mapping UI.
+- [x] Add security mapping UI.
+  - Progress: import run detail now lists securities linked to staged investment activities, suggests Beancount commodity names, supports map/clear actions, and writes audit rows for mapping changes.
 - [x] Add investment activity review UI.
   - Progress: import run detail now shows staged investment activities with status, security, activity type, option open/close metadata, validation errors, and reviewed/ignored/blocked status actions.
 - [ ] Add Beancount investment renderer:

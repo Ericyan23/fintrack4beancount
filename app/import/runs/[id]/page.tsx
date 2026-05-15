@@ -6,8 +6,10 @@ import { useParams } from 'next/navigation'
 
 type StagedRow = Record<string, unknown>
 type InvestmentActivityRow = Record<string, unknown>
+type SecurityMappingRow = Record<string, unknown>
 type RowAction = 'save' | 'ignore' | 'delete' | 'restore' | 'cancelPending' | 'keepPending'
 type InvestmentActivityAction = 'review' | 'ignore' | 'block'
+type SecurityMappingAction = 'save' | 'clear'
 type SummaryKey = 'raw' | 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted' | 'error' | 'canonical'
 type Summary = Record<SummaryKey, number | null>
 
@@ -65,6 +67,12 @@ interface InvestmentActivityCounts {
   needsReview: number
   reviewed: number
   ignored: number
+}
+
+interface SecurityMappingCounts {
+  total: number
+  mapped: number
+  unmapped: number
 }
 
 type RowStatusFilter = 'attention' | 'all' | 'error' | 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted'
@@ -180,6 +188,14 @@ function extractInvestmentActivities(payload: unknown): InvestmentActivityRow[] 
 
   const rows = payload.rows
   return Array.isArray(rows) ? rows.filter(isRecord) : []
+}
+
+function extractSecurityMappings(payload: unknown): SecurityMappingRow[] {
+  if (Array.isArray(payload)) return payload.filter(isRecord)
+  if (!isRecord(payload)) return []
+
+  const securities = payload.securities
+  return Array.isArray(securities) ? securities.filter(isRecord) : []
 }
 
 function extractAccounts(payload: unknown): AccountInfo[] {
@@ -480,6 +496,65 @@ function investmentActivityActionLabel(action: InvestmentActivityAction): string
   return 'Blocking...'
 }
 
+function securityId(row: SecurityMappingRow): string {
+  return stringValue(getFirst(row, ['id']))
+}
+
+function securityKey(row: SecurityMappingRow, index: number): string {
+  return securityId(row) || `security-${index}`
+}
+
+function securityCommodity(row: SecurityMappingRow): string {
+  return stringValue(getFirst(row, ['beancountCommodity', 'beancount_commodity']))
+}
+
+function securitySuggestedCommodity(row: SecurityMappingRow): string {
+  return stringValue(getFirst(row, ['suggestedCommodity', 'suggested_commodity']))
+}
+
+function securityMappingStatus(row: SecurityMappingRow): 'mapped' | 'unmapped' {
+  return securityCommodity(row) ? 'mapped' : 'unmapped'
+}
+
+function securityDisplaySymbol(row: SecurityMappingRow): string {
+  return stringValue(
+    getFirst(row, ['sourceSymbol', 'source_symbol']),
+    getFirst(row, ['contractSymbol', 'contract_symbol']),
+    getFirst(row, ['name']),
+  ) || '-'
+}
+
+function securityName(row: SecurityMappingRow): string {
+  return stringValue(getFirst(row, ['name'])) || '-'
+}
+
+function securityInstrumentLabel(row: SecurityMappingRow): string {
+  const instrumentType = stringValue(getFirst(row, ['instrumentType', 'instrument_type'])) || 'unknown'
+  const optionType = stringValue(getFirst(row, ['optionType', 'option_type']))
+  const expirationDate = stringValue(getFirst(row, ['expirationDate', 'expiration_date']))
+  const strikePrice = stringValue(getFirst(row, ['strikePrice', 'strike_price']))
+  const parts = [
+    instrumentType,
+    optionType,
+    expirationDate,
+    strikePrice ? `$${strikePrice}` : '',
+  ].filter(Boolean)
+  return parts.join(' / ')
+}
+
+function securityActivitySummary(row: SecurityMappingRow): string {
+  const total = numberValue(getFirst(row, ['activityCount', 'activity_count'])) ?? 0
+  const reviewed = numberValue(getFirst(row, ['reviewedCount', 'reviewed_count'])) ?? 0
+  const ignored = numberValue(getFirst(row, ['ignoredCount', 'ignored_count'])) ?? 0
+  const blocked = numberValue(getFirst(row, ['blockedCount', 'blocked_count'])) ?? 0
+  const needsReview = numberValue(getFirst(row, ['needsReviewCount', 'needs_review_count'])) ?? 0
+  return `${total} total / ${reviewed} reviewed / ${ignored} ignored / ${blocked + needsReview} open`
+}
+
+function securityMappingActionLabel(action: SecurityMappingAction): string {
+  return action === 'clear' ? 'Clearing...' : 'Saving...'
+}
+
 function rowReconciliationStatus(row: StagedRow): string {
   return stringValue(getFirst(row, ['reconciliationStatus', 'reconciliation_status']))
 }
@@ -598,6 +673,7 @@ export default function ImportRunPage() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [rows, setRows] = useState<StagedRow[]>([])
   const [investmentActivities, setInvestmentActivities] = useState<InvestmentActivityRow[]>([])
+  const [securityMappings, setSecurityMappings] = useState<SecurityMappingRow[]>([])
   const [accounts, setAccounts] = useState<AccountInfo[]>([])
   const [sourceAccounts, setSourceAccounts] = useState<SourceAccountMapping[]>([])
   const [accountsLoading, setAccountsLoading] = useState(false)
@@ -607,6 +683,9 @@ export default function ImportRunPage() {
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({})
   const [investmentActions, setInvestmentActions] = useState<Record<string, InvestmentActivityAction>>({})
   const [investmentErrors, setInvestmentErrors] = useState<Record<string, string>>({})
+  const [securityCommodityDrafts, setSecurityCommodityDrafts] = useState<Record<string, string>>({})
+  const [securityActions, setSecurityActions] = useState<Record<string, SecurityMappingAction>>({})
+  const [securityErrors, setSecurityErrors] = useState<Record<string, string>>({})
   const [mappingActions, setMappingActions] = useState<Record<string, boolean>>({})
   const [mappingErrors, setMappingErrors] = useState<Record<string, string>>({})
   const [statusFilter, setStatusFilter] = useState<RowStatusFilter>('attention')
@@ -652,17 +731,19 @@ export default function ImportRunPage() {
     setError(null)
 
     try {
-      const [runRes, stagedRes, sourceAccountsRes, investmentActivitiesRes] = await Promise.all([
+      const [runRes, stagedRes, sourceAccountsRes, investmentActivitiesRes, securitiesRes] = await Promise.all([
         fetch(`/api/import/runs/${encodeURIComponent(runId)}`),
         fetch(`/api/import/runs/${encodeURIComponent(runId)}/staged`),
         fetch(`/api/import/runs/${encodeURIComponent(runId)}/source-accounts`),
         fetch(`/api/import/runs/${encodeURIComponent(runId)}/investment-activities`),
+        fetch(`/api/import/runs/${encodeURIComponent(runId)}/securities`),
       ])
-      const [runPayload, stagedPayload, sourceAccountsPayload, investmentActivitiesPayload] = await Promise.all([
+      const [runPayload, stagedPayload, sourceAccountsPayload, investmentActivitiesPayload, securitiesPayload] = await Promise.all([
         readJson(runRes),
         readJson(stagedRes),
         readJson(sourceAccountsRes),
         readJson(investmentActivitiesRes),
+        readJson(securitiesRes),
       ])
 
       if (!runRes.ok) {
@@ -681,14 +762,20 @@ export default function ImportRunPage() {
         setError(responseError(investmentActivitiesRes, investmentActivitiesPayload, 'Investment activities'))
         return
       }
+      if (!securitiesRes.ok) {
+        setError(responseError(securitiesRes, securitiesPayload, 'Security mappings'))
+        return
+      }
 
       const nextRows = extractStagedRows(stagedPayload)
       setSourceAccounts(extractSourceAccounts(sourceAccountsPayload))
       setInvestmentActivities(extractInvestmentActivities(investmentActivitiesPayload))
+      setSecurityMappings(extractSecurityMappings(securitiesPayload))
       setRunInfo(normalizeRun(runPayload, runId))
       setRows(nextRows)
       setRowErrors({})
       setInvestmentErrors({})
+      setSecurityErrors({})
       setMappingErrors({})
       setSummary(normalizeSummary([runPayload, stagedPayload], nextRows))
     } catch {
@@ -716,6 +803,16 @@ export default function ImportRunPage() {
       return nextDrafts
     })
   }, [rows])
+
+  useEffect(() => {
+    setSecurityCommodityDrafts(() => {
+      const nextDrafts: Record<string, string> = {}
+      securityMappings.forEach((security, index) => {
+        nextDrafts[securityKey(security, index)] = securityCommodity(security)
+      })
+      return nextDrafts
+    })
+  }, [securityMappings])
 
   const eligibleCount = useMemo(() => {
     if (summary && (summary.staged !== null || summary.ready !== null)) {
@@ -766,6 +863,14 @@ export default function ImportRunPage() {
 
     return counts
   }, [investmentActivities])
+  const securityMappingCounts = useMemo<SecurityMappingCounts>(() => {
+    const mapped = securityMappings.filter(security => securityMappingStatus(security) === 'mapped').length
+    return {
+      total: securityMappings.length,
+      mapped,
+      unmapped: securityMappings.length - mapped,
+    }
+  }, [securityMappings])
   const errorCount = summary?.error ?? rows.filter(row => rowStatus(row).toLowerCase() === 'error').length
   const promoteBlockReason = useMemo(() => {
     if (unmappedSourceAccounts.length > 0) return `${unmappedSourceAccounts.length} source account${unmappedSourceAccounts.length === 1 ? '' : 's'} unmapped`
@@ -773,6 +878,79 @@ export default function ImportRunPage() {
     if (eligibleCount === 0) return 'No eligible rows'
     return null
   }, [eligibleCount, errorCount, unmappedSourceAccounts.length])
+
+  function updateSecurityCommodityDraft(key: string, value: string) {
+    setSecurityCommodityDrafts(prev => ({
+      ...prev,
+      [key]: value,
+    }))
+  }
+
+  function setSecurityActionState(key: string, action: SecurityMappingAction | null) {
+    setSecurityActions(prev => {
+      const next = { ...prev }
+      if (action) next[key] = action
+      else delete next[key]
+      return next
+    })
+  }
+
+  function setSecurityErrorState(key: string, message: string | null) {
+    setSecurityErrors(prev => {
+      const next = { ...prev }
+      if (message) next[key] = message
+      else delete next[key]
+      return next
+    })
+  }
+
+  async function updateSecurityMapping(
+    security: SecurityMappingRow,
+    key: string,
+    action: SecurityMappingAction,
+    commodity: string | null,
+  ) {
+    if (!runId) return
+
+    const id = securityId(security)
+    if (!id) {
+      setSecurityErrorState(key, 'Missing security id')
+      return
+    }
+
+    setSecurityActionState(key, action)
+    setSecurityErrorState(key, null)
+    setError(null)
+    setNotice(null)
+    setReplayNotice(null)
+
+    try {
+      const res = await fetch(
+        `/api/import/runs/${encodeURIComponent(runId)}/securities/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            beancountCommodity: commodity,
+            actor: 'local',
+            reason: 'security_mapping_update',
+          }),
+        },
+      )
+      const payload = await readJson(res)
+
+      if (!res.ok) {
+        setSecurityErrorState(key, responseError(res, payload, 'Security mapping'))
+        return
+      }
+
+      await loadRun(false)
+    } catch {
+      setSecurityErrorState(key, 'Unable to update security mapping')
+    } finally {
+      setSecurityActionState(key, null)
+    }
+  }
 
   function setInvestmentActionState(key: string, action: InvestmentActivityAction | null) {
     setInvestmentActions(prev => {
@@ -1297,6 +1475,109 @@ export default function ImportRunPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {securityMappingCounts.total > 0 && (
+        <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+          <div className="flex flex-col gap-3 border-b border-slate-700 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-sm font-medium text-slate-300">Security Mapping</h2>
+              <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                <span>{securityMappingCounts.total} securities</span>
+                <span>{securityMappingCounts.mapped} mapped</span>
+                <span>{securityMappingCounts.unmapped} unmapped</span>
+              </div>
+            </div>
+            <span className={`rounded-full border px-2 py-1 text-xs ${
+              securityMappingCounts.unmapped > 0
+                ? 'border-amber-800 bg-amber-900/30 text-amber-200'
+                : 'border-emerald-800 bg-emerald-900/30 text-emerald-200'
+            }`}>
+              {securityMappingCounts.unmapped > 0 ? 'Needs mapping' : 'Mapped'}
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <div className="min-w-[1180px]">
+              <div className="grid grid-cols-[120px_230px_230px_190px_220px_minmax(220px,1fr)_170px] gap-3 border-b border-slate-700 px-4 py-2 text-xs text-slate-500">
+                <span>Status</span>
+                <span>Source security</span>
+                <span>Instrument</span>
+                <span>Suggested</span>
+                <span>Beancount commodity</span>
+                <span>Activities</span>
+                <span>Actions</span>
+              </div>
+              {securityMappings.map((security, index) => {
+                const key = securityKey(security, index)
+                const status = securityMappingStatus(security)
+                const busyAction = securityActions[key]
+                const draft = securityCommodityDrafts[key] ?? ''
+                const suggested = securitySuggestedCommodity(security)
+
+                return (
+                  <div
+                    key={key}
+                    className="grid grid-cols-[120px_230px_230px_190px_220px_minmax(220px,1fr)_170px] items-start gap-3 border-b border-slate-700 px-4 py-2 text-sm last:border-b-0"
+                  >
+                    <span className={`inline-flex max-w-full rounded-full border px-2 py-0.5 text-xs ${statusClass(status === 'mapped' ? 'reviewed' : 'needs_review')}`}>
+                      <span className="truncate">{stateLabel(status)}</span>
+                    </span>
+                    <span>
+                      <span className="block truncate text-slate-100">{securityDisplaySymbol(security)}</span>
+                      <span className="mt-1 block truncate text-[11px] text-slate-500">{securityName(security)}</span>
+                    </span>
+                    <span className="truncate">{securityInstrumentLabel(security)}</span>
+                    <span>
+                      {suggested ? (
+                        <button
+                          onClick={() => updateSecurityCommodityDraft(key, suggested)}
+                          disabled={Boolean(busyAction)}
+                          className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
+                        >
+                          {suggested}
+                        </button>
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </span>
+                    <span>
+                      <input
+                        value={draft}
+                        onChange={event => updateSecurityCommodityDraft(key, event.target.value)}
+                        disabled={Boolean(busyAction)}
+                        placeholder="AAPL"
+                        className={COMPACT_FIELD_CLASS}
+                        aria-label="Beancount commodity"
+                      />
+                    </span>
+                    <span className="text-slate-400">{securityActivitySummary(security)}</span>
+                    <span className="space-y-1">
+                      <span className="flex flex-wrap gap-1.5">
+                        <button
+                          onClick={() => updateSecurityMapping(security, key, 'save', draft.trim() || null)}
+                          disabled={Boolean(busyAction)}
+                          className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+                        >
+                          {busyAction === 'save' ? securityMappingActionLabel(busyAction) : 'Save'}
+                        </button>
+                        {securityCommodity(security) && (
+                          <button
+                            onClick={() => updateSecurityMapping(security, key, 'clear', null)}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
+                          >
+                            {busyAction === 'clear' ? securityMappingActionLabel(busyAction) : 'Clear'}
+                          </button>
+                        )}
+                      </span>
+                      {securityErrors[key] && <span className="block text-xs text-red-200">{securityErrors[key]}</span>}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
       )}
 
       {investmentActivityCounts.total > 0 && (
