@@ -232,6 +232,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
           const isSelected = selected.has(txn.id)
           const accountName = accountNames.get(txn.accountId)
           const splitCount = txn.splitCount ?? 0
+          const canAskAI = txn.status === 'posted' && !ledgerAccount && !suggestedLedgerAccount
 
           return (
             <div
@@ -322,7 +323,7 @@ export default function TransactionList({ transactions: txns, accounts = [], onU
                       </div>
                     )}
 
-                    {!ledgerAccount && !suggestedLedgerAccount && (
+                    {canAskAI && (
                       <button
                         onClick={() => askAI(txn.id)}
                         disabled={aiLoading[txn.id]}

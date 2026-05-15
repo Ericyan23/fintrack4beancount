@@ -1,9 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { db, getSetting, setSetting } from '@/lib/db'
+import { getSetting, setSetting, sqlite } from '@/lib/db'
 import { loadCategories } from '@/lib/categories'
-import { transactions } from '@/lib/db/schema'
-import { eq, isNull } from 'drizzle-orm'
 
 const PROMPT = (description: string, categories: string[]) =>
   `Classify this financial transaction into exactly one of the categories listed.
@@ -55,6 +53,47 @@ function friendlyGeminiQuotaError(): Error {
 
 function friendlyGeminiRateLimitError(): Error {
   return new Error('Gemini requests are being sent too frequently. Try again later.')
+}
+
+interface AiSuggestionCandidate {
+  id: string
+  description: string
+}
+
+export function recordAiLedgerAccountSuggestion(
+  transactionId: string,
+  ledgerAccount: string | null,
+  timestamp = Math.floor(Date.now() / 1000),
+): number {
+  const suggested = ledgerAccount?.trim()
+  if (!suggested) return 0
+
+  return sqlite.prepare(`
+    UPDATE transactions
+    SET suggested_ledger_account = ?,
+        suggested_cat = NULL,
+        classifier = 'ai',
+        suggested_at = ?
+    WHERE id = ?
+      AND status = 'posted'
+      AND ledger_account IS NULL
+      AND suggested_ledger_account IS NULL
+      AND COALESCE(review_status, 'needs_review') != 'reviewed'
+  `).run(suggested, timestamp, transactionId).changes
+}
+
+function loadAiSuggestionCandidates(limit?: number): AiSuggestionCandidate[] {
+  const limitClause = limit === undefined ? '' : 'LIMIT ?'
+  const statement = sqlite.prepare(`
+    SELECT id, description
+    FROM transactions
+    WHERE status = 'posted'
+      AND ledger_account IS NULL
+      AND suggested_ledger_account IS NULL
+      AND COALESCE(review_status, 'needs_review') != 'reviewed'
+    ${limitClause}
+  `)
+  return (limit === undefined ? statement.all() : statement.all(limit)) as AiSuggestionCandidate[]
 }
 
 async function classifyWithGemini(
@@ -122,29 +161,12 @@ export async function suggestCategoriesForUncategorized(): Promise<void> {
     getSetting('claude_api_key') ?? process.env.CLAUDE_API_KEY
   if (!hasKey) return
 
-  const unclassified = db
-    .select()
-    .from(transactions)
-    .where(isNull(transactions.ledgerAccount))
-    .limit(20)
-    .all()
+  const candidates = loadAiSuggestionCandidates(20)
+  if (candidates.length === 0) return
 
-  const noSuggestion = unclassified.filter(t => !t.suggestedLedgerAccount)
-  if (noSuggestion.length === 0) return
-
-  for (const txn of noSuggestion) {
+  for (const txn of candidates) {
     const suggested = await classifyByAI(txn.description)
-    if (suggested) {
-      db.update(transactions)
-        .set({
-          suggestedLedgerAccount: suggested,
-          suggestedCat: suggested,
-          classifier: 'ai',
-          suggestedAt: Math.floor(Date.now() / 1000),
-        })
-        .where(eq(transactions.id, txn.id))
-        .run()
-    }
+    recordAiLedgerAccountSuggestion(txn.id, suggested)
   }
 }
 
@@ -155,20 +177,18 @@ export async function suggestCategoriesForBatch(ids: string[]): Promise<void> {
   if (!hasKey) return
 
   for (const id of ids) {
-    const [txn] = db.select().from(transactions).where(eq(transactions.id, id)).all()
-    if (!txn || txn.ledgerAccount || txn.suggestedLedgerAccount) continue
+    const txn = sqlite.prepare(`
+      SELECT id, description
+      FROM transactions
+      WHERE id = ?
+        AND status = 'posted'
+        AND ledger_account IS NULL
+        AND suggested_ledger_account IS NULL
+        AND COALESCE(review_status, 'needs_review') != 'reviewed'
+    `).get(id) as AiSuggestionCandidate | undefined
+    if (!txn) continue
 
     const suggested = await classifyByAI(txn.description)
-    if (suggested) {
-      db.update(transactions)
-        .set({
-          suggestedLedgerAccount: suggested,
-          suggestedCat: suggested,
-          classifier: 'ai',
-          suggestedAt: Math.floor(Date.now() / 1000),
-        })
-        .where(eq(transactions.id, id))
-        .run()
-    }
+    recordAiLedgerAccountSuggestion(id, suggested)
   }
 }

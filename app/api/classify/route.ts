@@ -1,7 +1,7 @@
 import { db, getSetting, sqlite } from '@/lib/db'
 import { transactions } from '@/lib/db/schema'
 import { isNull, eq, and } from 'drizzle-orm'
-import { classifyByAI } from '@/lib/classify/ai'
+import { classifyByAI, recordAiLedgerAccountSuggestion } from '@/lib/classify/ai'
 import { loadCategories } from '@/lib/categories'
 
 const AI_BATCH_DELAY_MS = 6500
@@ -63,7 +63,9 @@ function countRemainingUnclassified(): number {
   const row = sqlite.prepare(`
     SELECT COUNT(*) AS total
     FROM transactions
-    WHERE ledger_account IS NULL AND status = 'posted'
+    WHERE ledger_account IS NULL
+      AND status = 'posted'
+      AND COALESCE(review_status, 'needs_review') != 'reviewed'
   `).get() as { total: number }
   return row.total
 }
@@ -96,6 +98,7 @@ export async function POST(): Promise<Response> {
           isNull(transactions.ledgerAccount),
         ))
         .all()
+        .filter(txn => txn.reviewStatus !== 'reviewed')
 
       if (unclassified.length === 0) {
         const remaining = countRemainingUnclassified()
@@ -105,16 +108,6 @@ export async function POST(): Promise<Response> {
       }
 
       const groups = groupByDescription(unclassified)
-      const updateSuggestion = sqlite.prepare(`
-        UPDATE transactions
-        SET suggested_ledger_account = ?,
-            suggested_cat = NULL,
-            classifier = 'ai',
-            suggested_at = ?
-        WHERE id = ?
-          AND ledger_account IS NULL
-          AND suggested_ledger_account IS NULL
-      `)
 
       send(controller, {
         type: 'start',
@@ -131,7 +124,7 @@ export async function POST(): Promise<Response> {
           if (cat) {
             const timestamp = Math.floor(Date.now() / 1000)
             for (const txn of group.transactions) {
-              suggested += updateSuggestion.run(cat, timestamp, txn.id).changes
+              suggested += recordAiLedgerAccountSuggestion(txn.id, cat, timestamp)
             }
           }
         } catch (err) {

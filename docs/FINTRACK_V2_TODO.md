@@ -51,8 +51,8 @@ SimpleFIN / CSV / future APIs
 - [x] Keep account-to-Beancount-account mapping, but reframe it as Source Account -> Beancount Account Mapping.
 - [x] Keep CSV preview/mapping UI, but route it through ingestion instead of writing directly to `transactions`.
   - Progress: `/import` uses staged CSV import; compatibility `/api/import/transactions` no longer direct-writes canonical transactions and now advertises staged review.
-- [ ] Keep SimpleFIN account sync, pending handling, and transaction fetch, but split it into adapter/reconciliation/ingestion services.
-  - Progress: adapter and staging path exist; legacy `/api/sync` is retained during migration.
+- [x] Keep SimpleFIN account sync, pending handling, and transaction fetch, but split it into adapter/reconciliation/ingestion services.
+  - Progress: SimpleFIN now uses adapter, staging, pending reconciliation, and post-import enrichment services; legacy `/api/sync` is retained as a compatibility entry point.
 - [x] Keep Review queue and rule creation, but rename the workflow to Staging Review / Ledger Prep.
 - [x] Keep transfer matching; export confirmed transfers as merged ledger intents.
 - [x] Keep balance assertions as part of the export/preflight workflow.
@@ -65,7 +65,8 @@ SimpleFIN / CSV / future APIs
 - [x] Keep PWA/manifest as low-maintenance only.
 - [x] Reframe `/categories` away from generic category CRUD; focus on ledger accounts, rules, and suggestions.
   - Progress: standalone Categories is hidden from primary navigation; visible UI now frames the retained route as ledger account taxonomy; legacy category route/API names are retained for compatibility.
-- [ ] Keep AI categorization optional and behind rules/manual review.
+- [x] Keep AI categorization optional and behind rules/manual review.
+  - Progress: AI only runs from explicit buttons/routes and records suggestions for posted, unreviewed, unassigned transactions; rules and manual review remain the authoritative assignment paths.
 - [x] Do not build a Fava-like ledger viewer.
 
 ## Existing Feature Disposition
@@ -268,7 +269,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
 
 - [x] Add transaction manual-create flow.
   - Progress: `/transactions/new` creates audited manual canonical prep transactions with source provenance, review status, tags, and redirect to the new detail page.
-- [ ] Add edit flow for:
+- [x] Add edit flow for:
   - [x] date
   - [x] description
   - [x] amount
@@ -282,7 +283,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] deleted
   - [x] excluded from export
 - [x] Make re-import respect ignored/deleted source items.
-- [ ] Add edit audit metadata:
+- [x] Add edit audit metadata:
   - [x] created_at
   - [x] updated_at
   - [x] updated_by or actor label
@@ -369,7 +370,7 @@ Goal: make repeated operation reliable and auditable.
   - Progress: Beancount handoff creation writes an `export_runs` row with file manifest details, ledger revision, exported source ids, target, and audit metadata.
 - [x] Add “all reviewed not yet exported” export mode.
   - Progress: Export Center can run selected-period exports in not-yet-exported mode, filtering transaction and balance assertion source IDs already recorded in active `export_runs`.
-- [ ] Add import run detail page:
+- [x] Add import run detail page:
   - [x] raw/staged item review
   - [x] normalized editable fields
   - [x] errors
@@ -381,7 +382,7 @@ Goal: make repeated operation reliable and auditable.
   - [x] source account mapping
   - [x] default ledger account hints
   - Progress: `/import` can save and reload named CSV profiles backed by `import_profiles` / `import_profile_mappings`; profiles restore source name, default account, column mappings, and default ledger account hints, and staged runs retain `import_profile_id`.
-- [ ] Add complete audit log for:
+- [x] Add complete audit log for:
   - [x] manual edits
     - Progress: transaction detail manual edits write `transaction_edit_history`; staged transaction edits write generic `audit_log` entries with actor, optional reason, field list, before/after values, and source metadata.
   - [x] ignore/unignore
