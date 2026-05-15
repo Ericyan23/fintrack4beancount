@@ -155,7 +155,12 @@ function columnExists(tableName: string, columnName: string): boolean {
 
 function addColumnIfMissing(tableName: string, columnName: string, columnSql: string): boolean {
   if (columnExists(tableName, columnName)) return false
-  sqlite.exec(`ALTER TABLE ${sqlIdentifier(tableName)} ADD COLUMN ${columnSql}`)
+  try {
+    sqlite.exec(`ALTER TABLE ${sqlIdentifier(tableName)} ADD COLUMN ${columnSql}`)
+  } catch (error) {
+    if (error instanceof Error && /duplicate column name/i.test(error.message)) return false
+    throw error
+  }
   return true
 }
 
@@ -484,14 +489,21 @@ function ensureIngestionSchema(): void {
       id TEXT PRIMARY KEY,
       source_connection_id TEXT REFERENCES source_connections(id),
       source_account_id TEXT REFERENCES source_accounts(id),
+      import_run_id TEXT REFERENCES import_runs(id),
+      raw_item_id TEXT REFERENCES raw_import_items(id),
       account_id TEXT REFERENCES accounts(id),
       security_id TEXT REFERENCES securities(id),
+      external_id TEXT,
+      source_item_key TEXT,
       as_of_date TEXT NOT NULL,
       quantity TEXT NOT NULL,
       market_value TEXT,
       price TEXT,
       currency TEXT,
+      status TEXT NOT NULL DEFAULT 'needs_review',
+      validation_errors TEXT NOT NULL DEFAULT '[]',
       raw_payload TEXT,
+      normalizer_version TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -527,6 +539,13 @@ function ensureIngestionSchema(): void {
     `reconciliation_transaction_id TEXT REFERENCES transactions(id)`,
   )
   addColumnIfMissing('staged_transactions', 'reconciliation_reason', `reconciliation_reason TEXT`)
+  addColumnIfMissing('investment_positions', 'import_run_id', `import_run_id TEXT REFERENCES import_runs(id)`)
+  addColumnIfMissing('investment_positions', 'raw_item_id', `raw_item_id TEXT REFERENCES raw_import_items(id)`)
+  addColumnIfMissing('investment_positions', 'external_id', `external_id TEXT`)
+  addColumnIfMissing('investment_positions', 'source_item_key', `source_item_key TEXT`)
+  addColumnIfMissing('investment_positions', 'status', `status TEXT NOT NULL DEFAULT 'needs_review'`)
+  addColumnIfMissing('investment_positions', 'validation_errors', `validation_errors TEXT NOT NULL DEFAULT '[]'`)
+  addColumnIfMissing('investment_positions', 'normalizer_version', `normalizer_version TEXT`)
 
   sqlite.exec(`
     CREATE INDEX IF NOT EXISTS import_profiles_source_idx
@@ -613,11 +632,20 @@ function ensureIngestionSchema(): void {
     CREATE UNIQUE INDEX IF NOT EXISTS investment_positions_account_security_date_idx
     ON investment_positions(source_account_id, security_id, as_of_date);
 
+    CREATE UNIQUE INDEX IF NOT EXISTS investment_positions_connection_item_key_idx
+    ON investment_positions(source_connection_id, source_item_key);
+
     CREATE INDEX IF NOT EXISTS investment_positions_account_idx
     ON investment_positions(account_id);
 
     CREATE INDEX IF NOT EXISTS investment_positions_security_idx
     ON investment_positions(security_id);
+
+    CREATE INDEX IF NOT EXISTS investment_positions_status_idx
+    ON investment_positions(status);
+
+    CREATE INDEX IF NOT EXISTS investment_positions_source_item_key_idx
+    ON investment_positions(source_item_key);
 
     CREATE INDEX IF NOT EXISTS transactions_source_connection_idx
     ON transactions(source_connection_id);

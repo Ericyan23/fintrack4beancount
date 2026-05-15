@@ -75,6 +75,7 @@ interface InvestmentPositionRow {
   id: string
   sourceConnectionId: string | null
   sourceAccountId: string | null
+  sourceItemKey: string | null
   accountId: string | null
   accountName: string | null
   beancountAccount: string | null
@@ -85,6 +86,8 @@ interface InvestmentPositionRow {
   quantity: string
   marketValue: string | null
   currency: string | null
+  status: string
+  validationErrors: string | null
   rawPayload: string | null
 }
 
@@ -132,6 +135,7 @@ function loadInvestmentPositionRows(range: PeriodRange): InvestmentPositionRow[]
       p.id,
       p.source_connection_id AS sourceConnectionId,
       p.source_account_id AS sourceAccountId,
+      p.source_item_key AS sourceItemKey,
       p.account_id AS accountId,
       accounts.name AS accountName,
       accounts.beancount_account AS beancountAccount,
@@ -142,6 +146,8 @@ function loadInvestmentPositionRows(range: PeriodRange): InvestmentPositionRow[]
       p.quantity,
       p.market_value AS marketValue,
       p.currency,
+      p.status,
+      p.validation_errors AS validationErrors,
       p.raw_payload AS rawPayload
     FROM investment_positions p
     LEFT JOIN accounts
@@ -153,7 +159,19 @@ function loadInvestmentPositionRows(range: PeriodRange): InvestmentPositionRow[]
   `).all(range.start, range.end) as InvestmentPositionRow[]
 }
 
-function sourceIdForInvestmentPosition(position: Pick<InvestmentPositionRow, 'id'>): string {
+function sourceIdForInvestmentPosition(
+  position: Pick<InvestmentPositionRow, 'id' | 'sourceConnectionId' | 'sourceAccountId' | 'sourceItemKey'>,
+): string {
+  if (position.sourceConnectionId && position.sourceAccountId && position.sourceItemKey) {
+    return [
+      'fintrack',
+      'position-source',
+      encodeURIComponent(position.sourceConnectionId),
+      encodeURIComponent(position.sourceAccountId),
+      encodeURIComponent(position.sourceItemKey),
+    ].join(':')
+  }
+
   return `fintrack:position:${position.id}`
 }
 
@@ -185,6 +203,7 @@ function validatePositionProvenance(
   const missing: string[] = []
   if (!position.sourceConnectionId) missing.push('source_connection_id')
   if (!position.sourceAccountId) missing.push('source_account_id')
+  if (!position.sourceItemKey) missing.push('source_item_key')
   if (!position.rawPayload || position.rawPayload.trim() === '') missing.push('raw_payload')
 
   if (missing.length === 0) return true
@@ -195,6 +214,65 @@ function validatePositionProvenance(
     account: assertion.beancountAccount,
     sourceId: assertion.sourceId,
     message: `Investment position is missing source provenance: ${missing.join(', ')}`,
+  }, 'blocker')
+  return false
+}
+
+function parsePositionValidationErrors(value: string | null): string[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : ['Invalid validation_errors payload']
+  } catch {
+    return ['Invalid validation_errors payload']
+  }
+}
+
+function validatePositionStatus(
+  position: InvestmentPositionRow,
+  assertion: PreflightBalanceAssertion,
+  blockers: BalanceAssertionIssue[],
+  reviewItems: BalanceAssertionIssue[],
+): boolean {
+  if (position.status === 'reviewed') return true
+
+  const issue = {
+    code: position.status === 'ignored'
+      ? 'ignored_position_assertion'
+      : 'unreviewed_position_assertion',
+    balanceAssertionId: assertion.id,
+    account: assertion.beancountAccount,
+    sourceId: assertion.sourceId,
+    message: position.status === 'ignored'
+      ? 'Investment position is ignored and will not be exported'
+      : `Investment position must be reviewed before export; current status is ${position.status}`,
+  }
+
+  if (position.status === 'ignored') {
+    addIssue(reviewItems, issue, 'review')
+    return false
+  }
+
+  addIssue(blockers, issue, 'blocker')
+  return false
+}
+
+function validatePositionValidationErrors(
+  position: InvestmentPositionRow,
+  assertion: PreflightBalanceAssertion,
+  blockers: BalanceAssertionIssue[],
+): boolean {
+  const errors = parsePositionValidationErrors(position.validationErrors)
+  if (errors.length === 0) return true
+
+  addIssue(blockers, {
+    code: 'position_validation_errors',
+    balanceAssertionId: assertion.id,
+    account: assertion.beancountAccount,
+    sourceId: assertion.sourceId,
+    message: `Investment position has validation errors: ${errors.join('; ')}`,
   }, 'blocker')
   return false
 }
@@ -416,6 +494,8 @@ export function runBalanceAssertionPreflight(options: {
     let valid = true
     const positionRow = positionRowsByAssertion.get(assertion)
     if (positionRow) {
+      if (!validatePositionStatus(positionRow, assertion, blockers, reviewItems)) continue
+      valid = validatePositionValidationErrors(positionRow, assertion, blockers) && valid
       valid = validatePositionProvenance(positionRow, assertion, blockers) && valid
     }
     valid = validateAmount(assertion, blockers) && valid

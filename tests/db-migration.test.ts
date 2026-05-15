@@ -283,12 +283,30 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
     'missing staged_transactions reconciliation index',
   )
 
+  const investmentPositionColumns = columnNames('investment_positions')
+  for (const column of [
+    'import_run_id',
+    'raw_item_id',
+    'external_id',
+    'source_item_key',
+    'status',
+    'validation_errors',
+    'normalizer_version',
+  ]) {
+    assert.ok(investmentPositionColumns.includes(column), `missing investment_positions.${column}`)
+  }
+  assert.equal(columnDefault('investment_positions', 'status'), `'needs_review'`)
+  assert.equal(columnDefault('investment_positions', 'validation_errors'), `'[]'`)
+
   for (const index of [
     'securities_connection_symbol_idx',
     'securities_instrument_idx',
     'investment_activities_connection_item_key_idx',
     'investment_activities_type_idx',
     'investment_positions_account_security_date_idx',
+    'investment_positions_connection_item_key_idx',
+    'investment_positions_status_idx',
+    'investment_positions_source_item_key_idx',
   ]) {
     const table = index.startsWith('securities')
       ? 'securities'

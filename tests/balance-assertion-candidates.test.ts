@@ -143,11 +143,16 @@ function insertInvestmentPosition(input: {
   securityId: string
   quantity: string
   asOfDate?: string
+  status?: string
+  validationErrors?: string[]
   withProvenance?: boolean
 }): void {
   const provenance = input.withProvenance === false
-    ? { sourceConnectionId: null, sourceAccountId: null }
+    ? { sourceConnectionId: null, sourceAccountId: null, sourceItemKey: null }
     : ensurePositionProvenance()
+  const sourceItemKey = input.withProvenance === false
+    ? null
+    : `position:${input.id}:${input.asOfDate ?? '2026-04-30'}`
   const rawPayload = input.withProvenance === false
     ? null
     : JSON.stringify({ fixture: true })
@@ -157,6 +162,8 @@ function insertInvestmentPosition(input: {
       id,
       source_connection_id,
       source_account_id,
+      external_id,
+      source_item_key,
       account_id,
       security_id,
       as_of_date,
@@ -164,15 +171,20 @@ function insertInvestmentPosition(input: {
       market_value,
       price,
       currency,
+      status,
+      validation_errors,
       raw_payload,
+      normalizer_version,
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.id,
     provenance.sourceConnectionId,
     provenance.sourceAccountId,
+    input.withProvenance === false ? null : `external:${input.id}`,
+    sourceItemKey,
     'acct-fidelity',
     input.securityId,
     input.asOfDate ?? '2026-04-30',
@@ -180,7 +192,10 @@ function insertInvestmentPosition(input: {
     '493.824',
     '40.00',
     'USD',
+    input.status ?? 'reviewed',
+    JSON.stringify(input.validationErrors ?? []),
     rawPayload,
+    input.withProvenance === false ? null : 'position-csv-v1',
     posted,
     posted,
   )
@@ -260,6 +275,13 @@ after(() => {
 })
 
 test('investment positions become Beancount position balance assertion candidates', () => {
+  const expectedSourceId = [
+    'fintrack',
+    'position-source',
+    'csv%3Apositions',
+    'source-account%3Apositions%3Afidelity',
+    'position%3Aposition-fct-2026-04-30%3A2026-04-30',
+  ].join(':')
   insertSecurity({
     id: 'security-fct',
     sourceSymbol: 'FCT',
@@ -283,7 +305,7 @@ test('investment positions become Beancount position balance assertion candidate
     {
       id: 'candidate:balance:position:position-fct-2026-04-30',
       kind: 'balance_assertion',
-      sourceId: 'fintrack:position:position-fct-2026-04-30',
+      sourceId: expectedSourceId,
       date: '2026-04-30',
       account: 'Assets:US:Fidelity:Brokerage',
       amount: '12.3456',
@@ -293,7 +315,7 @@ test('investment positions become Beancount position balance assertion candidate
     },
   ])
   assert.match(draft, /2026-04-30 balance Assets:US:Fidelity:Brokerage\s+12\.3456 FCT/)
-  assert.match(draft, /source_id: "fintrack:position:position-fct-2026-04-30"/)
+  assert.match(draft, new RegExp(`source_id: "${expectedSourceId}"`))
   assert.match(draft, /fintrack_note: "Investment position FCT; market value 493\.824 USD"/)
 })
 
@@ -349,9 +371,96 @@ test('investment positions without source provenance are blocked', () => {
       issue.code === 'missing_position_provenance' &&
       issue.message.includes('source_connection_id') &&
       issue.message.includes('source_account_id') &&
+      issue.message.includes('source_item_key') &&
       issue.message.includes('raw_payload')
     ),
     `Expected missing position provenance issue, got ${JSON.stringify(result.blockers)}`,
+  )
+})
+
+test('investment positions require reviewed status before export', () => {
+  insertSecurity({
+    id: 'security-needs-review',
+    sourceSymbol: 'FCT',
+    commodity: 'FCT',
+  })
+  insertInvestmentPosition({
+    id: 'position-needs-review',
+    securityId: 'security-needs-review',
+    quantity: '1',
+    status: 'needs_review',
+  })
+
+  const result = runBalanceAssertionPreflight({ period: '2026-04', beancountRoot })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.summary.positionAssertionsScanned, 1)
+  assert.equal(result.summary.exportablePositionAssertions, 0)
+  assert.equal(result.exportableCandidates.length, 0)
+  assert.ok(
+    result.blockers.some(issue =>
+      issue.balanceAssertionId === 'position:position-needs-review' &&
+      issue.code === 'unreviewed_position_assertion'
+    ),
+    `Expected unreviewed position issue, got ${JSON.stringify(result.blockers)}`,
+  )
+})
+
+test('reviewed investment positions with validation errors are blocked', () => {
+  insertSecurity({
+    id: 'security-position-error',
+    sourceSymbol: 'FCT',
+    commodity: 'FCT',
+  })
+  insertInvestmentPosition({
+    id: 'position-validation-error',
+    securityId: 'security-position-error',
+    quantity: '1',
+    validationErrors: ['Missing statement date'],
+  })
+
+  const result = runBalanceAssertionPreflight({ period: '2026-04', beancountRoot })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.summary.positionAssertionsScanned, 1)
+  assert.equal(result.summary.exportablePositionAssertions, 0)
+  assert.equal(result.exportableCandidates.length, 0)
+  assert.ok(
+    result.blockers.some(issue =>
+      issue.balanceAssertionId === 'position:position-validation-error' &&
+      issue.code === 'position_validation_errors' &&
+      issue.message.includes('Missing statement date')
+    ),
+    `Expected position validation error issue, got ${JSON.stringify(result.blockers)}`,
+  )
+})
+
+test('ignored investment positions are not exported and do not block preflight', () => {
+  insertSecurity({
+    id: 'security-ignored-position',
+    sourceSymbol: 'FCT',
+    commodity: 'FCT',
+  })
+  insertInvestmentPosition({
+    id: 'position-ignored',
+    securityId: 'security-ignored-position',
+    quantity: '1',
+    status: 'ignored',
+  })
+
+  const result = runBalanceAssertionPreflight({ period: '2026-04', beancountRoot })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.blockers.length, 0)
+  assert.equal(result.summary.positionAssertionsScanned, 1)
+  assert.equal(result.summary.exportablePositionAssertions, 0)
+  assert.equal(result.exportableCandidates.length, 0)
+  assert.ok(
+    result.reviewItems.some(issue =>
+      issue.balanceAssertionId === 'position:position-ignored' &&
+      issue.code === 'ignored_position_assertion'
+    ),
+    `Expected ignored position review item, got ${JSON.stringify(result.reviewItems)}`,
   )
 })
 

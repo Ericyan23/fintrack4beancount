@@ -28,6 +28,7 @@ export type InvestmentInstrumentType =
 export type InvestmentPositionEffect = 'open' | 'close' | 'none' | 'unknown'
 export type InvestmentOptionType = 'call' | 'put' | null
 export type InvestmentActivityStatus = 'blocked' | 'needs_review' | 'reviewed' | 'ignored'
+export type InvestmentPositionStatus = InvestmentActivityStatus
 export type IngestionJsonObject = Record<string, unknown>
 export type IngestionJsonValue =
   | string
