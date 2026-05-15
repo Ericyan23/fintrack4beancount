@@ -132,6 +132,8 @@ export function stageTransactionsCsv(
   mappingInput: CsvImportMapping,
   defaultAccountId?: string,
   connectionName?: string,
+  importProfileId?: string | null,
+  defaultLedgerAccount?: string,
 ): CsvStageImportResult {
   const lookup = lookupAccounts()
   const defaultAccount = defaultAccountId ? lookup.byId.get(defaultAccountId) ?? null : null
@@ -150,6 +152,7 @@ export function stageTransactionsCsv(
   })
   const run = createImportRun({
     sourceConnectionId: connection.id,
+    importProfileId: importProfileId ?? null,
   })
   const normalized = normalizeCsvTransactions(csvText, {
     mapping: mappingInput,
@@ -184,6 +187,7 @@ export function stageTransactionsCsv(
     const finalDisposition = sourceItemKey
       ? selectHistoricalFinalDisposition(connection.id, sourceItemKey, run.id)
       : null
+    const category = row.category ?? defaultLedgerAccount ?? null
     const effectiveValidationErrors = finalDisposition ? [] : validationErrors
     const raw = insertRawImportItem({
       importRunId: run.id,
@@ -218,10 +222,10 @@ export function stageTransactionsCsv(
       description: row.description || null,
       pending: row.pending,
       status: finalDisposition ?? (validationErrors.length > 0 || !sourceItemKey ? 'error' : 'staged'),
-      category: row.category,
+      category,
       notes: row.notes,
       tags: row.tags,
-      normalizedPayload: normalizedPayload({ ...row, sourceItemKey }),
+      normalizedPayload: normalizedPayload({ ...row, sourceItemKey, category }),
       validationErrors: effectiveValidationErrors,
       normalizerVersion: 'csv-normalizer-v1',
     })

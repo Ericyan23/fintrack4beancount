@@ -375,10 +375,11 @@ Goal: make repeated operation reliable and auditable.
   - [x] duplicate/skipped counts
   - [x] replay selected import run
     - Progress: import run detail can create a new review run from stored raw/staged archive without writing canonical transactions.
-- [ ] Persist mapping profiles:
-  - [ ] CSV profile
+- [x] Persist mapping profiles:
+  - [x] CSV profile
   - [x] source account mapping
-  - [ ] default ledger account hints
+  - [x] default ledger account hints
+  - Progress: `/import` can save and reload named CSV profiles backed by `import_profiles` / `import_profile_mappings`; profiles restore source name, default account, column mappings, and default ledger account hints, and staged runs retain `import_profile_id`.
 - [ ] Add complete audit log for:
   - [x] manual edits
     - Progress: transaction detail manual edits write `transaction_edit_history`; staged transaction edits write generic `audit_log` entries with actor, optional reason, field list, before/after values, and source metadata.

@@ -64,6 +64,7 @@ export function previewTransactionsCsv(
   csvText: string,
   mappingInput?: CsvImportMapping,
   defaultAccountId?: string,
+  defaultLedgerAccount?: string,
 ): CsvPreviewResult {
   const lookup = lookupAccounts()
   const defaultAccount = defaultAccountId ? lookup.byId.get(defaultAccountId) ?? null : null
@@ -78,6 +79,7 @@ export function previewTransactionsCsv(
   const rows = normalized.rows.map(row => {
     const account = resolveAccount(row, defaultAccountId, lookup)
     const error = previewError(row, account)
+    const category = row.category ?? defaultLedgerAccount ?? ''
     if (error) errorRows++
     else validRows++
 
@@ -87,7 +89,7 @@ export function previewTransactionsCsv(
       amount: row.amount ?? '',
       description: row.description,
       account: row.accountName || account?.name || '',
-      category: row.category ?? '',
+      category,
       status: row.status,
       error,
     }

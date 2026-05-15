@@ -22,6 +22,23 @@ interface AccountInfo {
   name: string
 }
 
+interface ImportProfileConfig {
+  connectionName: string | null
+  defaultAccountId: string | null
+  defaultLedgerAccount: string | null
+}
+
+interface ImportProfile {
+  id: string
+  name: string
+  sourceId: string
+  kind: string
+  mapping: ImportMapping
+  config: ImportProfileConfig
+  createdAt: number
+  updatedAt: number
+}
+
 interface PreviewRow {
   rowNumber: number
   date: string
@@ -110,6 +127,10 @@ export default function ImportPage() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<AccountInfo[]>([])
   const [recentRuns, setRecentRuns] = useState<RunSummary[]>([])
+  const [profiles, setProfiles] = useState<ImportProfile[]>([])
+  const [selectedProfileId, setSelectedProfileId] = useState('')
+  const [profileName, setProfileName] = useState('')
+  const [defaultLedgerAccount, setDefaultLedgerAccount] = useState('')
   const [csv, setCsv] = useState('')
   const [filename, setFilename] = useState('')
   const [defaultAccountId, setDefaultAccountId] = useState('')
@@ -118,6 +139,8 @@ export default function ImportPage() {
   const [preview, setPreview] = useState<PreviewResult | null>(null)
   const [result, setResult] = useState<StageImportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const [profileMessage, setProfileMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [simpleFinLoading, setSimpleFinLoading] = useState(false)
 
@@ -128,17 +151,87 @@ export default function ImportPage() {
       .catch(() => {})
   }
 
+  function loadProfiles() {
+    fetch('/api/import/profiles')
+      .then(res => res.json())
+      .then((payload: { profiles?: ImportProfile[] }) => setProfiles(payload.profiles ?? []))
+      .catch(() => {})
+  }
+
   useEffect(() => {
     fetch('/api/accounts')
       .then(res => res.json())
       .then((payload: { accounts?: AccountInfo[] }) => setAccounts(payload.accounts ?? []))
+    loadProfiles()
     loadRecentRuns()
   }, [])
+
+  function applyProfile(profile: ImportProfile) {
+    setSelectedProfileId(profile.id)
+    setProfileName(profile.name)
+    setMapping(profile.mapping ?? {})
+    setDefaultAccountId(profile.config.defaultAccountId ?? '')
+    setDefaultLedgerAccount(profile.config.defaultLedgerAccount ?? '')
+    setCsvConnectionName(profile.config.connectionName ?? '')
+    setProfileError(null)
+    setProfileMessage(null)
+
+    if (csv.trim()) {
+      void runPreview(
+        profile.mapping ?? {},
+        profile.config.defaultAccountId ?? '',
+        false,
+        profile.config.defaultLedgerAccount ?? '',
+      )
+    }
+  }
+
+  async function saveProfile() {
+    setProfileError(null)
+    setProfileMessage(null)
+
+    const name = profileName.trim()
+    if (!name) {
+      setProfileError('Profile name is required')
+      return
+    }
+
+    try {
+      const res = await fetch('/api/import/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profileId: selectedProfileId || undefined,
+          name,
+          mapping,
+          connectionName: csvConnectionName.trim() || null,
+          defaultAccountId: defaultAccountId || null,
+          defaultLedgerAccount: defaultLedgerAccount || null,
+        }),
+      })
+      const payload = (await res.json().catch(() => ({}))) as { profile?: ImportProfile; error?: string; validationErrors?: string[] }
+
+      if (!res.ok || !payload.profile) {
+        setProfileError(payload.validationErrors?.join(', ') || payload.error || 'Profile save failed')
+        return
+      }
+
+      setProfiles(current => {
+        const next = current.filter(item => item.id !== payload.profile?.id)
+        return [payload.profile!, ...next]
+      })
+      applyProfile(payload.profile)
+      setProfileMessage('Profile saved')
+    } catch {
+      setProfileError('Profile save failed')
+    }
+  }
 
   async function runPreview(
     nextMapping = mapping,
     nextDefaultAccountId = defaultAccountId,
     clearResult = true,
+    nextDefaultLedgerAccount = defaultLedgerAccount,
   ) {
     if (!csv.trim()) return
     setLoading(true)
@@ -148,7 +241,12 @@ export default function ImportPage() {
       const res = await fetch('/api/import/transactions/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csv, mapping: nextMapping, defaultAccountId: nextDefaultAccountId || undefined }),
+        body: JSON.stringify({
+          csv,
+          mapping: nextMapping,
+          defaultAccountId: nextDefaultAccountId || undefined,
+          defaultLedgerAccount: nextDefaultLedgerAccount || undefined,
+        }),
       })
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string }
@@ -171,7 +269,14 @@ export default function ImportPage() {
       const res = await fetch('/api/import/transactions/stage', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csv, mapping, defaultAccountId: defaultAccountId || undefined, connectionName: csvConnectionName.trim() || undefined }),
+        body: JSON.stringify({
+          csv,
+          mapping,
+          defaultAccountId: defaultAccountId || undefined,
+          connectionName: csvConnectionName.trim() || undefined,
+          importProfileId: selectedProfileId || undefined,
+          defaultLedgerAccount: defaultLedgerAccount || undefined,
+        }),
       })
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string }
@@ -180,7 +285,7 @@ export default function ImportPage() {
       }
       setResult((await res.json()) as StageImportResult)
       loadRecentRuns()
-      await runPreview(mapping, defaultAccountId, false)
+      await runPreview(mapping, defaultAccountId, false, defaultLedgerAccount)
     } finally {
       setLoading(false)
     }
@@ -301,6 +406,85 @@ export default function ImportPage() {
       </div>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">CSV profiles</p>
+            <h2 className="mt-1 text-base font-semibold text-slate-100">Mapping profile</h2>
+          </div>
+          <button
+            onClick={saveProfile}
+            disabled={!profileName.trim()}
+            className="self-start rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600 disabled:opacity-50 md:self-auto"
+          >
+            Save profile
+          </button>
+        </div>
+
+        {profileError && (
+          <div className="rounded-md border border-red-900/70 bg-red-950/30 px-3 py-2 text-sm text-red-200">
+            {profileError}
+          </div>
+        )}
+        {profileMessage && (
+          <div className="rounded-md border border-emerald-900/70 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-200">
+            {profileMessage}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <label className="block">
+            <span className="text-xs text-slate-400 block mb-1">Saved profile</span>
+            <select
+              value={selectedProfileId}
+              onChange={event => {
+                const profileId = event.target.value
+                if (!profileId) {
+                  setSelectedProfileId('')
+                  setProfileName('')
+                  setProfileError(null)
+                  setProfileMessage(null)
+                  return
+                }
+                const profile = profiles.find(item => item.id === profileId)
+                if (profile) applyProfile(profile)
+              }}
+              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
+            >
+              <option value="">New profile</option>
+              {profiles.map(profile => (
+                <option key={profile.id} value={profile.id}>{profile.name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs text-slate-400 block mb-1">Profile name</span>
+            <input
+              type="text"
+              value={profileName}
+              onChange={event => setProfileName(event.target.value)}
+              placeholder="e.g. Chase checking CSV"
+              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-xs text-slate-400 block mb-1">Default ledger account hint</span>
+            <input
+              type="text"
+              value={defaultLedgerAccount}
+              onChange={event => {
+                setDefaultLedgerAccount(event.target.value)
+                if (csv) runPreview(mapping, defaultAccountId, false, event.target.value)
+              }}
+              placeholder="Expenses:Food:Restaurants"
+              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_220px_220px] gap-3">
           <label className="block">
             <span className="text-xs text-slate-400 block mb-1">CSV file</span>
@@ -315,7 +499,7 @@ export default function ImportPage() {
                 setCsv(text)
                 setPreview(null)
                 setResult(null)
-                setMapping({})
+                if (!selectedProfileId) setMapping({})
               }}
               className="w-full text-sm text-slate-300 file:mr-3 file:rounded file:border-0 file:bg-blue-600 file:px-3 file:py-2 file:text-sm file:text-white hover:file:bg-blue-500"
             />
@@ -336,7 +520,7 @@ export default function ImportPage() {
               value={defaultAccountId}
               onChange={e => {
                 setDefaultAccountId(e.target.value)
-                if (csv) runPreview(mapping, e.target.value)
+                if (csv) runPreview(mapping, e.target.value, false, defaultLedgerAccount)
               }}
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
             >
@@ -404,18 +588,19 @@ export default function ImportPage() {
           </div>
 
           <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
-            <div className="grid grid-cols-[70px_110px_100px_1fr_160px_120px] gap-3 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
+            <div className="grid grid-cols-[70px_110px_100px_1fr_160px_180px_120px] gap-3 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
               <span>Row</span>
               <span>Date</span>
               <span>Amount</span>
               <span>Description</span>
               <span>Account</span>
+              <span>Ledger account</span>
               <span>Status</span>
             </div>
             {preview.rows.map(row => (
               <div
                 key={row.rowNumber}
-                className={`grid grid-cols-[70px_110px_100px_1fr_160px_120px] gap-3 px-4 py-2 text-sm border-b border-slate-700 last:border-b-0 ${
+                className={`grid grid-cols-[70px_110px_100px_1fr_160px_180px_120px] gap-3 px-4 py-2 text-sm border-b border-slate-700 last:border-b-0 ${
                   row.error ? 'bg-red-950/30' : ''
                 }`}
               >
@@ -424,6 +609,7 @@ export default function ImportPage() {
                 <span className="text-slate-100">{row.amount}</span>
                 <span className="text-slate-300 truncate">{row.description}</span>
                 <span className="text-slate-400 truncate">{row.account}</span>
+                <span className="text-slate-400 truncate">{row.category || '-'}</span>
                 <span className={row.error ? 'text-red-300' : 'text-slate-400'}>
                   {row.error ?? row.status}
                 </span>

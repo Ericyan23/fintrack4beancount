@@ -6,11 +6,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     csv?: string
     mapping?: CsvPreviewMapping
     defaultAccountId?: string
+    defaultLedgerAccount?: string
   }
 
   if (!body.csv?.trim()) {
     return NextResponse.json({ error: 'CSV required' }, { status: 400 })
   }
 
-  return NextResponse.json(previewTransactionsCsv(body.csv, body.mapping, body.defaultAccountId))
+  return NextResponse.json(previewTransactionsCsv(
+    body.csv,
+    body.mapping,
+    body.defaultAccountId,
+    body.defaultLedgerAccount,
+  ))
 }
