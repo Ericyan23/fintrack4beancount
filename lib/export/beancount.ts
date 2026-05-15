@@ -3,6 +3,7 @@ import {
   ledgerIntentFromTransfer,
   type LedgerIntent,
   type LedgerPostingIntent,
+  type LedgerPostingPrice,
 } from '@/lib/export/ledger-intents'
 import type { BeancountPreflightResult } from '@/lib/export/preflight'
 
@@ -47,6 +48,17 @@ function postingLine(account: string, amount: number, currency: string): string 
   return `${left}${spacing}${formatAmount(amount)} ${currency}`
 }
 
+function postingLineRaw(account: string, amount: string, currency: string, annotation = ''): string {
+  const renderedAmount = `${amount} ${currency}${annotation}`
+  const left = `  ${account}`
+  const spacing = left.length >= 50 ? '  ' : ' '.repeat(50 - left.length)
+  return `${left}${spacing}${renderedAmount}`
+}
+
+function postingLineInferred(account: string): string {
+  return `  ${account}`
+}
+
 function renderSourceId(sourceId: string): string {
   return `  source_id: "${escapeBeancountString(sourceId)}"`
 }
@@ -79,6 +91,14 @@ function requirePostingAccount(intent: LedgerIntent, posting: LedgerPostingInten
         throw new Error(`Missing split ledger account for transaction ${transactionId}`)
       }
       return posting.account
+    case 'investment_security':
+    case 'investment_cash':
+    case 'investment_fee':
+    case 'investment_pnl':
+      if (!posting.account) {
+        throw new Error(`Missing Beancount account for investment activity ${posting.investmentActivityId ?? intent.id}`)
+      }
+      return posting.account
   }
 
   const exhaustiveRole: never = posting.role
@@ -97,6 +117,38 @@ function requireConsistentTransferCurrency(intent: LedgerIntent): void {
   }
 }
 
+function investmentPostingAnnotation(posting: LedgerPostingIntent): string {
+  if (posting.cost) return ` {${renderPostingPrice(posting.cost)}}`
+  if (posting.price) return ` @ ${renderPostingPrice(posting.price)}`
+  return ''
+}
+
+function renderPostingPrice(price: LedgerPostingPrice): string {
+  const amount = parseAmount(price.amount, `investment price ${price.currency}`)
+  return `${formatAmount(amount)} ${price.currency}`
+}
+
+function renderPosting(intent: LedgerIntent, posting: LedgerPostingIntent): string {
+  const account = requirePostingAccount(intent, posting)
+
+  if (posting.role === 'investment_pnl') {
+    return postingLineInferred(account)
+  }
+
+  if (posting.role === 'investment_security') {
+    if (!posting.amount || !posting.currency) {
+      throw new Error(`Missing security quantity or commodity for investment activity ${posting.investmentActivityId ?? intent.id}`)
+    }
+    return postingLineRaw(account, posting.amount, posting.currency, investmentPostingAnnotation(posting))
+  }
+
+  const amount = parseAmount(posting.amount ?? '', postingParseContext(posting, intent))
+  if (!posting.currency) {
+    throw new Error(`Missing currency for ${postingParseContext(posting, intent)}`)
+  }
+  return postingLine(account, amount, posting.currency)
+}
+
 function renderLedgerIntent(intent: LedgerIntent): string {
   requireConsistentTransferCurrency(intent)
   const lines = [
@@ -105,9 +157,7 @@ function renderLedgerIntent(intent: LedgerIntent): string {
   ]
 
   for (const posting of intent.postings) {
-    const account = requirePostingAccount(intent, posting)
-    const amount = parseAmount(posting.amount, postingParseContext(posting, intent))
-    lines.push(postingLine(account, amount, posting.currency))
+    lines.push(renderPosting(intent, posting))
   }
 
   return lines.join('\n')
@@ -138,7 +188,7 @@ function exportableIntentsFor(preflight: BeancountDraftPreflight): LedgerIntent[
 }
 
 function assertIntentParity(intents: LedgerIntent[], legacyIntents: LedgerIntent[]): void {
-  const intentSourceIds = sortedSourceIds(intents)
+  const intentSourceIds = sortedSourceIds(intents.filter(intent => intent.kind !== 'investment_activity'))
   const legacySourceIds = sortedSourceIds(legacyIntents)
 
   if (

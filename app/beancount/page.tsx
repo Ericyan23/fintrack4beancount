@@ -11,6 +11,7 @@ interface PreflightIssue {
   code: string
   message: string
   transactionId?: string
+  investmentActivityId?: string
   transferMatchId?: number
   account?: string | null
   category?: string | null
@@ -40,9 +41,27 @@ interface PreflightTransfer {
 }
 
 interface PreflightSkipped {
-  transactionId: string
+  transactionId?: string
+  investmentActivityId?: string
   reason: string
   transferMatchId?: number
+}
+
+interface PreflightInvestmentActivity {
+  id: string
+  sourceId: string
+  date: string
+  description: string
+  accountName: string | null
+  beancountAccount: string | null
+  activityType: string
+  instrumentType: string
+  positionEffect: string
+  sourceSymbol: string | null
+  beancountCommodity: string | null
+  quantity: string | null
+  amount: string | null
+  currency: string | null
 }
 
 interface BeancountPreflightResult {
@@ -65,12 +84,15 @@ interface BeancountPreflightResult {
     reviewItems: number
     duplicateCandidates: number
     previouslyExported?: number
+    investmentActivitiesScanned?: number
+    exportableInvestmentActivities?: number
   }
   blockers: PreflightIssue[]
   reviewItems: PreflightIssue[]
   duplicateCandidates: PreflightIssue[]
   exportableTransactions: PreflightTransaction[]
   mergedTransfers: PreflightTransfer[]
+  exportableInvestmentActivities?: PreflightInvestmentActivity[]
   skipped: PreflightSkipped[]
 }
 
@@ -292,7 +314,7 @@ function IssueList({ title, items, tone }: { title: string; items: PreflightIssu
       ) : (
         <div className="space-y-2">
           {items.map((item, index) => (
-            <article key={`${item.code}-${item.transactionId ?? item.transferMatchId ?? index}`} className={`rounded-xl border p-3 ${toneClass}`}>
+            <article key={`${item.code}-${item.transactionId ?? item.investmentActivityId ?? item.transferMatchId ?? index}`} className={`rounded-xl border p-3 ${toneClass}`}>
               <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -306,6 +328,7 @@ function IssueList({ title, items, tone }: { title: string; items: PreflightIssu
               </div>
               <div className="mt-3 grid gap-1 text-xs md:grid-cols-2">
                 <DetailLine label="transactionId" value={item.transactionId ? <TransactionId id={item.transactionId} /> : undefined} />
+                <DetailLine label="investmentActivityId" value={item.investmentActivityId ? <span className="font-mono">{item.investmentActivityId}</span> : undefined} />
                 <DetailLine label="transferMatchId" value={item.transferMatchId} />
                 <DetailLine label="account" value={item.account} />
                 <DetailLine label="ledger account" value={item.category} />
@@ -340,6 +363,37 @@ function TransactionRow({ txn }: { txn: PreflightTransaction }) {
         </div>
         <div className={`text-sm font-semibold tabular-nums ${amount.positive ? 'text-emerald-300' : 'text-red-300'}`}>
           {amount.text}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function InvestmentActivityRow({ activity }: { activity: PreflightInvestmentActivity }) {
+  const amount = activity.amount && activity.currency ? formatAmount(activity.amount, activity.currency) : null
+  const label = [activity.activityType, activity.instrumentType, activity.positionEffect === 'none' ? '' : activity.positionEffect]
+    .filter(Boolean)
+    .join(' / ')
+
+  return (
+    <article className="rounded-xl border border-slate-700 bg-slate-800 p-3">
+      <div className="grid gap-3 lg:grid-cols-[108px_minmax(0,1fr)_auto] lg:items-start">
+        <div className="text-xs text-slate-500">{activity.date}</div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-blue-300">{activity.id}</span>
+            <span className="text-xs text-slate-500">{label}</span>
+          </div>
+          <p className="mt-1 truncate text-sm font-medium text-slate-100">{activity.description}</p>
+          <div className="mt-2 grid gap-1 text-xs md:grid-cols-2">
+            <DetailLine label="account" value={activity.beancountAccount ?? 'Unmapped'} />
+            <DetailLine label="security" value={activity.beancountCommodity ?? activity.sourceSymbol ?? 'Unmapped'} />
+            <DetailLine label="quantity" value={activity.quantity ?? '-'} />
+            <DetailLine label="sourceId" value={<span className="font-mono">{activity.sourceId}</span>} />
+          </div>
+        </div>
+        <div className={`text-sm font-semibold tabular-nums ${amount ? (amount.positive ? 'text-emerald-300' : 'text-red-300') : 'text-slate-400'}`}>
+          {amount?.text ?? '-'}
         </div>
       </div>
     </article>
@@ -421,10 +475,19 @@ function SkippedList({ skipped }: { skipped: PreflightSkipped[] }) {
         <div className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="divide-y divide-slate-700">
             {skipped.map((item, index) => (
-              <div key={`${item.transactionId}-${item.transferMatchId ?? index}`} className="grid gap-2 px-3 py-2 text-xs md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_120px]">
+              <div key={`${item.transactionId ?? item.investmentActivityId ?? 'skip'}-${item.transferMatchId ?? index}`} className="grid gap-2 px-3 py-2 text-xs md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_120px]">
                 <div className="min-w-0">
-                  <span className="text-slate-500">transactionId: </span>
-                  <TransactionId id={item.transactionId} />
+                  {item.transactionId ? (
+                    <>
+                      <span className="text-slate-500">transactionId: </span>
+                      <TransactionId id={item.transactionId} />
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-slate-500">investmentActivityId: </span>
+                      <span className="font-mono text-slate-300">{item.investmentActivityId ?? '-'}</span>
+                    </>
+                  )}
                 </div>
                 <div className="min-w-0 break-words text-slate-300">{item.reason}</div>
                 <div className="text-slate-500">
@@ -641,6 +704,7 @@ export default function BeancountPage() {
 
   const summary = result?.summary
   const visibleTransactions = useMemo(() => result?.exportableTransactions ?? [], [result])
+  const visibleInvestmentActivities = useMemo(() => result?.exportableInvestmentActivities ?? [], [result])
 
   return (
     <div className="space-y-5">
@@ -1060,9 +1124,10 @@ export default function BeancountPage() {
           </section>
 
           {summary && (
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-8">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-9">
               <SummaryCard label="Scanned" value={summary.transactionsScanned} />
               <SummaryCard label="Exportable" value={summary.exportableTransactions} tone="emerald" />
+              <SummaryCard label="Investments" value={summary.exportableInvestmentActivities ?? 0} tone="emerald" />
               <SummaryCard label="Merged" value={summary.mergedTransfers} tone="blue" />
               <SummaryCard label="Skipped" value={summary.skipped} />
               <SummaryCard label="Blockers" value={summary.blockers} tone="red" />
@@ -1103,6 +1168,24 @@ export default function BeancountPage() {
             ) : (
               <div className="space-y-2">
                 {visibleTransactions.map(txn => <TransactionRow key={txn.id} txn={txn} />)}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-slate-200">Exportable Investment Activities</h2>
+              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs tabular-nums text-slate-400">
+                {visibleInvestmentActivities.length}
+              </span>
+            </div>
+            {visibleInvestmentActivities.length === 0 ? (
+              <EmptyState>No exportable investment activities</EmptyState>
+            ) : (
+              <div className="space-y-2">
+                {visibleInvestmentActivities.map(activity => (
+                  <InvestmentActivityRow key={activity.id} activity={activity} />
+                ))}
               </div>
             )}
           </section>

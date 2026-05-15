@@ -1,0 +1,355 @@
+import assert from 'node:assert/strict'
+import { after, beforeEach, test } from 'node:test'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-beancount-investments-'))
+const dbPath = path.join(tempDir, 'fintrack.db')
+const beancountRoot = path.join(tempDir, 'beancount')
+process.env.DB_PATH = dbPath
+
+const { sqlite } = require('../lib/db') as typeof import('../lib/db')
+const { renderBeancountDraft } = require('../lib/export/beancount') as typeof import('../lib/export/beancount')
+const { runBeancountPreflight } = require('../lib/export/preflight') as typeof import('../lib/export/preflight')
+
+const tradeDate = Math.floor(Date.UTC(2026, 3, 20) / 1000)
+
+function resetDb(): void {
+  sqlite.exec(`
+    DELETE FROM investment_positions;
+    DELETE FROM investment_activities;
+    DELETE FROM securities;
+    DELETE FROM transactions;
+    DELETE FROM accounts;
+  `)
+}
+
+function writeLedger(extraAccounts: string[] = []): void {
+  fs.mkdirSync(beancountRoot, { recursive: true })
+  fs.writeFileSync(
+    path.join(beancountRoot, 'main.bean'),
+    [
+      'option "title" "Investment Export Test"',
+      '2026-01-01 open Assets:US:Fidelity:Brokerage USD',
+      '2026-01-01 open Expenses:Fees:Financial USD',
+      '2026-01-01 open Income:Investments:Trading USD',
+      ...extraAccounts.map(account => `2026-01-01 open ${account} USD`),
+      '',
+    ].join('\n'),
+  )
+}
+
+function insertInvestmentAccount(): void {
+  sqlite.prepare(`
+    INSERT INTO accounts (
+      id, name, currency, balance, balance_date, conn_id, org_name, org_domain,
+      account_type, account_type_override, beancount_account, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'acct-fidelity',
+    'Fidelity Brokerage',
+    'USD',
+    '0.00',
+    tradeDate,
+    'investment-test',
+    'Fidelity',
+    'fidelity.test',
+    'investment',
+    null,
+    'Assets:US:Fidelity:Brokerage',
+    tradeDate,
+  )
+}
+
+function insertSecurity(input: {
+  id: string
+  sourceSymbol: string
+  commodity: string | null
+  name?: string
+  instrumentType?: string
+  optionType?: string | null
+  expirationDate?: string | null
+  strikePrice?: string | null
+}): void {
+  sqlite.prepare(`
+    INSERT INTO securities (
+      id,
+      source_symbol,
+      name,
+      instrument_type,
+      underlying_symbol,
+      contract_symbol,
+      option_type,
+      expiration_date,
+      strike_price,
+      beancount_commodity,
+      raw_payload,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.id,
+    input.sourceSymbol,
+    input.name ?? input.sourceSymbol,
+    input.instrumentType ?? 'option',
+    'FCT',
+    input.sourceSymbol,
+    input.optionType ?? 'call',
+    input.expirationDate ?? '2025-06-20',
+    input.strikePrice ?? '50',
+    input.commodity,
+    JSON.stringify({ fixture: true }),
+    tradeDate,
+    tradeDate,
+  )
+}
+
+function insertInvestmentActivity(input: {
+  id: string
+  securityId: string
+  activityType: 'buy' | 'sell'
+  positionEffect: 'open' | 'close'
+  optionType: 'call' | 'put'
+  quantity: string
+  price: string
+  amount: string
+  commission?: string | null
+  action: string
+  description?: string
+  status?: string
+}): void {
+  sqlite.prepare(`
+    INSERT INTO investment_activities (
+      id,
+      account_id,
+      security_id,
+      trade_date,
+      settlement_date,
+      activity_type,
+      instrument_type,
+      position_effect,
+      option_type,
+      quantity,
+      price,
+      amount,
+      currency,
+      commission,
+      fees,
+      accrued_interest,
+      cash_balance,
+      action,
+      description,
+      status,
+      validation_errors,
+      normalized_payload,
+      normalizer_version,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.id,
+    'acct-fidelity',
+    input.securityId,
+    tradeDate,
+    '2026-04-21',
+    input.activityType,
+    'option',
+    input.positionEffect,
+    input.optionType,
+    input.quantity,
+    input.price,
+    input.amount,
+    'USD',
+    input.commission ?? null,
+    null,
+    null,
+    null,
+    input.action,
+    input.description ?? input.action,
+    input.status ?? 'reviewed',
+    JSON.stringify([]),
+    JSON.stringify({ fixture: true }),
+    'fidelity-brokerage-csv-v1',
+    tradeDate,
+    tradeDate,
+  )
+}
+
+beforeEach(() => {
+  resetDb()
+  writeLedger()
+  insertInvestmentAccount()
+})
+
+after(() => {
+  sqlite.close()
+  ;(globalThis as { __sqlite?: unknown }).__sqlite = undefined
+  fs.rmSync(tempDir, { recursive: true, force: true })
+})
+
+test('preflight emits and renders reviewed buy-to-open option activity', () => {
+  insertSecurity({
+    id: 'security-buy-open-call',
+    sourceSymbol: '-FCT250620C50',
+    commodity: 'FCT250620C50',
+  })
+  insertInvestmentActivity({
+    id: 'investment-buy-open-call',
+    securityId: 'security-buy-open-call',
+    activityType: 'buy',
+    positionEffect: 'open',
+    optionType: 'call',
+    quantity: '1',
+    price: '1.25',
+    amount: '-125.65',
+    commission: '0.65',
+    action: 'YOU BOUGHT OPENING TRANSACTION CALL',
+  })
+
+  const result = runBeancountPreflight({ period: '2026-04', beancountRoot })
+  const intent = result.exportableIntents[0]
+  const draft = renderBeancountDraft(result, { generatedAt: new Date('2026-05-15T12:00:00.000Z') })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.summary.investmentActivitiesScanned, 1)
+  assert.equal(result.summary.exportableInvestmentActivities, 1)
+  assert.equal(result.exportableInvestmentActivities?.length, 1)
+  assert.equal(intent.kind, 'investment_activity')
+  assert.equal(intent.sourceId, 'fintrack:investment:investment-buy-open-call')
+  assert.deepEqual(intent.transactionIds, [])
+  assert.deepEqual(intent.postings.map(posting => ({
+    account: posting.account,
+    amount: posting.amount,
+    currency: posting.currency,
+    role: posting.role,
+    cost: posting.cost,
+  })), [
+    {
+      account: 'Assets:US:Fidelity:Brokerage',
+      amount: '1',
+      currency: 'FCT250620C50',
+      role: 'investment_security',
+      cost: { amount: '125.00', currency: 'USD' },
+    },
+    {
+      account: 'Assets:US:Fidelity:Brokerage',
+      amount: '-125.65',
+      currency: 'USD',
+      role: 'investment_cash',
+      cost: undefined,
+    },
+    {
+      account: 'Expenses:Fees:Financial',
+      amount: '0.65',
+      currency: 'USD',
+      role: 'investment_fee',
+      cost: undefined,
+    },
+  ])
+  assert.match(draft, /2026-04-20 \* "YOU BOUGHT OPENING TRANSACTION CALL"/)
+  assert.match(draft, /source_id: "fintrack:investment:investment-buy-open-call"/)
+  assert.match(draft, /Assets:US:Fidelity:Brokerage\s+1 FCT250620C50 \{125\.00 USD\}/)
+  assert.match(draft, /Assets:US:Fidelity:Brokerage\s+-125\.65 USD/)
+  assert.match(draft, /Expenses:Fees:Financial\s+0\.65 USD/)
+})
+
+test('sell-to-close option activity renders security, cash, fees, and inferred PnL posting', () => {
+  insertSecurity({
+    id: 'security-sell-close-put',
+    sourceSymbol: '-FCT250620P45',
+    commodity: 'FCT250620P45',
+    optionType: 'put',
+    strikePrice: '45',
+  })
+  insertInvestmentActivity({
+    id: 'investment-sell-close-put',
+    securityId: 'security-sell-close-put',
+    activityType: 'sell',
+    positionEffect: 'close',
+    optionType: 'put',
+    quantity: '1',
+    price: '2.10',
+    amount: '209.35',
+    commission: '0.65',
+    action: 'YOU SOLD CLOSING TRANSACTION PUT',
+  })
+
+  const result = runBeancountPreflight({ period: '2026-04', beancountRoot })
+  const intent = result.exportableIntents[0]
+  const draft = renderBeancountDraft(result, { generatedAt: new Date('2026-05-15T12:00:00.000Z') })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.reviewItems.length, 1)
+  assert.equal(result.reviewItems[0].code, 'investment_pnl_requires_lot_review')
+  assert.equal(intent.kind, 'investment_activity')
+  assert.deepEqual(intent.postings.map(posting => ({
+    account: posting.account,
+    amount: posting.amount,
+    currency: posting.currency,
+    role: posting.role,
+    price: posting.price,
+  })), [
+    {
+      account: 'Assets:US:Fidelity:Brokerage',
+      amount: '-1',
+      currency: 'FCT250620P45',
+      role: 'investment_security',
+      price: { amount: '210.00', currency: 'USD' },
+    },
+    {
+      account: 'Assets:US:Fidelity:Brokerage',
+      amount: '209.35',
+      currency: 'USD',
+      role: 'investment_cash',
+      price: undefined,
+    },
+    {
+      account: 'Expenses:Fees:Financial',
+      amount: '0.65',
+      currency: 'USD',
+      role: 'investment_fee',
+      price: undefined,
+    },
+    {
+      account: 'Income:Investments:Trading',
+      amount: null,
+      currency: null,
+      role: 'investment_pnl',
+      price: undefined,
+    },
+  ])
+  assert.match(draft, /Assets:US:Fidelity:Brokerage\s+-1 FCT250620P45 @ 210\.00 USD/)
+  assert.match(draft, /Assets:US:Fidelity:Brokerage\s+209\.35 USD/)
+  assert.match(draft, /Expenses:Fees:Financial\s+0\.65 USD/)
+  assert.match(draft, /\n  Income:Investments:Trading\n/)
+})
+
+test('preflight blocks reviewed investment activity without security commodity mapping', () => {
+  insertSecurity({
+    id: 'security-unmapped',
+    sourceSymbol: 'FCT',
+    commodity: null,
+    instrumentType: 'equity',
+  })
+  insertInvestmentActivity({
+    id: 'investment-unmapped',
+    securityId: 'security-unmapped',
+    activityType: 'buy',
+    positionEffect: 'open',
+    optionType: 'call',
+    quantity: '10',
+    price: '50.00',
+    amount: '-500.00',
+    action: 'YOU BOUGHT FICTCORP',
+  })
+
+  const result = runBeancountPreflight({ period: '2026-04', beancountRoot })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.exportableIntents.length, 0)
+  assert.equal(result.blockers.some(blocker => blocker.code === 'missing_security_mapping'), true)
+})

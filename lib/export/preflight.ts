@@ -9,9 +9,11 @@ import {
   type LedgerPosting,
 } from '@/lib/export/beancount-ledger'
 import {
+  ledgerIntentFromInvestmentActivity,
   ledgerIntentFromTransaction,
   ledgerIntentFromTransfer,
   type LedgerIntent,
+  type LedgerIntentInvestmentActivityInput,
 } from '@/lib/export/ledger-intents'
 import { loadPreviouslyExportedSourceIds } from '@/lib/export/export-runs'
 import { REVIEW_CATEGORY_NAMES } from '@/lib/classify/defaults'
@@ -23,6 +25,7 @@ export interface PreflightIssue {
   code: string
   message: string
   transactionId?: string
+  investmentActivityId?: string
   splitId?: string
   transferMatchId?: number
   account?: string | null
@@ -67,9 +70,32 @@ export interface PreflightTransfer {
 }
 
 export interface PreflightSkipped {
-  transactionId: string
+  transactionId?: string
+  investmentActivityId?: string
   reason: string
   transferMatchId?: number
+}
+
+export interface PreflightInvestmentActivity {
+  id: string
+  sourceId: string
+  date: string
+  description: string
+  accountId: string | null
+  accountName: string | null
+  beancountAccount: string | null
+  activityType: string
+  instrumentType: string
+  positionEffect: string
+  securityId: string | null
+  sourceSymbol: string | null
+  beancountCommodity: string | null
+  quantity: string | null
+  price: string | null
+  amount: string | null
+  currency: string | null
+  commission: string | null
+  fees: string | null
 }
 
 export interface BeancountPreflightResult {
@@ -92,12 +118,15 @@ export interface BeancountPreflightResult {
     reviewItems: number
     duplicateCandidates: number
     previouslyExported?: number
+    investmentActivitiesScanned?: number
+    exportableInvestmentActivities?: number
   }
   blockers: PreflightIssue[]
   reviewItems: PreflightIssue[]
   duplicateCandidates: PreflightIssue[]
   exportableTransactions: PreflightTransaction[]
   mergedTransfers: PreflightTransfer[]
+  exportableInvestmentActivities?: PreflightInvestmentActivity[]
   exportableIntents: LedgerIntent[]
   skipped: PreflightSkipped[]
 }
@@ -124,6 +153,28 @@ interface TransferMatchRow {
   inflow: TransactionRow
 }
 
+interface InvestmentActivityRow {
+  id: string
+  accountId: string | null
+  accountName: string | null
+  beancountAccount: string | null
+  securityId: string | null
+  sourceSymbol: string | null
+  beancountCommodity: string | null
+  tradeDate: number
+  activityType: string
+  instrumentType: string
+  positionEffect: string
+  quantity: string | null
+  price: string | null
+  amount: string | null
+  currency: string | null
+  commission: string | null
+  fees: string | null
+  action: string
+  description: string | null
+}
+
 interface ParsedDecimal {
   unscaled: bigint
   scale: number
@@ -132,6 +183,9 @@ interface ParsedDecimal {
 const REVIEW_CATEGORIES = new Set(REVIEW_CATEGORY_NAMES)
 const DUPLICATE_POSTING_DATE_TOLERANCE_DAYS = 7
 const SUPPORTED_EXPORT_ACCOUNT_TYPES = new Set(['depository', 'credit'])
+const SUPPORTED_INVESTMENT_ACTIVITY_TYPES = new Set(['buy', 'sell'])
+const INVESTMENT_FEE_ACCOUNT = process.env.FINTRACK_INVESTMENT_FEE_ACCOUNT ?? 'Expenses:Fees:Financial'
+const INVESTMENT_PNL_ACCOUNT = process.env.FINTRACK_INVESTMENT_PNL_ACCOUNT ?? 'Income:Investments:Trading'
 
 function dateFromUnix(ts: number): string {
   return new Date(ts * 1000).toISOString().slice(0, 10)
@@ -353,6 +407,67 @@ function loadConfirmedTransferMatches(startTs: number, endTs: number): TransferM
       category: row.in_category,
     },
   }))
+}
+
+function sourceIdForInvestmentActivity(row: Pick<InvestmentActivityRow, 'id'>): string {
+  return `fintrack:investment:${row.id}`
+}
+
+function toPreflightInvestmentActivity(row: InvestmentActivityRow): PreflightInvestmentActivity {
+  return {
+    id: row.id,
+    sourceId: sourceIdForInvestmentActivity(row),
+    date: dateFromUnix(row.tradeDate),
+    description: row.description || row.action,
+    accountId: row.accountId,
+    accountName: row.accountName,
+    beancountAccount: row.beancountAccount,
+    activityType: row.activityType,
+    instrumentType: row.instrumentType,
+    positionEffect: row.positionEffect,
+    securityId: row.securityId,
+    sourceSymbol: row.sourceSymbol,
+    beancountCommodity: row.beancountCommodity,
+    quantity: row.quantity,
+    price: row.price,
+    amount: row.amount,
+    currency: row.currency,
+    commission: row.commission,
+    fees: row.fees,
+  }
+}
+
+function loadReviewedInvestmentActivities(startTs: number, endTs: number): InvestmentActivityRow[] {
+  return sqlite.prepare(`
+    SELECT
+      ia.id,
+      ia.account_id AS accountId,
+      accounts.name AS accountName,
+      accounts.beancount_account AS beancountAccount,
+      ia.security_id AS securityId,
+      securities.source_symbol AS sourceSymbol,
+      securities.beancount_commodity AS beancountCommodity,
+      ia.trade_date AS tradeDate,
+      ia.activity_type AS activityType,
+      ia.instrument_type AS instrumentType,
+      ia.position_effect AS positionEffect,
+      ia.quantity,
+      ia.price,
+      ia.amount,
+      ia.currency,
+      ia.commission,
+      ia.fees,
+      ia.action,
+      ia.description
+    FROM investment_activities ia
+    LEFT JOIN accounts
+      ON accounts.id = ia.account_id
+    LEFT JOIN securities
+      ON securities.id = ia.security_id
+    WHERE ia.status = 'reviewed'
+      AND ia.trade_date BETWEEN ? AND ?
+    ORDER BY ia.trade_date ASC, ia.created_at ASC, ia.id ASC
+  `).all(startTs, endTs) as InvestmentActivityRow[]
 }
 
 function addIssue(target: PreflightIssue[], issue: Omit<PreflightIssue, 'severity'>, severity: PreflightSeverity): void {
@@ -687,6 +802,177 @@ function validateSplitPostingSigns(
   }
 }
 
+function formatMoneyNumber(value: number): string {
+  const rounded = Math.abs(value) < 0.0000005 ? 0 : value
+  const fixed = rounded.toFixed(6)
+  const trimmed = fixed.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
+  return trimmed.includes('.') ? trimmed : `${trimmed}.00`
+}
+
+function decimalNumber(value: string | null, label: string): number {
+  if (value === null) throw new Error(`${label} is missing`)
+  parseDecimalString(value, label)
+  const parsed = Number.parseFloat(value)
+  if (!Number.isFinite(parsed)) throw new Error(`${label} must be finite`)
+  return parsed
+}
+
+function optionalPositiveMoney(value: string | null, label: string): number {
+  if (!value) return 0
+  return Math.abs(decimalNumber(value, label))
+}
+
+function feeAmountForInvestment(activity: PreflightInvestmentActivity): string | null {
+  const total = optionalPositiveMoney(activity.commission, 'Investment commission')
+    + optionalPositiveMoney(activity.fees, 'Investment fees')
+  return total > 0 ? formatMoneyNumber(total) : null
+}
+
+function unitInvestmentPrice(activity: PreflightInvestmentActivity, feeAmount: string | null): string | null {
+  if (!activity.quantity) return activity.price
+  const quantity = Math.abs(decimalNumber(activity.quantity, 'Investment quantity'))
+  if (quantity === 0) return activity.price
+  if (!activity.amount) return activity.price
+
+  const cash = decimalNumber(activity.amount, 'Investment cash amount')
+  const fees = feeAmount ? decimalNumber(feeAmount, 'Investment fee amount') : 0
+  const gross = activity.activityType === 'sell'
+    ? Math.abs(cash) + fees
+    : Math.abs(cash) - fees
+  if (gross <= 0) return activity.price
+
+  return formatMoneyNumber(gross / quantity)
+}
+
+function requiresInvestmentPnlPosting(activity: PreflightInvestmentActivity): boolean {
+  return activity.activityType === 'sell' || activity.positionEffect === 'close'
+}
+
+function investmentIntentFromPreflight(
+  activity: PreflightInvestmentActivity,
+): LedgerIntentInvestmentActivityInput {
+  const feeAmount = feeAmountForInvestment(activity)
+  const unitPrice = unitInvestmentPrice(activity, feeAmount)
+  const requiresPnl = requiresInvestmentPnlPosting(activity)
+
+  return {
+    id: activity.id,
+    sourceId: activity.sourceId,
+    date: activity.date,
+    description: activity.description,
+    activityType: activity.activityType as 'buy' | 'sell',
+    positionEffect: activity.positionEffect,
+    investmentAccount: activity.beancountAccount,
+    commodity: activity.beancountCommodity ?? '',
+    quantity: activity.quantity ?? '',
+    cashAmount: activity.amount ?? '',
+    cashCurrency: activity.currency ?? 'USD',
+    unitCost: requiresPnl ? null : unitPrice,
+    unitPrice,
+    feeAmount,
+    feeAccount: feeAmount ? INVESTMENT_FEE_ACCOUNT : null,
+    pnlAccount: requiresPnl ? INVESTMENT_PNL_ACCOUNT : null,
+  }
+}
+
+function validateInvestmentActivity(
+  snapshot: LedgerSnapshot,
+  activity: PreflightInvestmentActivity,
+  blockers: PreflightIssue[],
+  reviewItems: PreflightIssue[],
+  duplicateCandidates: PreflightIssue[],
+): boolean {
+  const issueBase = {
+    investmentActivityId: activity.id,
+    sourceId: activity.sourceId,
+  }
+  let valid = true
+
+  valid = validateDuplicateSourceId(snapshot, activity.sourceId, issueBase, blockers, duplicateCandidates) && valid
+  valid = validateLedgerAccount(snapshot, activity.beancountAccount, activity.date, issueBase, blockers) && valid
+
+  if (!SUPPORTED_INVESTMENT_ACTIVITY_TYPES.has(activity.activityType)) {
+    addIssue(blockers, {
+      ...issueBase,
+      code: 'unsupported_investment_activity_type',
+      message: `Investment activity type ${activity.activityType} is not exportable yet`,
+    }, 'blocker')
+    valid = false
+  }
+
+  if (!activity.beancountCommodity) {
+    addIssue(blockers, {
+      ...issueBase,
+      code: 'missing_security_mapping',
+      message: `Security ${activity.sourceSymbol ?? activity.securityId ?? activity.id} is missing Beancount commodity mapping`,
+    }, 'blocker')
+    valid = false
+  }
+
+  if (!activity.quantity) {
+    addIssue(blockers, {
+      ...issueBase,
+      code: 'missing_investment_quantity',
+      message: 'Investment activity is missing quantity',
+    }, 'blocker')
+    valid = false
+  }
+  if (!activity.amount) {
+    addIssue(blockers, {
+      ...issueBase,
+      code: 'missing_investment_cash_amount',
+      message: 'Investment activity is missing cash amount',
+    }, 'blocker')
+    valid = false
+  }
+  if (!activity.currency) {
+    addIssue(blockers, {
+      ...issueBase,
+      code: 'missing_investment_currency',
+      message: 'Investment activity is missing cash currency',
+    }, 'blocker')
+    valid = false
+  }
+
+  let feeAmount: string | null = null
+  try {
+    if (activity.quantity) decimalNumber(activity.quantity, 'Investment quantity')
+    if (activity.amount) decimalNumber(activity.amount, 'Investment cash amount')
+    if (activity.price) decimalNumber(activity.price, 'Investment price')
+    feeAmount = feeAmountForInvestment(activity)
+    unitInvestmentPrice(activity, feeAmount)
+  } catch (error) {
+    addIssue(blockers, {
+      ...issueBase,
+      code: 'invalid_investment_amount',
+      message: error instanceof Error ? error.message : 'Investment amount is invalid',
+    }, 'blocker')
+    valid = false
+  }
+
+  if (feeAmount) {
+    valid = validateLedgerAccount(snapshot, INVESTMENT_FEE_ACCOUNT, activity.date, {
+      ...issueBase,
+      account: INVESTMENT_FEE_ACCOUNT,
+    }, blockers) && valid
+  }
+
+  if (requiresInvestmentPnlPosting(activity)) {
+    valid = validateLedgerAccount(snapshot, INVESTMENT_PNL_ACCOUNT, activity.date, {
+      ...issueBase,
+      account: INVESTMENT_PNL_ACCOUNT,
+    }, blockers) && valid
+    addIssue(reviewItems, {
+      ...issueBase,
+      code: 'investment_pnl_requires_lot_review',
+      account: INVESTMENT_PNL_ACCOUNT,
+      message: 'Investment sell/close export uses an inferred PnL posting until lot and cost basis support is implemented',
+    }, 'review')
+  }
+
+  return valid
+}
+
 
 function parseDecimalString(value: string, label: string): ParsedDecimal {
   if (!/^-?\d+(?:\.\d+)?$/.test(value)) {
@@ -716,6 +1002,7 @@ export function runBeancountPreflight(options: {
   const beancountRoot = options.beancountRoot ?? defaultBeancountRoot()
   const snapshot = loadLedgerSnapshot(beancountRoot)
   const rows = loadTransactions(range.startTs, range.endTs)
+  const investmentRows = loadReviewedInvestmentActivities(range.startTs, range.endTs)
   const confirmedTransferMatches = loadConfirmedTransferMatches(range.startTs, range.endTs)
   const splitParentIds = new Set(rows.map(row => row.id))
   for (const match of confirmedTransferMatches) {
@@ -729,6 +1016,7 @@ export function runBeancountPreflight(options: {
   const skipped: PreflightSkipped[] = []
   const mergedTransfers: PreflightTransfer[] = []
   const exportableTransactions: PreflightTransaction[] = []
+  const exportableInvestmentActivities: PreflightInvestmentActivity[] = []
   const previouslyExportedSourceIds = options.excludeExported
     ? loadPreviouslyExportedSourceIds({ exportTarget: 'beancount_handoff' })
     : new Set<string>()
@@ -934,10 +1222,32 @@ export function runBeancountPreflight(options: {
     if (valid) exportableTransactions.push(txn)
   }
 
+  for (const row of investmentRows) {
+    const activity = toPreflightInvestmentActivity(row)
+
+    if (previouslyExportedSourceIds.has(activity.sourceId)) {
+      previouslyExported += 1
+      continue
+    }
+
+    const valid = validateInvestmentActivity(
+      snapshot,
+      activity,
+      blockers,
+      reviewItems,
+      duplicateCandidates,
+    )
+
+    if (valid) exportableInvestmentActivities.push(activity)
+  }
+
   const proposedStaging = path.join('staging', period, 'fintrack', 'draft', `${period}.bean`)
   const exportableIntents: LedgerIntent[] = [
     ...exportableTransactions.map(ledgerIntentFromTransaction),
     ...mergedTransfers.map(ledgerIntentFromTransfer),
+    ...exportableInvestmentActivities
+      .map(investmentIntentFromPreflight)
+      .map(ledgerIntentFromInvestmentActivity),
   ]
 
   return {
@@ -955,6 +1265,8 @@ export function runBeancountPreflight(options: {
       transactionsScanned: rows.length,
       exportableTransactions: exportableTransactions.length,
       mergedTransfers: mergedTransfers.length,
+      investmentActivitiesScanned: investmentRows.length,
+      exportableInvestmentActivities: exportableInvestmentActivities.length,
       skipped: skipped.length,
       blockers: blockers.length,
       reviewItems: reviewItems.length,
@@ -966,6 +1278,7 @@ export function runBeancountPreflight(options: {
     duplicateCandidates,
     exportableTransactions,
     mergedTransfers,
+    exportableInvestmentActivities,
     exportableIntents,
     skipped,
   }

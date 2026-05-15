@@ -59,7 +59,7 @@ function previewError(row: CsvNormalizedTransaction, account: AccountRow | null)
   if (row.amount === null) return 'Invalid amount'
   if (!row.description) return 'Missing description'
   if (!account) return 'Unable to match account'
-  if (row.investmentActivity) return 'Investment activity staging models required'
+  if (row.investmentActivity) return 'Investment activity review/export required'
   return undefined
 }
 

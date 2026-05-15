@@ -1,16 +1,36 @@
-export type LedgerIntentKind = 'cash_transaction' | 'split_transaction' | 'confirmed_transfer'
+export type LedgerIntentKind =
+  | 'cash_transaction'
+  | 'split_transaction'
+  | 'confirmed_transfer'
+  | 'investment_activity'
 
-export type LedgerPostingRole = 'source' | 'category' | 'split' | 'transfer'
+export type LedgerPostingRole =
+  | 'source'
+  | 'category'
+  | 'split'
+  | 'transfer'
+  | 'investment_security'
+  | 'investment_cash'
+  | 'investment_fee'
+  | 'investment_pnl'
+
+export interface LedgerPostingPrice {
+  amount: string
+  currency: string
+}
 
 export interface LedgerPostingIntent {
   account: string | null
-  amount: string
-  currency: string
+  amount: string | null
+  currency: string | null
   role: LedgerPostingRole
   transactionId?: string
+  investmentActivityId?: string
   splitId?: string
   memo?: string | null
   notes?: string | null
+  cost?: LedgerPostingPrice | null
+  price?: LedgerPostingPrice | null
 }
 
 export interface LedgerIntent {
@@ -66,6 +86,25 @@ export interface LedgerIntentTransferInput {
   date: string
   outflow: LedgerIntentTransactionInput
   inflow: LedgerIntentTransactionInput
+}
+
+export interface LedgerIntentInvestmentActivityInput {
+  id: string
+  sourceId: string
+  date: string
+  description: string
+  activityType: 'buy' | 'sell'
+  positionEffect?: string | null
+  investmentAccount: string | null
+  commodity: string
+  quantity: string
+  cashAmount: string
+  cashCurrency: string
+  unitCost?: string | null
+  unitPrice?: string | null
+  feeAmount?: string | null
+  feeAccount?: string | null
+  pnlAccount?: string | null
 }
 
 export interface BalanceAssertionCandidateInput {
@@ -153,6 +192,65 @@ export function ledgerIntentFromTransfer(transfer: LedgerIntentTransferInput): L
   }
 }
 
+export function ledgerIntentFromInvestmentActivity(
+  activity: LedgerIntentInvestmentActivityInput,
+): LedgerIntent {
+  const quantity = signedInvestmentQuantity(activity.activityType, activity.quantity)
+  const requiresPnlPosting = Boolean(activity.pnlAccount)
+  const postings: LedgerPostingIntent[] = [
+    {
+      account: activity.investmentAccount,
+      amount: quantity,
+      currency: activity.commodity,
+      role: 'investment_security',
+      investmentActivityId: activity.id,
+      cost: requiresPnlPosting || !activity.unitCost
+        ? null
+        : { amount: activity.unitCost, currency: activity.cashCurrency },
+      price: activity.unitPrice
+        ? { amount: activity.unitPrice, currency: activity.cashCurrency }
+        : null,
+    },
+    {
+      account: activity.investmentAccount,
+      amount: activity.cashAmount,
+      currency: activity.cashCurrency,
+      role: 'investment_cash',
+      investmentActivityId: activity.id,
+    },
+  ]
+
+  if (activity.feeAmount && !isZeroDecimalString(activity.feeAmount)) {
+    postings.push({
+      account: activity.feeAccount ?? null,
+      amount: activity.feeAmount,
+      currency: activity.cashCurrency,
+      role: 'investment_fee',
+      investmentActivityId: activity.id,
+    })
+  }
+
+  if (requiresPnlPosting) {
+    postings.push({
+      account: activity.pnlAccount ?? null,
+      amount: null,
+      currency: null,
+      role: 'investment_pnl',
+      investmentActivityId: activity.id,
+    })
+  }
+
+  return {
+    id: `intent:investment:${activity.id}`,
+    kind: 'investment_activity',
+    sourceId: activity.sourceId,
+    date: activity.date,
+    description: activity.description,
+    postings,
+    transactionIds: [],
+  }
+}
+
 export function exportCandidateFromBalanceAssertion(
   assertion: BalanceAssertionCandidateInput,
 ): ExportCandidateBalanceAssertion {
@@ -172,4 +270,13 @@ export function exportCandidateFromBalanceAssertion(
 export function negateDecimalString(value: string): string {
   if (/^-?0+(?:\.0+)?$/.test(value)) return value.startsWith('-') ? value.slice(1) : value
   return value.startsWith('-') ? value.slice(1) : `-${value}`
+}
+
+function signedInvestmentQuantity(activityType: 'buy' | 'sell', quantity: string): string {
+  const unsigned = quantity.startsWith('-') ? quantity.slice(1) : quantity
+  return activityType === 'sell' && !isZeroDecimalString(unsigned) ? `-${unsigned}` : unsigned
+}
+
+function isZeroDecimalString(value: string): boolean {
+  return /^-?0+(?:\.0+)?$/.test(value)
 }

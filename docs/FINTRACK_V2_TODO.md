@@ -426,14 +426,15 @@ ingestion is stable.
 - [x] Add investment activity review UI.
   - Progress: import run detail now shows staged investment activities with status, security, activity type, option open/close metadata, validation errors, and reviewed/ignored/blocked status actions.
 - [ ] Add Beancount investment renderer:
-  - [ ] cash postings
-  - [ ] commodity/security postings
-  - [ ] fees
+  - [x] cash postings
+  - [x] commodity/security postings
+  - [x] fees
   - [ ] dividend and interest income
   - [ ] balance/position assertions
+  - Progress: reviewed buy/sell investment activities with mapped securities now enter preflight as LedgerIntent records and render security, cash, fee, and inferred PnL postings for option/equity open-close activity.
 - [ ] Be conservative with complex lots, DRIP, transfer-in-kind, and cost basis:
-  - [ ] block export when uncertain.
-  - [ ] require review.
+  - [x] block export when uncertain.
+  - [x] require review.
   - [ ] preserve raw rows for manual ledger work.
 
 ## Long-Term Optional
