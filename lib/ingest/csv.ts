@@ -1,6 +1,12 @@
 import { parseCsv, rowsToObjects } from '@/lib/csv'
 import { buildSourceItemKey, type SourceItemKeyInput } from '@/lib/ingest/identity'
-import type { IngestionJsonObject } from '@/lib/ingest/types'
+import type {
+  IngestionJsonObject,
+  InvestmentActivityType,
+  InvestmentInstrumentType,
+  InvestmentOptionType,
+  InvestmentPositionEffect,
+} from '@/lib/ingest/types'
 
 export type CsvImportField =
   | 'date'
@@ -16,14 +22,6 @@ export type CsvImportField =
 export type CsvImportMapping = Partial<Record<CsvImportField, string>>
 export type CsvTransactionStatus = 'posted' | 'pending' | 'cancelled'
 export type CsvParserProfileId = 'fidelity-brokerage-csv'
-export type CsvInvestmentActivityType =
-  | 'buy'
-  | 'sell'
-  | 'dividend'
-  | 'interest'
-  | 'fee'
-  | 'cash_transfer'
-  | 'other'
 
 export interface CsvParserProfile {
   id: CsvParserProfileId
@@ -36,11 +34,18 @@ export interface CsvParserProfile {
 
 export interface CsvInvestmentActivity extends IngestionJsonObject {
   profileId: CsvParserProfileId
-  activityType: CsvInvestmentActivityType
+  activityType: InvestmentActivityType
+  instrumentType: InvestmentInstrumentType
+  positionEffect: InvestmentPositionEffect
   action: string
   symbol: string | null
   securityDescription: string | null
   securityType: string | null
+  underlyingSymbol: string | null
+  contractSymbol: string | null
+  optionType: InvestmentOptionType
+  expirationDate: string | null
+  strikePrice: string | null
   price: string | null
   quantity: string | null
   commission: string | null
@@ -227,19 +232,84 @@ function splitTags(value: string): string[] {
     .filter(Boolean)
 }
 
-function fidelityActivityType(action: string): CsvInvestmentActivityType {
+function fidelityActivityType(action: string): InvestmentActivityType {
   const normalized = action.toUpperCase()
   if (/\bBOUGHT\b|\bBUY\b/.test(normalized)) return 'buy'
   if (/\bSOLD\b|\bSELL\b/.test(normalized)) return 'sell'
+  if (/REINVESTMENT/.test(normalized)) return 'reinvest_dividend'
   if (/DIVIDEND|DIV/.test(normalized)) return 'dividend'
   if (/INTEREST/.test(normalized)) return 'interest'
   if (/FEE|COMMISSION/.test(normalized)) return 'fee'
-  if (/TRANSFER|DIRECT DEPOSIT|EFT|ACH|CASH/.test(normalized)) return 'cash_transfer'
+  if (/TRANSFER|JOURNALED|DIRECT DEPOSIT|EFT|ACH|CASH/.test(normalized)) return 'cash_transfer'
   return 'other'
 }
 
 function optionalCell(row: Record<string, string>, column: string): string | null {
   return cell(row, column) || null
+}
+
+function parseFidelityOptionSymbol(symbol: string): {
+  underlyingSymbol: string | null
+  optionType: InvestmentOptionType
+  expirationDate: string | null
+  strikePrice: string | null
+} {
+  const normalized = symbol.trim().toUpperCase()
+  const match = normalized.match(/^-?([A-Z.]{1,6})(\d{6})([CP])(\d+(?:\.\d+)?)?$/)
+  if (!match) {
+    return {
+      underlyingSymbol: null,
+      optionType: null,
+      expirationDate: null,
+      strikePrice: null,
+    }
+  }
+
+  const [, underlyingSymbol, yymmdd, optionType, strikeText] = match
+  const year = Number(yymmdd.slice(0, 2))
+  const month = yymmdd.slice(2, 4)
+  const day = yymmdd.slice(4, 6)
+  return {
+    underlyingSymbol,
+    optionType: optionType === 'C' ? 'call' : 'put',
+    expirationDate: `${year >= 70 ? '19' : '20'}${String(year).padStart(2, '0')}-${month}-${day}`,
+    strikePrice: strikeText ?? null,
+  }
+}
+
+function fidelityPositionEffect(action: string): InvestmentPositionEffect {
+  const normalized = action.toUpperCase()
+  if (/TO OPEN|OPENING/.test(normalized)) return 'open'
+  if (/TO CLOSE|CLOSING/.test(normalized)) return 'close'
+  return 'unknown'
+}
+
+function fidelityOptionType(action: string): InvestmentOptionType {
+  const normalized = action.toUpperCase()
+  if (/\bCALL\b/.test(normalized)) return 'call'
+  if (/\bPUT\b/.test(normalized)) return 'put'
+  return null
+}
+
+function fidelityStrikePrice(action: string): string | null {
+  const match = action.match(/\$(\d+(?:\.\d+)?)/)
+  return match?.[1] ?? null
+}
+
+function fidelityInstrumentType(
+  action: string,
+  symbol: string | null,
+  securityType: string | null,
+): InvestmentInstrumentType {
+  const normalizedAction = action.toUpperCase()
+  const normalizedType = securityType?.toUpperCase() ?? ''
+  const normalizedSymbol = symbol?.toUpperCase() ?? ''
+  if (/\b(CALL|PUT)\b|TO OPEN|TO CLOSE|OPENING TRANSACTION|CLOSING TRANSACTION/.test(normalizedAction)) return 'option'
+  if (/^-?[A-Z.]{1,6}\d{6}[CP]\d+(?:\.\d+)?$/.test(normalizedSymbol)) return 'option'
+  if (/FUND/.test(normalizedAction) || /MONEY MARKET/.test(normalizedAction)) return 'fund'
+  if (/CASH|MONEY MARKET/.test(normalizedType) || (!symbol && /TRANSFER|JOURNALED|DIRECT DEPOSIT|CASH/.test(normalizedAction))) return 'cash'
+  if (symbol) return 'equity'
+  return 'unknown'
 }
 
 function fidelityInvestmentActivity(
@@ -249,13 +319,26 @@ function fidelityInvestmentActivity(
   if (parserProfile?.id !== 'fidelity-brokerage-csv') return null
 
   const action = cell(row, 'Action')
+  const symbol = optionalCell(row, 'Symbol')
+  const securityType = optionalCell(row, 'Type')
+  const instrumentType = fidelityInstrumentType(action, symbol, securityType)
+  const parsedOption = symbol ? parseFidelityOptionSymbol(symbol) : null
+  const actionOptionType = fidelityOptionType(action)
+  const strikePrice = parsedOption?.strikePrice ?? fidelityStrikePrice(action)
   return {
     profileId: parserProfile.id,
     activityType: fidelityActivityType(action),
+    instrumentType,
+    positionEffect: instrumentType === 'option' ? fidelityPositionEffect(action) : 'none',
     action,
-    symbol: optionalCell(row, 'Symbol'),
+    symbol,
     securityDescription: optionalCell(row, 'Description'),
-    securityType: optionalCell(row, 'Type'),
+    securityType,
+    underlyingSymbol: parsedOption?.underlyingSymbol ?? null,
+    contractSymbol: instrumentType === 'option' ? symbol : null,
+    optionType: parsedOption?.optionType ?? actionOptionType,
+    expirationDate: parsedOption?.expirationDate ?? null,
+    strikePrice,
     price: normalizeAmount(cell(row, 'Price ($)')),
     quantity: optionalCell(row, 'Quantity'),
     commission: normalizeAmount(cell(row, 'Commission ($)')),

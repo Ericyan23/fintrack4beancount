@@ -427,6 +427,74 @@ function ensureIngestionSchema(): void {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS securities (
+      id TEXT PRIMARY KEY,
+      source_connection_id TEXT REFERENCES source_connections(id),
+      source_symbol TEXT NOT NULL,
+      name TEXT,
+      instrument_type TEXT NOT NULL DEFAULT 'unknown',
+      underlying_symbol TEXT,
+      contract_symbol TEXT,
+      option_type TEXT,
+      expiration_date TEXT,
+      strike_price TEXT,
+      beancount_commodity TEXT,
+      raw_payload TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS investment_activities (
+      id TEXT PRIMARY KEY,
+      import_run_id TEXT REFERENCES import_runs(id),
+      raw_item_id TEXT REFERENCES raw_import_items(id),
+      staged_transaction_id TEXT REFERENCES staged_transactions(id),
+      source_connection_id TEXT REFERENCES source_connections(id),
+      source_account_id TEXT REFERENCES source_accounts(id),
+      account_id TEXT REFERENCES accounts(id),
+      security_id TEXT REFERENCES securities(id),
+      external_id TEXT,
+      source_item_key TEXT,
+      trade_date INTEGER,
+      settlement_date TEXT,
+      activity_type TEXT NOT NULL,
+      instrument_type TEXT NOT NULL DEFAULT 'unknown',
+      position_effect TEXT NOT NULL DEFAULT 'unknown',
+      option_type TEXT,
+      quantity TEXT,
+      price TEXT,
+      amount TEXT,
+      currency TEXT,
+      commission TEXT,
+      fees TEXT,
+      accrued_interest TEXT,
+      cash_balance TEXT,
+      action TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'blocked',
+      validation_errors TEXT,
+      normalized_payload TEXT,
+      normalizer_version TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS investment_positions (
+      id TEXT PRIMARY KEY,
+      source_connection_id TEXT REFERENCES source_connections(id),
+      source_account_id TEXT REFERENCES source_accounts(id),
+      account_id TEXT REFERENCES accounts(id),
+      security_id TEXT REFERENCES securities(id),
+      as_of_date TEXT NOT NULL,
+      quantity TEXT NOT NULL,
+      market_value TEXT,
+      price TEXT,
+      currency TEXT,
+      raw_payload TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `)
 
   addColumnIfMissing(
@@ -511,6 +579,45 @@ function ensureIngestionSchema(): void {
 
     CREATE UNIQUE INDEX IF NOT EXISTS import_profile_mappings_target_idx
     ON import_profile_mappings(import_profile_id, target_field);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS securities_connection_symbol_idx
+    ON securities(source_connection_id, source_symbol);
+
+    CREATE INDEX IF NOT EXISTS securities_symbol_idx
+    ON securities(source_symbol);
+
+    CREATE INDEX IF NOT EXISTS securities_instrument_idx
+    ON securities(instrument_type);
+
+    CREATE INDEX IF NOT EXISTS securities_commodity_idx
+    ON securities(beancount_commodity);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS investment_activities_connection_item_key_idx
+    ON investment_activities(source_connection_id, source_item_key);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_import_run_idx
+    ON investment_activities(import_run_id);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_staged_idx
+    ON investment_activities(staged_transaction_id);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_security_idx
+    ON investment_activities(security_id);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_status_idx
+    ON investment_activities(status);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_type_idx
+    ON investment_activities(activity_type, instrument_type);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS investment_positions_account_security_date_idx
+    ON investment_positions(source_account_id, security_id, as_of_date);
+
+    CREATE INDEX IF NOT EXISTS investment_positions_account_idx
+    ON investment_positions(account_id);
+
+    CREATE INDEX IF NOT EXISTS investment_positions_security_idx
+    ON investment_positions(security_id);
 
     CREATE INDEX IF NOT EXISTS transactions_source_connection_idx
     ON transactions(source_connection_id);

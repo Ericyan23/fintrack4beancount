@@ -10,6 +10,24 @@ export type PendingReconciliationStatus =
   | 'cancelled'
   | 'manual_resolve'
 export type ImportProfileKind = 'csv' | 'simplefin' | 'ofx' | 'qif' | 'generic'
+export type InvestmentActivityType =
+  | 'buy'
+  | 'sell'
+  | 'dividend'
+  | 'reinvest_dividend'
+  | 'interest'
+  | 'fee'
+  | 'cash_transfer'
+  | 'other'
+export type InvestmentInstrumentType =
+  | 'equity'
+  | 'option'
+  | 'cash'
+  | 'fund'
+  | 'unknown'
+export type InvestmentPositionEffect = 'open' | 'close' | 'none' | 'unknown'
+export type InvestmentOptionType = 'call' | 'put' | null
+export type InvestmentActivityStatus = 'blocked' | 'needs_review' | 'reviewed' | 'ignored'
 export type IngestionJsonObject = Record<string, unknown>
 export type IngestionJsonValue =
   | string

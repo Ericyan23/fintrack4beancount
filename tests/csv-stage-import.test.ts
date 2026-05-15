@@ -13,6 +13,9 @@ const { stageTransactionsCsv } = require('../lib/ingest/csv-import') as typeof i
 
 function resetDb(): void {
   sqlite.exec(`
+    DELETE FROM investment_positions;
+    DELETE FROM investment_activities;
+    DELETE FROM securities;
     DELETE FROM staged_transactions;
     DELETE FROM raw_import_items;
     DELETE FROM import_runs;
@@ -251,6 +254,8 @@ test('archives Fidelity brokerage CSV rows and blocks cash promotion until inves
   assert.equal(result.errors.length, 5)
   assert.equal(countRows('raw_import_items'), 5)
   assert.equal(countRows('staged_transactions'), 5)
+  assert.equal(countRows('investment_activities'), 5)
+  assert.equal(countRows('securities'), 1)
   assert.equal(countRows('transactions'), 0)
 
   const run = sqlite.prepare(`
@@ -309,4 +314,78 @@ test('archives Fidelity brokerage CSV rows and blocks cash promotion until inves
     WHERE id = 'csv:fidelity-brokerage'
   `).get() as { config: string }
   assert.equal(JSON.parse(connection.config).parserProfileId, 'fidelity-brokerage-csv')
+})
+
+test('stages Fidelity option activities with security and position effect metadata', () => {
+  const accountId = insertInvestmentAccount()
+  const csv = [
+    'Run Date,Action,Symbol,Description,Type,Price ($),Quantity,Commission ($),Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date',
+    '04/20/2025,"YOU BOUGHT OPENING TRANSACTION CALL (FCT) FICTCORP 250620 C $50 (MARGIN)",-FCT250620C50,FICTCORP CALL,Margin,1.25,1,0.65,,,-125.65,5000.00,04/21/2025',
+    '04/21/2025,"YOU SOLD CLOSING TRANSACTION PUT (FCT) FICTCORP 250620 P $45 (MARGIN)",-FCT250620P45,FICTCORP PUT,Margin,2.10,1,0.65,,,209.35,5209.35,04/22/2025',
+  ].join('\n')
+
+  const result = stageTransactionsCsv(
+    csv,
+    {},
+    accountId,
+    'Fidelity Options',
+    null,
+    undefined,
+    'fidelity-brokerage-csv',
+  )
+
+  assert.equal(result.totalRows, 2)
+  assert.equal(result.staged, 0)
+  assert.equal(countRows('investment_activities'), 2)
+  assert.equal(countRows('securities'), 2)
+
+  const rows = sqlite.prepare(`
+    SELECT ia.activity_type AS activityType,
+           ia.instrument_type AS instrumentType,
+           ia.position_effect AS positionEffect,
+           ia.option_type AS optionType,
+           ia.quantity,
+           ia.price,
+           ia.amount,
+           ia.status,
+           s.underlying_symbol AS underlyingSymbol,
+           s.contract_symbol AS contractSymbol,
+           s.expiration_date AS expirationDate,
+           s.strike_price AS strikePrice
+    FROM investment_activities ia
+    JOIN securities s ON s.id = ia.security_id
+    ORDER BY ia.trade_date ASC, ia.activity_type ASC
+  `).all() as Array<{
+    activityType: string
+    instrumentType: string
+    positionEffect: string
+    optionType: string
+    quantity: string
+    price: string
+    amount: string
+    status: string
+    underlyingSymbol: string
+    contractSymbol: string
+    expirationDate: string
+    strikePrice: string
+  }>
+
+  assert.equal(rows[0].activityType, 'buy')
+  assert.equal(rows[0].instrumentType, 'option')
+  assert.equal(rows[0].positionEffect, 'open')
+  assert.equal(rows[0].optionType, 'call')
+  assert.equal(rows[0].quantity, '1')
+  assert.equal(rows[0].price, '1.25')
+  assert.equal(rows[0].amount, '-125.65')
+  assert.equal(rows[0].status, 'blocked')
+  assert.equal(rows[0].underlyingSymbol, 'FCT')
+  assert.equal(rows[0].contractSymbol, '-FCT250620C50')
+  assert.equal(rows[0].expirationDate, '2025-06-20')
+  assert.equal(rows[0].strikePrice, '50')
+
+  assert.equal(rows[1].activityType, 'sell')
+  assert.equal(rows[1].instrumentType, 'option')
+  assert.equal(rows[1].positionEffect, 'close')
+  assert.equal(rows[1].optionType, 'put')
+  assert.equal(rows[1].strikePrice, '45')
 })

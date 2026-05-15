@@ -208,4 +208,42 @@ describe('Fidelity brokerage CSV', () => {
     assert.equal(sell.investmentActivity?.activityType, 'sell')
     assert.equal(result.parserProfile?.blocksCashPromotion, true)
   })
+
+  test('classifies Fidelity reinvestment rows separately from generic other rows', () => {
+    const csv = [
+      'Run Date,Action,Symbol,Description,Type,Price ($),Quantity,Commission ($),Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date',
+      '04/20/2025,"REINVESTMENT FIDELITY GOVERNMENT MONEY MARKET (FCT) (Cash)",FCT,Fidelity Government Money Market,Cash,,,,,,10.00,5010.00,04/21/2025',
+    ].join('\n')
+
+    const result = normalizeCsvTransactions(csv)
+    assert.equal(result.rows[0].investmentActivity?.activityType, 'reinvest_dividend')
+    assert.equal(result.rows[0].investmentActivity?.instrumentType, 'fund')
+  })
+
+  test('extracts Fidelity option open and close semantics', () => {
+    const csv = [
+      'Run Date,Action,Symbol,Description,Type,Price ($),Quantity,Commission ($),Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date',
+      '04/20/2025,"YOU BOUGHT OPENING TRANSACTION CALL (FCT) FICTCORP 250620 C $50 (MARGIN)",-FCT250620C50,FICTCORP CALL,Margin,1.25,1,0.65,,,-125.65,5000.00,04/21/2025',
+      '04/21/2025,"YOU SOLD CLOSING TRANSACTION PUT (FCT) FICTCORP 250620 P $45 (MARGIN)",-FCT250620P45,FICTCORP PUT,Margin,2.10,1,0.65,,,209.35,5209.35,04/22/2025',
+    ].join('\n')
+
+    const result = normalizeCsvTransactions(csv)
+    const [buyOpen, sellClose] = result.rows
+
+    assert.equal(result.parserProfile?.id, 'fidelity-brokerage-csv')
+    assert.equal(buyOpen.investmentActivity?.activityType, 'buy')
+    assert.equal(buyOpen.investmentActivity?.instrumentType, 'option')
+    assert.equal(buyOpen.investmentActivity?.positionEffect, 'open')
+    assert.equal(buyOpen.investmentActivity?.optionType, 'call')
+    assert.equal(buyOpen.investmentActivity?.underlyingSymbol, 'FCT')
+    assert.equal(buyOpen.investmentActivity?.contractSymbol, '-FCT250620C50')
+    assert.equal(buyOpen.investmentActivity?.expirationDate, '2025-06-20')
+    assert.equal(buyOpen.investmentActivity?.strikePrice, '50')
+
+    assert.equal(sellClose.investmentActivity?.activityType, 'sell')
+    assert.equal(sellClose.investmentActivity?.instrumentType, 'option')
+    assert.equal(sellClose.investmentActivity?.positionEffect, 'close')
+    assert.equal(sellClose.investmentActivity?.optionType, 'put')
+    assert.equal(sellClose.investmentActivity?.strikePrice, '45')
+  })
 })

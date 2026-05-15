@@ -405,21 +405,22 @@ ingestion is stable.
 
 - [x] Add Fidelity CSV raw import and parser profiles.
   - Progress: Fidelity brokerage CSV is auto-detected or selectable as a parser profile, raw rows are archived, investment activity metadata is extracted into staging payloads, and rows are blocked from cash promotion until investment staging models/export are implemented.
-- [ ] Add investment staging models as needed:
-  - [ ] `securities`
-  - [ ] `investment_activities`
-  - [ ] `positions`
+- [x] Add investment staging models as needed:
+  - [x] `securities`
+  - [x] `investment_activities`
+  - [x] `positions`
   - [ ] `lots` only if cost basis support is needed.
 - [ ] Support common Fidelity activity types:
-  - [ ] Buy
-  - [ ] Sell
-  - [ ] Dividend
-  - [ ] Reinvest dividend
-  - [ ] Interest
-  - [ ] Fee
-  - [ ] Cash sweep
-  - [ ] Transfer
+  - [x] Buy
+  - [x] Sell
+  - [x] Dividend
+  - [x] Reinvest dividend
+  - [x] Interest
+  - [x] Fee
+  - [x] Cash sweep
+  - [x] Transfer
   - [ ] Position or balance assertion
+  - Progress: Fidelity activity metadata now records activity type, instrument type, option open/close position effect, option type, expiration, strike, quantity, prices, fees, settlement date, and blocked review status.
 - [ ] Add security mapping UI.
 - [ ] Add investment activity review UI.
 - [ ] Add Beancount investment renderer:

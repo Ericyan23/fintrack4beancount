@@ -7,6 +7,7 @@ import {
   type CsvNormalizedTransaction,
 } from '@/lib/ingest/csv'
 import { stableStringify } from '@/lib/ingest/identity'
+import { recordInvestmentActivity } from '@/lib/ingest/investments'
 import {
   createImportRun,
   ensureSource,
@@ -227,7 +228,8 @@ export function stageTransactionsCsv(
       errors.push(...validationErrors.map(error => ({ rowNumber: row.rowNumber, error })))
     }
 
-    insertStagedTransaction({
+    const normalizerVersion = parserProfile?.normalizerVersion ?? 'csv-normalizer-v1'
+    const stagedTransaction = insertStagedTransaction({
       importRunId: run.id,
       rawItemId: raw.item.id,
       sourceConnectionId: connection.id,
@@ -246,8 +248,26 @@ export function stageTransactionsCsv(
       tags: row.tags,
       normalizedPayload: normalizedPayload({ ...row, sourceItemKey, category }),
       validationErrors: effectiveValidationErrors,
-      normalizerVersion: parserProfile?.normalizerVersion ?? 'csv-normalizer-v1',
+      normalizerVersion,
     })
+    if (row.investmentActivity) {
+      recordInvestmentActivity({
+        importRunId: run.id,
+        rawItemId: raw.item.id,
+        stagedTransactionId: stagedTransaction.id,
+        sourceConnectionId: connection.id,
+        sourceAccountId: sourceAccount?.id ?? null,
+        accountId: account?.id ?? null,
+        externalId: row.externalId,
+        sourceItemKey,
+        tradeDate: row.posted,
+        amount: row.amount,
+        currency: account?.currency ?? null,
+        normalizerVersion,
+        validationErrors: effectiveValidationErrors,
+        activity: row.investmentActivity,
+      })
+    }
     if (!finalDisposition && validationErrors.length === 0 && sourceItemKey) staged++
   }
 

@@ -129,6 +129,9 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
     'transaction_edit_history',
     'audit_log',
     'export_runs',
+    'securities',
+    'investment_activities',
+    'investment_positions',
   ]) {
     assert.equal(
       scalar(`SELECT COUNT(*) AS value FROM sqlite_master WHERE type = 'table' AND name = '${table}'`),
@@ -279,6 +282,21 @@ test('runs ingestion schema migrations idempotently on a legacy database', () =>
     indexNames('staged_transactions').includes('staged_transactions_reconciliation_idx'),
     'missing staged_transactions reconciliation index',
   )
+
+  for (const index of [
+    'securities_connection_symbol_idx',
+    'securities_instrument_idx',
+    'investment_activities_connection_item_key_idx',
+    'investment_activities_type_idx',
+    'investment_positions_account_security_date_idx',
+  ]) {
+    const table = index.startsWith('securities')
+      ? 'securities'
+      : index.startsWith('investment_activities')
+      ? 'investment_activities'
+      : 'investment_positions'
+    assert.ok(indexNames(table).includes(index), `missing ${table} index ${index}`)
+  }
 
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM sources`), 2)
   assert.equal(scalar(`SELECT COUNT(*) AS value FROM source_connections`), 2)
