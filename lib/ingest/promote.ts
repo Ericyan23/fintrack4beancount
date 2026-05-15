@@ -253,7 +253,7 @@ function promotePendingMatch(
       description = ?,
       pending = 0,
       status = 'posted',
-      category = COALESCE(?, category),
+      category = CASE WHEN category = ledger_account THEN NULL ELSE category END,
       ledger_account = COALESCE(?, ledger_account),
       review_status = CASE
         WHEN ? IS NOT NULL THEN 'reviewed'
@@ -278,7 +278,6 @@ function promotePendingMatch(
     row.transactedAt,
     row.amount,
     row.description,
-    row.category,
     row.category,
     row.category,
     row.notes,
@@ -331,7 +330,7 @@ function promoteRow(database: SqliteDatabase, row: StagedTransactionRow): Promot
          source_item_key, import_run_id, raw_item_id, normalizer_version, source,
          posted, transacted_at, amount, description, pending, status, category,
          suggested_cat, ledger_account, review_status, notes, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)
     `).run(
       transactionId,
       promotable.accountId,
@@ -349,7 +348,6 @@ function promoteRow(database: SqliteDatabase, row: StagedTransactionRow): Promot
       promotable.description,
       status === 'pending' ? 1 : 0,
       status,
-      promotable.category,
       promotable.category,
       promotable.category ? 'reviewed' : 'needs_review',
       promotable.notes,

@@ -108,7 +108,7 @@ export async function POST(): Promise<Response> {
       const updateSuggestion = sqlite.prepare(`
         UPDATE transactions
         SET suggested_ledger_account = ?,
-            suggested_cat = ?,
+            suggested_cat = NULL,
             classifier = 'ai',
             suggested_at = ?
         WHERE id = ?
@@ -131,7 +131,7 @@ export async function POST(): Promise<Response> {
           if (cat) {
             const timestamp = Math.floor(Date.now() / 1000)
             for (const txn of group.transactions) {
-              suggested += updateSuggestion.run(cat, cat, timestamp, txn.id).changes
+              suggested += updateSuggestion.run(cat, timestamp, txn.id).changes
             }
           }
         } catch (err) {

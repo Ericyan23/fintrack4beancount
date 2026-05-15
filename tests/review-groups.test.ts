@@ -205,7 +205,7 @@ test('review apply writes ledger account semantics while preserving category com
   assert.equal(payload.ledgerAccount, 'Expenses:Food:Restaurants')
   assert.equal(row.ledgerAccount, 'Expenses:Food:Restaurants')
   assert.equal(row.reviewStatus, 'reviewed')
-  assert.equal(row.category, 'Expenses:Food:Restaurants')
+  assert.equal(row.category, 'Expenses:Review')
   assert.equal(row.suggestedLedgerAccount, null)
   assert.equal(row.suggestedCat, null)
   assert.equal(row.classifier, 'manual_review')

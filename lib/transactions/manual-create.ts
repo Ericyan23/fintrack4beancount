@@ -338,7 +338,7 @@ export function createManualTransaction(input: ManualTransactionInput): ManualTr
         updated_at,
         updated_by
       )
-      VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, 0, 'posted', ?, NULL, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?, ?, ?)
+      VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, 0, 'posted', NULL, NULL, ?, ?, NULL, ?, NULL, NULL, ?, ?, ?, ?, ?)
     `).run(
       id,
       accountId,
@@ -348,7 +348,6 @@ export function createManualTransaction(input: ManualTransactionInput): ManualTr
       posted,
       amount,
       description,
-      ledgerAccount,
       ledgerAccount,
       reviewStatus,
       'manual_create',

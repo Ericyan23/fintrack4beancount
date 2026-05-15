@@ -236,7 +236,7 @@ test('full SimpleFIN E2E: stage, map source accounts, promote, verify provenance
   assert.equal(payroll.transactedAt, 1774224000)
   assert.equal(payroll.pending, 0)
   assert.equal(payroll.status, 'posted')
-  assert.equal(payroll.category, 'Income:Salary')
+  assert.equal(payroll.category, null)
   assert.equal(payroll.ledgerAccount, 'Income:Salary')
   assert.equal(payroll.reviewStatus, 'reviewed')
   assert.equal(payroll.classifier, 'rule')

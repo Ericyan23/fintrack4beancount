@@ -198,7 +198,7 @@ test('reclassifyUnmatched records rule application audit rows', () => {
     updatedAt: number
   }
   assert.deepEqual(updated, {
-    category: 'Expenses:Food:Coffee',
+    category: 'Expenses:Review',
     ledgerAccount: 'Expenses:Food:Coffee',
     reviewStatus: 'reviewed',
     suggestedLedgerAccount: 'Expenses:Food:Coffee',
@@ -227,7 +227,7 @@ test('reclassifyUnmatched records rule application audit rows', () => {
   assert.equal(beforeValues.classification.category, 'Expenses:Review')
   assert.equal(beforeValues.classification.ledgerAccount, null)
   assert.equal(beforeValues.classification.reviewStatus, 'needs_review')
-  assert.equal(afterValues.classification.category, 'Expenses:Food:Coffee')
+  assert.equal(afterValues.classification.category, 'Expenses:Review')
   assert.equal(afterValues.classification.ledgerAccount, 'Expenses:Food:Coffee')
   assert.equal(afterValues.classification.reviewStatus, 'reviewed')
   assert.equal(afterValues.classification.classifier, 'rule')
@@ -262,7 +262,7 @@ test('classifyNewTransactions records post-import enrichment audit rows', () => 
     matchedCategory: string
     fields: string[]
   }
-  assert.equal(afterValues.classification.category, 'Income:Salary')
+  assert.equal(afterValues.classification.category, null)
   assert.equal(afterValues.classification.ledgerAccount, 'Income:Salary')
   assert.equal(afterValues.classification.reviewStatus, 'reviewed')
   assert.equal(metadata.source, 'classify_new_transactions')

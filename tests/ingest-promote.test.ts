@@ -194,6 +194,8 @@ test('promotes a staged transaction into canonical transactions with provenance'
            pending,
            status,
            category,
+           ledger_account AS ledgerAccount,
+           review_status AS reviewStatus,
            notes,
            tags,
            updated_at AS updatedAt
@@ -216,7 +218,9 @@ test('promotes a staged transaction into canonical transactions with provenance'
     description: string
     pending: number
     status: string
-    category: string
+    category: string | null
+    ledgerAccount: string | null
+    reviewStatus: string | null
     notes: string
     tags: string
     updatedAt: number
@@ -238,7 +242,9 @@ test('promotes a staged transaction into canonical transactions with provenance'
   assert.equal(transaction.description, 'Description staged-success')
   assert.equal(transaction.pending, 0)
   assert.equal(transaction.status, 'posted')
-  assert.equal(transaction.category, 'Expenses:Food')
+  assert.equal(transaction.category, null)
+  assert.equal(transaction.ledgerAccount, 'Expenses:Food')
+  assert.equal(transaction.reviewStatus, 'reviewed')
   assert.equal(transaction.notes, 'Imported note')
   assert.deepEqual(JSON.parse(transaction.tags), ['promote', 'test'])
   assert.ok(transaction.updatedAt)
@@ -459,7 +465,7 @@ test('post-import enrichment applies rules to promoted posted rows without a led
     classifier: string | null
   }
 
-  assert.equal(transaction.category, 'Expenses:Food:Restaurants')
+  assert.equal(transaction.category, null)
   assert.equal(transaction.ledgerAccount, 'Expenses:Food:Restaurants')
   assert.equal(transaction.reviewStatus, 'reviewed')
   assert.equal(transaction.classifier, 'rule')

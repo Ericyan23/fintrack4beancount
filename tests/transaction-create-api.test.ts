@@ -133,7 +133,7 @@ test('POST /api/transactions creates an audited manual transaction', async () =>
   assert.equal(payload.transaction.description, 'Manual receipt')
   assert.equal(payload.transaction.status, 'posted')
   assert.equal(payload.transaction.pending, false)
-  assert.equal(payload.transaction.category, 'Expenses:Food:Restaurants')
+  assert.equal(payload.transaction.category, null)
   assert.equal(payload.transaction.ledgerAccount, 'Expenses:Food:Restaurants')
   assert.equal(payload.transaction.reviewStatus, 'reviewed')
   assert.equal(payload.transaction.classifier, 'manual_create')
@@ -155,14 +155,14 @@ test('POST /api/transactions creates an audited manual transaction', async () =>
   `).get(payload.transaction.id) as {
     source: string
     sourceItemKey: string
-    category: string
+    category: string | null
     ledgerAccount: string
     reviewStatus: string
     tags: string
   }
   assert.equal(dbRow.source, 'manual')
   assert.equal(dbRow.sourceItemKey, `manual:${payload.transaction.id}`)
-  assert.equal(dbRow.category, 'Expenses:Food:Restaurants')
+  assert.equal(dbRow.category, null)
   assert.equal(dbRow.ledgerAccount, 'Expenses:Food:Restaurants')
   assert.equal(dbRow.reviewStatus, 'reviewed')
   assert.deepEqual(JSON.parse(dbRow.tags) as string[], ['receipt', 'tax'])

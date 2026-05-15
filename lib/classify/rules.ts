@@ -70,7 +70,6 @@ function updateLedgerClassification(
   return statement.run(
     isReviewCategory ? null : category,
     isReviewCategory ? 'needs_review' : 'reviewed',
-    category,
     timestamp,
     id,
   ).changes
@@ -108,7 +107,7 @@ function classificationAfterSnapshot(
 ): ClassificationAuditSnapshot {
   const isReviewCategory = REVIEW_CATEGORY_SET.has(category)
   return {
-    category,
+    category: row.category,
     suggestedCat: row.suggestedCat,
     ledgerAccount: isReviewCategory ? null : category,
     reviewStatus: isReviewCategory ? 'needs_review' : 'reviewed',
@@ -167,7 +166,7 @@ export function classifyNewTransactions(ids: string[]): number {
     UPDATE transactions
     SET ledger_account = ?,
         review_status = ?,
-        category = ?,
+        category = CASE WHEN category = ledger_account THEN NULL ELSE category END,
         classifier = 'rule',
         updated_at = ?
     WHERE id = ?
@@ -260,7 +259,7 @@ export function reclassifyUnmatched(): number {
     UPDATE transactions
     SET ledger_account = ?,
         review_status = ?,
-        category = ?,
+        category = CASE WHEN category = ledger_account THEN NULL ELSE category END,
         classifier = 'rule',
         updated_at = ?
     WHERE id = ?

@@ -56,7 +56,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       SET ledger_account = ?,
           review_status = 'reviewed',
           suggested_ledger_account = NULL,
-          category = ?,
+          category = CASE WHEN category = ledger_account THEN NULL ELSE category END,
           suggested_cat = NULL,
           classifier = 'manual_review',
           confidence = NULL,
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             )
           )
         )
-    `).run(ledgerAccount, ledgerAccount, Math.floor(Date.now() / 1000), ...transactionIds, ...REVIEW_CATEGORY_NAMES)
+    `).run(ledgerAccount, Math.floor(Date.now() / 1000), ...transactionIds, ...REVIEW_CATEGORY_NAMES)
     changed = result.changes
 
     if (shouldCreateRule && pattern) {

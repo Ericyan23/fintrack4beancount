@@ -26,6 +26,12 @@ function valuesEqual(left: unknown, right: unknown): boolean {
   return left === right
 }
 
+function isLegacyCategoryMirror(existing: typeof transactions.$inferSelect): boolean {
+  const category = existing.category?.trim()
+  const ledgerAccount = existing.ledgerAccount?.trim()
+  return Boolean(category && ledgerAccount && category === ledgerAccount)
+}
+
 export async function GET(_req: NextRequest, { params }: RouteParams): Promise<NextResponse> {
   const { id } = await params
   const [txn] = db.select().from(transactions).where(eq(transactions.id, id)).all()
@@ -67,8 +73,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 
   const update: TxnUpdate = {}
   if ('category' in body) {
-    update.category = body.category
     update.ledgerAccount = body.category
+    if (isLegacyCategoryMirror(existing)) update.category = null
     update.reviewStatus = body.category ? 'reviewed' : 'needs_review'
     if (body.category) {
       update.suggestedCat = null
@@ -80,7 +86,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   }
   if ('ledgerAccount' in body) {
     update.ledgerAccount = body.ledgerAccount
-    update.category = body.ledgerAccount
+    if (isLegacyCategoryMirror(existing)) update.category = null
     update.reviewStatus = body.ledgerAccount ? 'reviewed' : 'needs_review'
     if (body.ledgerAccount) {
       update.suggestedCat = null
@@ -90,10 +96,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
       update.suggestedAt = null
     }
   }
-  if ('suggestedCat' in body) update.suggestedCat = body.suggestedCat
+  if ('suggestedCat' in body) {
+    update.suggestedLedgerAccount = body.suggestedCat
+    update.suggestedCat = null
+  }
   if ('suggestedLedgerAccount' in body) {
     update.suggestedLedgerAccount = body.suggestedLedgerAccount
-    update.suggestedCat = body.suggestedLedgerAccount
+    update.suggestedCat = null
   }
   if ('reviewStatus' in body) update.reviewStatus = body.reviewStatus
   if ('notes' in body) update.notes = body.notes

@@ -312,8 +312,8 @@ Beancount preparation system for SimpleFIN and generic CSV.
 
 ### Classification And Review Semantics
 
-- [ ] Stop using `transactions.category` for multiple meanings.
-  - Progress: `category` remains as a compatibility mirror, but review/export/classification/manual edit paths now prefer dedicated ledger prep fields.
+- [x] Stop using `transactions.category` for multiple meanings.
+  - Progress: rule, AI, review, manual create/edit, and staged promote writes now use dedicated ledger prep fields; legacy `category` values are read/backfilled only for compatibility and exact old mirrors are cleared opportunistically.
 - [x] Introduce clearer fields or an enrichment table:
   - [x] `ledger_account`
   - [x] `review_status`
@@ -321,8 +321,8 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] `classifier`
   - [x] `confidence`
   - [x] `suggested_at`
-- [ ] Make rules and AI suggestions write enrichment data, not source facts.
-  - Progress: rules and AI now write `ledger_account` / `suggested_ledger_account` plus compatibility `category` / `suggested_cat` mirrors; promote runs rule-based enrichment for newly promoted posted transactions.
+- [x] Make rules and AI suggestions write enrichment data, not source facts.
+  - Progress: rules and AI now write `ledger_account` / `suggested_ledger_account` without mirroring into `category` / `suggested_cat`; promote runs rule-based enrichment for newly promoted posted transactions.
 - [x] Preserve current review queue behavior during migration.
 
 ### Ledger Intent / Export Candidate Layer

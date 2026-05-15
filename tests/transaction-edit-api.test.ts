@@ -176,7 +176,7 @@ test('PATCH /api/transactions/:id records manual ledger-account edit history', a
 
   assert.equal(response.status, 200)
   assert.equal(payload.ledgerAccount, 'Expenses:Food:Restaurants')
-  assert.equal(payload.category, 'Expenses:Food:Restaurants')
+  assert.equal(payload.category, 'Expenses:Review')
   assert.equal(payload.reviewStatus, 'reviewed')
   assert.equal(payload.classifier, 'manual_edit')
   assert.equal(payload.suggestedLedgerAccount, null)
@@ -194,18 +194,64 @@ test('PATCH /api/transactions/:id records manual ledger-account edit history', a
 
   const fields = JSON.parse(rows[0].fields) as string[]
   assert.ok(fields.includes('ledgerAccount'))
-  assert.ok(fields.includes('category'))
+  assert.equal(fields.includes('category'), false)
   assert.ok(fields.includes('reviewStatus'))
   assert.ok(fields.includes('notes'))
 
   const beforeValues = JSON.parse(rows[0].beforeValues) as Record<string, unknown>
   const afterValues = JSON.parse(rows[0].afterValues) as Record<string, unknown>
   assert.equal(beforeValues.ledgerAccount, null)
-  assert.equal(beforeValues.category, 'Expenses:Review')
   assert.equal(beforeValues.notes, 'old note')
   assert.equal(afterValues.ledgerAccount, 'Expenses:Food:Restaurants')
-  assert.equal(afterValues.category, 'Expenses:Food:Restaurants')
   assert.equal(afterValues.notes, 'receipt checked')
+})
+
+test('PATCH /api/transactions/:id clears exact legacy category mirror on ledger-account edit', async () => {
+  const transactionId = insertTransaction('txn-edit-api-legacy-mirror')
+
+  sqlite.prepare(`
+    UPDATE transactions
+    SET category = ?, ledger_account = ?, review_status = ?
+    WHERE id = ?
+  `).run(
+    'Expenses:Legacy',
+    'Expenses:Legacy',
+    'needs_review',
+    transactionId,
+  )
+
+  const response = await transactionRoute.PATCH(
+    request(`/api/transactions/${transactionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ledgerAccount: 'Expenses:Food:Restaurants',
+        actor: 'eric',
+        editReason: 'legacy mirror cleanup',
+      }),
+    }),
+    params(transactionId),
+  )
+  const payload = await response.json()
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.category, null)
+  assert.equal(payload.ledgerAccount, 'Expenses:Food:Restaurants')
+  assert.equal(payload.reviewStatus, 'reviewed')
+
+  const rows = readHistory()
+  assert.equal(rows.length, 1)
+
+  const fields = JSON.parse(rows[0].fields) as string[]
+  assert.ok(fields.includes('category'))
+  assert.ok(fields.includes('ledgerAccount'))
+
+  const beforeValues = JSON.parse(rows[0].beforeValues) as Record<string, unknown>
+  const afterValues = JSON.parse(rows[0].afterValues) as Record<string, unknown>
+  assert.equal(beforeValues.category, 'Expenses:Legacy')
+  assert.equal(afterValues.category, null)
+  assert.equal(beforeValues.ledgerAccount, 'Expenses:Legacy')
+  assert.equal(afterValues.ledgerAccount, 'Expenses:Food:Restaurants')
 })
 
 test('PATCH /api/transactions/:id returns existing row without audit history for no-op edits', async () => {
