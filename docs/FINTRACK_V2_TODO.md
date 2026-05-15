@@ -266,7 +266,8 @@ Beancount preparation system for SimpleFIN and generic CSV.
 
 ### Manual Review, Edits, And Ignore
 
-- [ ] Add transaction manual-create flow.
+- [x] Add transaction manual-create flow.
+  - Progress: `/transactions/new` creates audited manual canonical prep transactions with source provenance, review status, tags, and redirect to the new detail page.
 - [ ] Add edit flow for:
   - [x] date
   - [x] description

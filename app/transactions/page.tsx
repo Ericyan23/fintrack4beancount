@@ -113,6 +113,12 @@ function TransactionsPageContent() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-bold">Transactions</h1>
         <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/transactions/new"
+            className="text-xs bg-blue-900/50 text-blue-300 border border-blue-800 px-2 py-1 rounded-md hover:bg-blue-900"
+          >
+            New transaction
+          </a>
           {reviewQueueTotal > 0 && (
             <a
               href="/review"
