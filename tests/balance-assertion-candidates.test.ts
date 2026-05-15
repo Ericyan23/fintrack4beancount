@@ -22,6 +22,9 @@ function resetDb(): void {
     DELETE FROM investment_positions;
     DELETE FROM securities;
     DELETE FROM balance_assertions;
+    DELETE FROM source_accounts;
+    DELETE FROM source_connections;
+    DELETE FROM sources;
     DELETE FROM accounts;
   `)
 }
@@ -60,6 +63,40 @@ function insertInvestmentAccount(): void {
     'Assets:US:Fidelity:Brokerage',
     posted,
   )
+}
+
+function ensurePositionProvenance(): { sourceConnectionId: string; sourceAccountId: string } {
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO sources (id, kind, name, status, metadata, created_at, updated_at)
+    VALUES (?, ?, ?, ?, NULL, ?, ?)
+  `).run('csv', 'csv', 'CSV Import', 'active', posted, posted)
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO source_connections (id, source_id, name, status, config, created_at, updated_at)
+    VALUES (?, ?, ?, ?, NULL, ?, ?)
+  `).run('csv:positions', 'csv', 'Position Snapshots', 'active', posted, posted)
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO source_accounts (
+      id, source_connection_id, fintrack_account_id, external_account_id,
+      name, currency, status, raw_payload, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'source-account:positions:fidelity',
+    'csv:positions',
+    'acct-fidelity',
+    'Fidelity Brokerage',
+    'Fidelity Brokerage',
+    'USD',
+    'active',
+    JSON.stringify({ fixture: true }),
+    posted,
+    posted,
+  )
+
+  return {
+    sourceConnectionId: 'csv:positions',
+    sourceAccountId: 'source-account:positions:fidelity',
+  }
 }
 
 function insertSecurity(input: {
@@ -106,7 +143,15 @@ function insertInvestmentPosition(input: {
   securityId: string
   quantity: string
   asOfDate?: string
+  withProvenance?: boolean
 }): void {
+  const provenance = input.withProvenance === false
+    ? { sourceConnectionId: null, sourceAccountId: null }
+    : ensurePositionProvenance()
+  const rawPayload = input.withProvenance === false
+    ? null
+    : JSON.stringify({ fixture: true })
+
   sqlite.prepare(`
     INSERT INTO investment_positions (
       id,
@@ -126,8 +171,8 @@ function insertInvestmentPosition(input: {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.id,
-    null,
-    null,
+    provenance.sourceConnectionId,
+    provenance.sourceAccountId,
     'acct-fidelity',
     input.securityId,
     input.asOfDate ?? '2026-04-30',
@@ -135,7 +180,7 @@ function insertInvestmentPosition(input: {
     '493.824',
     '40.00',
     'USD',
-    JSON.stringify({ fixture: true }),
+    rawPayload,
     posted,
     posted,
   )
@@ -276,6 +321,37 @@ test('investment positions without security commodity mappings are blocked', () 
       issue.code === 'missing_position_commodity_mapping'
     ),
     `Expected missing commodity mapping issue, got ${JSON.stringify(result.blockers)}`,
+  )
+})
+
+test('investment positions without source provenance are blocked', () => {
+  insertSecurity({
+    id: 'security-no-provenance',
+    sourceSymbol: 'FCT',
+    commodity: 'FCT',
+  })
+  insertInvestmentPosition({
+    id: 'position-no-provenance',
+    securityId: 'security-no-provenance',
+    quantity: '1',
+    withProvenance: false,
+  })
+
+  const result = runBalanceAssertionPreflight({ period: '2026-04', beancountRoot })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.summary.positionAssertionsScanned, 1)
+  assert.equal(result.summary.exportablePositionAssertions, 0)
+  assert.equal(result.exportableCandidates.length, 0)
+  assert.ok(
+    result.blockers.some(issue =>
+      issue.balanceAssertionId === 'position:position-no-provenance' &&
+      issue.code === 'missing_position_provenance' &&
+      issue.message.includes('source_connection_id') &&
+      issue.message.includes('source_account_id') &&
+      issue.message.includes('raw_payload')
+    ),
+    `Expected missing position provenance issue, got ${JSON.stringify(result.blockers)}`,
   )
 })
 

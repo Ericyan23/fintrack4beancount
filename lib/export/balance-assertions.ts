@@ -73,6 +73,8 @@ interface PeriodRange {
 
 interface InvestmentPositionRow {
   id: string
+  sourceConnectionId: string | null
+  sourceAccountId: string | null
   accountId: string | null
   accountName: string | null
   beancountAccount: string | null
@@ -83,6 +85,7 @@ interface InvestmentPositionRow {
   quantity: string
   marketValue: string | null
   currency: string | null
+  rawPayload: string | null
 }
 
 function parsePeriod(period: string): PeriodRange {
@@ -127,6 +130,8 @@ function loadInvestmentPositionRows(range: PeriodRange): InvestmentPositionRow[]
   return sqlite.prepare(`
     SELECT
       p.id,
+      p.source_connection_id AS sourceConnectionId,
+      p.source_account_id AS sourceAccountId,
       p.account_id AS accountId,
       accounts.name AS accountName,
       accounts.beancount_account AS beancountAccount,
@@ -136,7 +141,8 @@ function loadInvestmentPositionRows(range: PeriodRange): InvestmentPositionRow[]
       p.as_of_date AS asOfDate,
       p.quantity,
       p.market_value AS marketValue,
-      p.currency
+      p.currency,
+      p.raw_payload AS rawPayload
     FROM investment_positions p
     LEFT JOIN accounts
       ON accounts.id = p.account_id
@@ -169,6 +175,28 @@ function toPositionBalanceAssertion(position: InvestmentPositionRow): PreflightB
     status: 'draft',
     note: `Investment position ${label}${marketValue}`,
   }
+}
+
+function validatePositionProvenance(
+  position: InvestmentPositionRow,
+  assertion: PreflightBalanceAssertion,
+  blockers: BalanceAssertionIssue[],
+): boolean {
+  const missing: string[] = []
+  if (!position.sourceConnectionId) missing.push('source_connection_id')
+  if (!position.sourceAccountId) missing.push('source_account_id')
+  if (!position.rawPayload || position.rawPayload.trim() === '') missing.push('raw_payload')
+
+  if (missing.length === 0) return true
+
+  addIssue(blockers, {
+    code: 'missing_position_provenance',
+    balanceAssertionId: assertion.id,
+    account: assertion.beancountAccount,
+    sourceId: assertion.sourceId,
+    message: `Investment position is missing source provenance: ${missing.join(', ')}`,
+  }, 'blocker')
+  return false
 }
 
 function addIssue(
@@ -366,6 +394,9 @@ export function runBalanceAssertionPreflight(options: {
   const manualRows = loadDraftBalanceAssertions(range)
   const positionRows = loadInvestmentPositionRows(range)
   const positionAssertions = positionRows.map(toPositionBalanceAssertion)
+  const positionRowsByAssertion = new Map(
+    positionRows.map((position, index) => [positionAssertions[index], position]),
+  )
   const rows = [...manualRows, ...positionAssertions]
   const blockers: BalanceAssertionIssue[] = []
   const reviewItems: BalanceAssertionIssue[] = []
@@ -383,6 +414,10 @@ export function runBalanceAssertionPreflight(options: {
     }
 
     let valid = true
+    const positionRow = positionRowsByAssertion.get(assertion)
+    if (positionRow) {
+      valid = validatePositionProvenance(positionRow, assertion, blockers) && valid
+    }
     valid = validateAmount(assertion, blockers) && valid
     valid = validateCurrency(assertion, blockers) && valid
     valid = validateLedgerAccount(snapshot, assertion, blockers) && valid
