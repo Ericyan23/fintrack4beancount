@@ -76,6 +76,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       connectionName: parseOptionalText(body, 'connectionName') ?? undefined,
       defaultAccountId: parseOptionalText(body, 'defaultAccountId') ?? undefined,
       defaultLedgerAccount: parseOptionalText(body, 'defaultLedgerAccount') ?? undefined,
+      parserProfileId: parseOptionalText(body, 'parserProfileId') ?? undefined,
     })
     return NextResponse.json({ profile })
   } catch (error) {

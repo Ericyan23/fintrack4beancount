@@ -403,8 +403,8 @@ Goal: make repeated operation reliable and auditable.
 Goal: add Fidelity/investment ingestion conservatively after cash-transaction
 ingestion is stable.
 
-- [ ] Add Fidelity CSV raw import and parser profiles.
-  - Progress: fake brokerage CSV parser sample exists; investment ingestion models and export are not started.
+- [x] Add Fidelity CSV raw import and parser profiles.
+  - Progress: Fidelity brokerage CSV is auto-detected or selectable as a parser profile, raw rows are archived, investment activity metadata is extracted into staging payloads, and rows are blocked from cash promotion until investment staging models/export are implemented.
 - [ ] Add investment staging models as needed:
   - [ ] `securities`
   - [ ] `investment_activities`

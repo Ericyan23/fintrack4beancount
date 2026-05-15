@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { sqlite } from '@/lib/db'
 import { ensureSource } from './store'
-import type { CsvImportField, CsvImportMapping } from './csv'
+import { getCsvParserProfile, type CsvImportField, type CsvImportMapping } from './csv'
 import type { IngestionJsonObject, ImportProfileKind } from './types'
 
 const CSV_SOURCE_ID = 'csv'
@@ -24,6 +24,7 @@ export interface CsvImportProfileConfig {
   connectionName: string | null
   defaultAccountId: string | null
   defaultLedgerAccount: string | null
+  parserProfileId: string | null
 }
 
 export interface CsvImportProfileRecord {
@@ -44,6 +45,7 @@ export interface SaveCsvImportProfileInput {
   connectionName?: string | null
   defaultAccountId?: string | null
   defaultLedgerAccount?: string | null
+  parserProfileId?: string | null
 }
 
 export class CsvImportProfileValidationError extends Error {
@@ -93,6 +95,7 @@ function parseConfig(value: string | null): CsvImportProfileConfig {
       connectionName: null,
       defaultAccountId: null,
       defaultLedgerAccount: null,
+      parserProfileId: null,
     }
   }
 
@@ -102,12 +105,14 @@ function parseConfig(value: string | null): CsvImportProfileConfig {
       connectionName: normalizeOptionalText(parsed.connectionName ?? null),
       defaultAccountId: normalizeOptionalText(parsed.defaultAccountId ?? null),
       defaultLedgerAccount: normalizeOptionalText(parsed.defaultLedgerAccount ?? null),
+      parserProfileId: normalizeOptionalText(parsed.parserProfileId ?? null),
     }
   } catch {
     return {
       connectionName: null,
       defaultAccountId: null,
       defaultLedgerAccount: null,
+      parserProfileId: null,
     }
   }
 }
@@ -117,6 +122,7 @@ function serializeConfig(config: CsvImportProfileConfig): string {
     connectionName: config.connectionName,
     defaultAccountId: config.defaultAccountId,
     defaultLedgerAccount: config.defaultLedgerAccount,
+    parserProfileId: config.parserProfileId,
   }
   return JSON.stringify(payload)
 }
@@ -194,6 +200,10 @@ function mapProfile(row: ProfileRow): CsvImportProfileRecord {
 function validateCsvProfileInput(input: SaveCsvImportProfileInput): string[] {
   const errors: string[] = []
   if (!normalizeOptionalText(input.name)) errors.push('Profile name is required')
+  const parserProfileId = normalizeOptionalText(input.parserProfileId)
+  if (parserProfileId && !getCsvParserProfile(parserProfileId)) {
+    errors.push(`Unknown CSV parser profile: ${parserProfileId}`)
+  }
   for (const [field, value] of Object.entries(input.mapping)) {
     if (value !== undefined && value !== null && typeof value !== 'string') {
       errors.push(`${field} mapping must be a string`)
@@ -243,6 +253,7 @@ export function saveCsvImportProfile(input: SaveCsvImportProfileInput): CsvImpor
     connectionName: normalizeOptionalText(input.connectionName),
     defaultAccountId: normalizeOptionalText(input.defaultAccountId),
     defaultLedgerAccount: normalizeOptionalText(input.defaultLedgerAccount),
+    parserProfileId: normalizeOptionalText(input.parserProfileId),
   }
   const mappingEntries = CSV_FIELDS.flatMap((field, index) => {
     const value = input.mapping[field]

@@ -1,6 +1,7 @@
 import { sqlite } from '@/lib/db'
 import {
   normalizeCsvTransactions,
+  type CsvParserProfile,
   type CsvImportMapping,
   type CsvNormalizedTransaction,
 } from '@/lib/ingest/csv'
@@ -21,6 +22,7 @@ export interface CsvPreviewRow {
 export interface CsvPreviewResult {
   columns: string[]
   mapping: CsvImportMapping
+  parserProfile: CsvParserProfile | null
   rows: CsvPreviewRow[]
   totalRows: number
   validRows: number
@@ -57,6 +59,7 @@ function previewError(row: CsvNormalizedTransaction, account: AccountRow | null)
   if (row.amount === null) return 'Invalid amount'
   if (!row.description) return 'Missing description'
   if (!account) return 'Unable to match account'
+  if (row.investmentActivity) return 'Investment activity staging models required'
   return undefined
 }
 
@@ -65,11 +68,13 @@ export function previewTransactionsCsv(
   mappingInput?: CsvImportMapping,
   defaultAccountId?: string,
   defaultLedgerAccount?: string,
+  parserProfileId?: string | null,
 ): CsvPreviewResult {
   const lookup = lookupAccounts()
   const defaultAccount = defaultAccountId ? lookup.byId.get(defaultAccountId) ?? null : null
   const normalized = normalizeCsvTransactions(csvText, {
     mapping: mappingInput,
+    parserProfileId,
     defaultAccountName: defaultAccount?.name,
     defaultExternalAccountId: defaultAccount?.id,
   })
@@ -98,6 +103,7 @@ export function previewTransactionsCsv(
   return {
     columns: normalized.columns,
     mapping: normalized.mapping,
+    parserProfile: normalized.parserProfile,
     rows: rows.slice(0, 50),
     totalRows: normalized.totalRows,
     validRows,

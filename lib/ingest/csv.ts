@@ -15,9 +15,44 @@ export type CsvImportField =
 
 export type CsvImportMapping = Partial<Record<CsvImportField, string>>
 export type CsvTransactionStatus = 'posted' | 'pending' | 'cancelled'
+export type CsvParserProfileId = 'fidelity-brokerage-csv'
+export type CsvInvestmentActivityType =
+  | 'buy'
+  | 'sell'
+  | 'dividend'
+  | 'interest'
+  | 'fee'
+  | 'cash_transfer'
+  | 'other'
+
+export interface CsvParserProfile {
+  id: CsvParserProfileId
+  name: string
+  sourceName: string
+  normalizerVersion: string
+  mapping: CsvImportMapping
+  blocksCashPromotion: boolean
+}
+
+export interface CsvInvestmentActivity extends IngestionJsonObject {
+  profileId: CsvParserProfileId
+  activityType: CsvInvestmentActivityType
+  action: string
+  symbol: string | null
+  securityDescription: string | null
+  securityType: string | null
+  price: string | null
+  quantity: string | null
+  commission: string | null
+  fees: string | null
+  accruedInterest: string | null
+  cashBalance: string | null
+  settlementDate: string | null
+}
 
 export interface CsvNormalizerOptions {
   mapping?: CsvImportMapping
+  parserProfileId?: string | null
   defaultAccountName?: string
   defaultExternalAccountId?: string
   sourceAccountId?: string
@@ -52,6 +87,8 @@ export interface CsvNormalizedTransaction extends IngestionJsonObject {
   externalId: string | null
   sourceItemKey: string | null
   sourceItemIdentityInput: SourceItemKeyInput | null
+  parserProfileId: CsvParserProfileId | null
+  investmentActivity: CsvInvestmentActivity | null
   rawPayload: CsvRawRowPayload
   validationErrors: string[]
 }
@@ -59,11 +96,27 @@ export interface CsvNormalizedTransaction extends IngestionJsonObject {
 export interface CsvNormalizationResult {
   columns: string[]
   mapping: CsvImportMapping
+  parserProfile: CsvParserProfile | null
   rows: CsvNormalizedTransaction[]
   totalRows: number
   validRows: number
   errorRows: number
 }
+
+export const CSV_PARSER_PROFILES: CsvParserProfile[] = [
+  {
+    id: 'fidelity-brokerage-csv',
+    name: 'Fidelity Brokerage CSV',
+    sourceName: 'Fidelity Brokerage CSV',
+    normalizerVersion: 'fidelity-brokerage-csv-v1',
+    mapping: {
+      date: 'Run Date',
+      amount: 'Amount ($)',
+      description: 'Action',
+    },
+    blocksCashPromotion: true,
+  },
+]
 
 const FIELD_MATCHERS: Record<CsvImportField, string[]> = {
   date: ['date', 'posted', 'transactiondate', 'transaction date', 'rundate', 'run date', 'transdate', 'trans date', 'postdate', 'post date', 'posteddate', 'posted date'],
@@ -91,10 +144,33 @@ function compactHeader(header: string): string {
   return normalizeHeader(header).replace(/\s+/g, '')
 }
 
-export function detectCsvMapping(columns: string[]): CsvImportMapping {
+export function getCsvParserProfile(profileId: string | null | undefined): CsvParserProfile | null {
+  if (!profileId) return null
+  return CSV_PARSER_PROFILES.find(profile => profile.id === profileId) ?? null
+}
+
+export function detectCsvParserProfile(columns: string[]): CsvParserProfile | null {
+  const compactColumns = new Set(columns.map(compactHeader))
+  const hasFidelityShape =
+    compactColumns.has('rundate')
+    && compactColumns.has('action')
+    && compactColumns.has('amount')
+    && compactColumns.has('settlementdate')
+    && compactColumns.has('cashbalance')
+
+  return hasFidelityShape ? getCsvParserProfile('fidelity-brokerage-csv') : null
+}
+
+export function detectCsvMapping(columns: string[], parserProfileId?: string | null): CsvImportMapping {
+  const parserProfile = getCsvParserProfile(parserProfileId) ?? detectCsvParserProfile(columns)
   const mapping: CsvImportMapping = {}
 
+  if (parserProfile) {
+    Object.assign(mapping, parserProfile.mapping)
+  }
+
   for (const field of Object.keys(FIELD_MATCHERS) as CsvImportField[]) {
+    if (mapping[field]) continue
     const match = columns.find(column => {
       const normalized = normalizeHeader(column)
       const compact = compactHeader(column)
@@ -151,6 +227,45 @@ function splitTags(value: string): string[] {
     .filter(Boolean)
 }
 
+function fidelityActivityType(action: string): CsvInvestmentActivityType {
+  const normalized = action.toUpperCase()
+  if (/\bBOUGHT\b|\bBUY\b/.test(normalized)) return 'buy'
+  if (/\bSOLD\b|\bSELL\b/.test(normalized)) return 'sell'
+  if (/DIVIDEND|DIV/.test(normalized)) return 'dividend'
+  if (/INTEREST/.test(normalized)) return 'interest'
+  if (/FEE|COMMISSION/.test(normalized)) return 'fee'
+  if (/TRANSFER|DIRECT DEPOSIT|EFT|ACH|CASH/.test(normalized)) return 'cash_transfer'
+  return 'other'
+}
+
+function optionalCell(row: Record<string, string>, column: string): string | null {
+  return cell(row, column) || null
+}
+
+function fidelityInvestmentActivity(
+  row: Record<string, string>,
+  parserProfile: CsvParserProfile | null,
+): CsvInvestmentActivity | null {
+  if (parserProfile?.id !== 'fidelity-brokerage-csv') return null
+
+  const action = cell(row, 'Action')
+  return {
+    profileId: parserProfile.id,
+    activityType: fidelityActivityType(action),
+    action,
+    symbol: optionalCell(row, 'Symbol'),
+    securityDescription: optionalCell(row, 'Description'),
+    securityType: optionalCell(row, 'Type'),
+    price: normalizeAmount(cell(row, 'Price ($)')),
+    quantity: optionalCell(row, 'Quantity'),
+    commission: normalizeAmount(cell(row, 'Commission ($)')),
+    fees: normalizeAmount(cell(row, 'Fees ($)')),
+    accruedInterest: normalizeAmount(cell(row, 'Accrued Interest ($)')),
+    cashBalance: normalizeAmount(cell(row, 'Cash Balance ($)')),
+    settlementDate: optionalCell(row, 'Settlement Date'),
+  }
+}
+
 export function buildCsvSourceItemKey(
   row: Pick<CsvNormalizedTransaction, 'sourceAccountId' | 'externalId' | 'date' | 'amount' | 'description'>,
   sourceAccountId = row.sourceAccountId,
@@ -176,7 +291,8 @@ export function normalizeCsvTransactions(
   const columns = parsed[0] ?? []
   const objects = rowsToObjects(parsed)
   const bodyRows = parsed.slice(1).filter(row => row.some(cellValue => cellValue.trim() !== ''))
-  const mapping = { ...detectCsvMapping(columns), ...options.mapping }
+  const parserProfile = getCsvParserProfile(options.parserProfileId) ?? detectCsvParserProfile(columns)
+  const mapping = { ...detectCsvMapping(columns, parserProfile?.id), ...options.mapping }
 
   let validRows = 0
   let errorRows = 0
@@ -205,6 +321,7 @@ export function normalizeCsvTransactions(
     const notes = cell(row, mapping.notes) || null
     const tags = splitTags(cell(row, mapping.tags))
     const externalId = cell(row, mapping.externalId) || null
+    const investmentActivity = fidelityInvestmentActivity(row, parserProfile)
     const validationErrors: string[] = []
 
     if (posted === null) validationErrors.push('Invalid date')
@@ -252,6 +369,8 @@ export function normalizeCsvTransactions(
       externalId,
       sourceItemKey,
       sourceItemIdentityInput,
+      parserProfileId: parserProfile?.id ?? null,
+      investmentActivity,
       rawPayload,
       validationErrors,
     }]
@@ -260,6 +379,7 @@ export function normalizeCsvTransactions(
   return {
     columns,
     mapping,
+    parserProfile,
     rows,
     totalRows: rows.length,
     validRows,

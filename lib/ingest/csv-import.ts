@@ -27,6 +27,8 @@ export interface CsvStageImportError {
 
 export interface CsvStageImportResult {
   importRunId: string
+  parserProfileId: string | null
+  parserProfileName: string | null
   totalRows: number
   rawInserted: number
   staged: number
@@ -93,6 +95,7 @@ function rowErrors(row: CsvNormalizedTransaction, account: AccountRow | null): s
 function normalizedPayload(row: CsvNormalizedTransaction): IngestionJsonObject {
   return {
     rowNumber: row.rowNumber,
+    parserProfileId: row.parserProfileId,
     date: row.date,
     posted: row.posted,
     amount: row.amount,
@@ -106,6 +109,7 @@ function normalizedPayload(row: CsvNormalizedTransaction): IngestionJsonObject {
     tags: row.tags,
     externalId: row.externalId,
     sourceItemKey: row.sourceItemKey,
+    investmentActivity: row.investmentActivity,
   }
 }
 
@@ -134,30 +138,42 @@ export function stageTransactionsCsv(
   connectionName?: string,
   importProfileId?: string | null,
   defaultLedgerAccount?: string,
+  parserProfileId?: string | null,
 ): CsvStageImportResult {
   const lookup = lookupAccounts()
   const defaultAccount = defaultAccountId ? lookup.byId.get(defaultAccountId) ?? null : null
+  const normalized = normalizeCsvTransactions(csvText, {
+    mapping: mappingInput,
+    parserProfileId,
+    defaultAccountName: defaultAccount?.name,
+    defaultExternalAccountId: defaultAccount?.id,
+  })
+  const parserProfile = normalized.parserProfile
   const source = ensureSource({
     id: 'csv',
     kind: 'csv',
     name: 'CSV Import',
+    metadata: parserProfile ? {
+      parserProfileId: parserProfile.id,
+      parserProfileName: parserProfile.name,
+    } : null,
   })
   const slug = connectionName
     ? (connectionName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'manual')
-    : 'manual'
+    : parserProfile ? parserProfile.id : 'manual'
   const connection = ensureSourceConnection({
     id: `csv:${slug}`,
     sourceId: source.id,
-    name: connectionName?.trim() || 'Manual CSV Uploads',
+    name: connectionName?.trim() || parserProfile?.sourceName || 'Manual CSV Uploads',
+    config: parserProfile ? {
+      parserProfileId: parserProfile.id,
+      parserProfileName: parserProfile.name,
+      normalizerVersion: parserProfile.normalizerVersion,
+    } : null,
   })
   const run = createImportRun({
     sourceConnectionId: connection.id,
     importProfileId: importProfileId ?? null,
-  })
-  const normalized = normalizeCsvTransactions(csvText, {
-    mapping: mappingInput,
-    defaultAccountName: defaultAccount?.name,
-    defaultExternalAccountId: defaultAccount?.id,
   })
 
   let rawInserted = 0
@@ -184,6 +200,9 @@ export function stageTransactionsCsv(
       ? buildCsvSourceItemKey(row, sourceAccount.id)
       : null
     const validationErrors = rowErrors(row, account)
+    if (parserProfile?.blocksCashPromotion) {
+      validationErrors.push('Investment activity staging models are required before this parser profile can be promoted')
+    }
     const finalDisposition = sourceItemKey
       ? selectHistoricalFinalDisposition(connection.id, sourceItemKey, run.id)
       : null
@@ -227,7 +246,7 @@ export function stageTransactionsCsv(
       tags: row.tags,
       normalizedPayload: normalizedPayload({ ...row, sourceItemKey, category }),
       validationErrors: effectiveValidationErrors,
-      normalizerVersion: 'csv-normalizer-v1',
+      normalizerVersion: parserProfile?.normalizerVersion ?? 'csv-normalizer-v1',
     })
     if (!finalDisposition && validationErrors.length === 0 && sourceItemKey) staged++
   }
@@ -240,6 +259,8 @@ export function stageTransactionsCsv(
 
   return {
     importRunId: run.id,
+    parserProfileId: parserProfile?.id ?? null,
+    parserProfileName: parserProfile?.name ?? null,
     totalRows: normalized.totalRows,
     rawInserted,
     staged,

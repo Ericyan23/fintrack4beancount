@@ -33,6 +33,7 @@ describe('CSV ingestion normalizer', () => {
     assert.equal(result.totalRows, 3)
     assert.equal(result.validRows, 3)
     assert.equal(result.errorRows, 0)
+    assert.equal(result.parserProfile, null)
   })
 
   test('normalizes posted and pending rows without converting amounts to numbers', () => {
@@ -73,6 +74,8 @@ describe('CSV ingestion normalizer', () => {
       externalId: 'bank-csv-001',
       sourceItemKey: null,
       sourceItemIdentityInput: null,
+      parserProfileId: null,
+      investmentActivity: null,
       rawPayload: {
         rowNumber: 2,
         columns: result.columns,
@@ -153,6 +156,7 @@ describe('Fidelity brokerage CSV', () => {
     const csv = readFixture('csv', 'fidelity-brokerage.csv')
     const result = normalizeCsvTransactions(csv)
 
+    assert.equal(result.parserProfile?.id, 'fidelity-brokerage-csv')
     assert.equal(result.mapping.date, 'Run Date')
     assert.equal(result.mapping.description, 'Action')
     assert.equal(result.mapping.amount, 'Amount ($)')
@@ -188,5 +192,20 @@ describe('Fidelity brokerage CSV', () => {
 
     assert.ok(result.rows[0].posted !== null, 'date should parse')
     assert.equal(result.rows[0].date, '04/01/2025')
+  })
+
+  test('extracts Fidelity investment activity metadata without treating it as cash ledger data', () => {
+    const csv = readFixture('csv', 'fidelity-brokerage.csv')
+    const result = normalizeCsvTransactions(csv)
+
+    const [, buy, dividend,, sell] = result.rows
+    assert.equal(buy.parserProfileId, 'fidelity-brokerage-csv')
+    assert.equal(buy.investmentActivity?.activityType, 'buy')
+    assert.equal(buy.investmentActivity?.symbol, 'FCT')
+    assert.equal(buy.investmentActivity?.quantity, '10')
+    assert.equal(buy.investmentActivity?.price, '50.00')
+    assert.equal(dividend.investmentActivity?.activityType, 'dividend')
+    assert.equal(sell.investmentActivity?.activityType, 'sell')
+    assert.equal(result.parserProfile?.blocksCashPromotion, true)
   })
 })

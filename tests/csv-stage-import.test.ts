@@ -53,6 +53,31 @@ function countRows(table: string): number {
   return row.value
 }
 
+function insertInvestmentAccount(): string {
+  const id = 'acct-fidelity-brokerage'
+  sqlite.prepare(`
+    INSERT INTO accounts (
+      id, name, currency, balance, balance_date, conn_id, org_name, org_domain,
+      account_type, account_type_override, beancount_account, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    'Fidelity Brokerage',
+    'USD',
+    '0.00',
+    1775001600,
+    'test-fixtures',
+    'Fidelity',
+    'fidelity.test',
+    'investment',
+    null,
+    'Assets:US:Fidelity:Brokerage',
+    1775001600,
+  )
+  return id
+}
+
 beforeEach(() => {
   resetDb()
 })
@@ -203,4 +228,85 @@ test('uses the default account when the CSV has no account column', () => {
   assert.ok(staged.sourceAccountId)
   assert.equal(staged.sourceItemKey, `source-account:${encodeURIComponent(staged.sourceAccountId)}:external:no-account-001`)
   assert.equal(staged.status, 'staged')
+})
+
+test('archives Fidelity brokerage CSV rows and blocks cash promotion until investment staging exists', () => {
+  const accountId = insertInvestmentAccount()
+  const result = stageTransactionsCsv(
+    readFixture('csv', 'fidelity-brokerage.csv'),
+    {},
+    accountId,
+    'Fidelity Brokerage',
+    null,
+    undefined,
+    'fidelity-brokerage-csv',
+  )
+
+  assert.equal(result.parserProfileId, 'fidelity-brokerage-csv')
+  assert.equal(result.parserProfileName, 'Fidelity Brokerage CSV')
+  assert.equal(result.totalRows, 5)
+  assert.equal(result.rawInserted, 5)
+  assert.equal(result.staged, 0)
+  assert.equal(result.duplicates, 0)
+  assert.equal(result.errors.length, 5)
+  assert.equal(countRows('raw_import_items'), 5)
+  assert.equal(countRows('staged_transactions'), 5)
+  assert.equal(countRows('transactions'), 0)
+
+  const run = sqlite.prepare(`
+    SELECT status, item_count AS itemCount, error
+    FROM import_runs
+    WHERE id = ?
+  `).get(result.importRunId) as { status: string; itemCount: number; error: string }
+  assert.equal(run.status, 'completed')
+  assert.equal(run.itemCount, 5)
+  assert.match(run.error, /row validation error/)
+
+  const staged = sqlite.prepare(`
+    SELECT account_id AS accountId,
+           status,
+           validation_errors AS validationErrors,
+           normalizer_version AS normalizerVersion,
+           normalized_payload AS normalizedPayload
+    FROM staged_transactions
+    ORDER BY posted ASC, id ASC
+    LIMIT 1
+  `).get() as {
+    accountId: string
+    status: string
+    validationErrors: string
+    normalizerVersion: string
+    normalizedPayload: string
+  }
+
+  assert.equal(staged.accountId, accountId)
+  assert.equal(staged.status, 'error')
+  assert.equal(staged.normalizerVersion, 'fidelity-brokerage-csv-v1')
+  assert.deepEqual(JSON.parse(staged.validationErrors), [
+    'Investment activity staging models are required before this parser profile can be promoted',
+  ])
+
+  const normalizedPayload = JSON.parse(staged.normalizedPayload) as {
+    parserProfileId: string
+    investmentActivity: { activityType: string; action: string }
+  }
+  assert.equal(normalizedPayload.parserProfileId, 'fidelity-brokerage-csv')
+  assert.equal(normalizedPayload.investmentActivity.activityType, 'cash_transfer')
+  assert.equal(normalizedPayload.investmentActivity.action, 'DIRECT DEPOSIT (PAYROLL)')
+
+  const raw = sqlite.prepare(`
+    SELECT status, raw_payload AS rawPayload
+    FROM raw_import_items
+    ORDER BY rowid ASC
+    LIMIT 1
+  `).get() as { status: string; rawPayload: string }
+  assert.equal(raw.status, 'error')
+  assert.equal(JSON.parse(raw.rawPayload).row.Action, 'DIRECT DEPOSIT (PAYROLL)')
+
+  const connection = sqlite.prepare(`
+    SELECT config
+    FROM source_connections
+    WHERE id = 'csv:fidelity-brokerage'
+  `).get() as { config: string }
+  assert.equal(JSON.parse(connection.config).parserProfileId, 'fidelity-brokerage-csv')
 })

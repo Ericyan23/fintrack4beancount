@@ -11,6 +11,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     connectionName?: string
     importProfileId?: string
     defaultLedgerAccount?: string
+    parserProfileId?: string | null
   }
 
   if (!body.csv?.trim()) {
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     body.connectionName,
     body.importProfileId,
     body.defaultLedgerAccount,
+    body.parserProfileId,
   )
   return NextResponse.json({
     ...result,

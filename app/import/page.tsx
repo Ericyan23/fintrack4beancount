@@ -26,6 +26,7 @@ interface ImportProfileConfig {
   connectionName: string | null
   defaultAccountId: string | null
   defaultLedgerAccount: string | null
+  parserProfileId: string | null
 }
 
 interface ImportProfile {
@@ -50,9 +51,18 @@ interface PreviewRow {
   error?: string
 }
 
+interface ParserProfile {
+  id: string
+  name: string
+  sourceName: string
+  normalizerVersion: string
+  blocksCashPromotion: boolean
+}
+
 interface PreviewResult {
   columns: string[]
   mapping: ImportMapping
+  parserProfile: ParserProfile | null
   rows: PreviewRow[]
   totalRows: number
   validRows: number
@@ -100,6 +110,11 @@ const FIELD_LABELS: Array<[ImportField, string, boolean]> = [
   ['externalId', 'External ID', false],
 ]
 
+const PARSER_PROFILE_OPTIONS = [
+  { id: '', name: 'Auto detect' },
+  { id: 'fidelity-brokerage-csv', name: 'Fidelity Brokerage CSV' },
+]
+
 function timeAgo(ts: number | null): string {
   if (!ts) return '—'
   const diff = Date.now() / 1000 - ts
@@ -131,6 +146,7 @@ export default function ImportPage() {
   const [selectedProfileId, setSelectedProfileId] = useState('')
   const [profileName, setProfileName] = useState('')
   const [defaultLedgerAccount, setDefaultLedgerAccount] = useState('')
+  const [parserProfileId, setParserProfileId] = useState('')
   const [csv, setCsv] = useState('')
   const [filename, setFilename] = useState('')
   const [defaultAccountId, setDefaultAccountId] = useState('')
@@ -172,6 +188,7 @@ export default function ImportPage() {
     setMapping(profile.mapping ?? {})
     setDefaultAccountId(profile.config.defaultAccountId ?? '')
     setDefaultLedgerAccount(profile.config.defaultLedgerAccount ?? '')
+    setParserProfileId(profile.config.parserProfileId ?? '')
     setCsvConnectionName(profile.config.connectionName ?? '')
     setProfileError(null)
     setProfileMessage(null)
@@ -182,6 +199,7 @@ export default function ImportPage() {
         profile.config.defaultAccountId ?? '',
         false,
         profile.config.defaultLedgerAccount ?? '',
+        profile.config.parserProfileId ?? '',
       )
     }
   }
@@ -207,6 +225,7 @@ export default function ImportPage() {
           connectionName: csvConnectionName.trim() || null,
           defaultAccountId: defaultAccountId || null,
           defaultLedgerAccount: defaultLedgerAccount || null,
+          parserProfileId: parserProfileId || null,
         }),
       })
       const payload = (await res.json().catch(() => ({}))) as { profile?: ImportProfile; error?: string; validationErrors?: string[] }
@@ -232,6 +251,7 @@ export default function ImportPage() {
     nextDefaultAccountId = defaultAccountId,
     clearResult = true,
     nextDefaultLedgerAccount = defaultLedgerAccount,
+    nextParserProfileId = parserProfileId,
   ) {
     if (!csv.trim()) return
     setLoading(true)
@@ -246,6 +266,7 @@ export default function ImportPage() {
           mapping: nextMapping,
           defaultAccountId: nextDefaultAccountId || undefined,
           defaultLedgerAccount: nextDefaultLedgerAccount || undefined,
+          parserProfileId: nextParserProfileId || undefined,
         }),
       })
       if (!res.ok) {
@@ -256,6 +277,9 @@ export default function ImportPage() {
       const payload = (await res.json()) as PreviewResult
       setPreview(payload)
       setMapping(payload.mapping)
+      if (!nextParserProfileId && payload.parserProfile) {
+        setParserProfileId(payload.parserProfile.id)
+      }
     } finally {
       setLoading(false)
     }
@@ -276,6 +300,7 @@ export default function ImportPage() {
           connectionName: csvConnectionName.trim() || undefined,
           importProfileId: selectedProfileId || undefined,
           defaultLedgerAccount: defaultLedgerAccount || undefined,
+          parserProfileId: parserProfileId || undefined,
         }),
       })
       if (!res.ok) {
@@ -285,7 +310,7 @@ export default function ImportPage() {
       }
       setResult((await res.json()) as StageImportResult)
       loadRecentRuns()
-      await runPreview(mapping, defaultAccountId, false, defaultLedgerAccount)
+      await runPreview(mapping, defaultAccountId, false, defaultLedgerAccount, parserProfileId)
     } finally {
       setLoading(false)
     }
@@ -441,6 +466,7 @@ export default function ImportPage() {
                 if (!profileId) {
                   setSelectedProfileId('')
                   setProfileName('')
+                  setParserProfileId('')
                   setProfileError(null)
                   setProfileMessage(null)
                   return
@@ -466,6 +492,22 @@ export default function ImportPage() {
               placeholder="e.g. Chase checking CSV"
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
             />
+          </label>
+
+          <label className="block">
+            <span className="text-xs text-slate-400 block mb-1">Parser profile</span>
+            <select
+              value={parserProfileId}
+              onChange={event => {
+                setParserProfileId(event.target.value)
+                if (csv) runPreview(mapping, defaultAccountId, false, defaultLedgerAccount, event.target.value)
+              }}
+              className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
+            >
+              {PARSER_PROFILE_OPTIONS.map(option => (
+                <option key={option.id || 'auto'} value={option.id}>{option.name}</option>
+              ))}
+            </select>
           </label>
 
           <label className="block">
@@ -499,7 +541,10 @@ export default function ImportPage() {
                 setCsv(text)
                 setPreview(null)
                 setResult(null)
-                if (!selectedProfileId) setMapping({})
+                if (!selectedProfileId) {
+                  setMapping({})
+                  setParserProfileId('')
+                }
               }}
               className="w-full text-sm text-slate-300 file:mr-3 file:rounded file:border-0 file:bg-blue-600 file:px-3 file:py-2 file:text-sm file:text-white hover:file:bg-blue-500"
             />
@@ -547,6 +592,14 @@ export default function ImportPage() {
       {preview && (
         <>
           <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
+            {preview.parserProfile && (
+              <div className="rounded-md border border-amber-900/70 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+                Parser profile: {preview.parserProfile.name}
+                {preview.parserProfile.blocksCashPromotion
+                  ? '. Rows are archived for review, but investment staging models are required before promotion.'
+                  : ''}
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <p className="text-xs text-slate-400">Total rows</p>

@@ -7,6 +7,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     mapping?: CsvPreviewMapping
     defaultAccountId?: string
     defaultLedgerAccount?: string
+    parserProfileId?: string | null
   }
 
   if (!body.csv?.trim()) {
@@ -18,5 +19,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     body.mapping,
     body.defaultAccountId,
     body.defaultLedgerAccount,
+    body.parserProfileId,
   ))
 }

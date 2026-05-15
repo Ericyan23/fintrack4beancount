@@ -23,6 +23,7 @@ interface ProfilePayload {
       connectionName: string | null
       defaultAccountId: string | null
       defaultLedgerAccount: string | null
+      parserProfileId: string | null
     }
   }
 }
@@ -121,6 +122,7 @@ test('POST and GET /api/import/profiles persist a reusable CSV mapping profile',
     connectionName: 'Profile Bank Checking',
     defaultAccountId: accountId,
     defaultLedgerAccount: 'Expenses:Food:Restaurants',
+    parserProfileId: null,
   })
   assert.equal(countRows('sources'), 1)
   assert.equal(countRows('import_profiles'), 1)
@@ -170,6 +172,25 @@ test('POST /api/import/profiles upserts by name and replaces old mapping rows', 
     externalId: 'Transaction ID',
   })
   assert.equal(secondPayload.profile.config.defaultLedgerAccount, 'Expenses:Travel:Airfare')
+})
+
+test('POST /api/import/profiles persists a Fidelity parser profile id', async () => {
+  const response = await profilesRoute.POST(request('/api/import/profiles', {
+    name: 'Fidelity Brokerage CSV',
+    connectionName: 'Fidelity Brokerage',
+    parserProfileId: 'fidelity-brokerage-csv',
+    mapping: {
+      date: 'Run Date',
+      amount: 'Amount ($)',
+      description: 'Action',
+    },
+  }))
+  const payload = (await response.json()) as ProfilePayload
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.profile.config.parserProfileId, 'fidelity-brokerage-csv')
+  assert.equal(payload.profile.mapping.date, 'Run Date')
+  assert.equal(countRows('import_profile_mappings'), 3)
 })
 
 test('staged CSV imports can link to a profile and apply default ledger hints', async () => {
@@ -234,5 +255,22 @@ test('POST /api/import/profiles rejects missing profile names', async () => {
 
   assert.equal(response.status, 400)
   assert.equal(payload.error, 'Profile name is required')
+  assert.equal(countRows('import_profiles'), 0)
+})
+
+test('POST /api/import/profiles rejects unknown parser profile ids', async () => {
+  const response = await profilesRoute.POST(request('/api/import/profiles', {
+    name: 'Unknown Parser',
+    parserProfileId: 'not-real',
+    mapping: {
+      date: 'Date',
+      amount: 'Amount',
+      description: 'Description',
+    },
+  }))
+  const payload = (await response.json()) as { error?: string; validationErrors?: string[] }
+
+  assert.equal(response.status, 400)
+  assert.deepEqual(payload.validationErrors, ['Unknown CSV parser profile: not-real'])
   assert.equal(countRows('import_profiles'), 0)
 })
