@@ -1,0 +1,14 @@
+<svg width="320" height="88" viewBox="0 0 320 88" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">FinTrack horizontal lockup</title>
+  <desc id="desc">FinTrack wordmark with a raw import, normalization, and ledger handoff pipeline symbol.</desc>
+  <rect x="8" y="12" width="64" height="64" rx="14" fill="#F7F9F8"/>
+  <path d="M22 30H34C38.4183 30 42 33.5817 42 38V50C42 54.4183 45.5817 58 50 58H58" stroke="#18312B" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M22 44H34" stroke="#53786E" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M22 58H35" stroke="#8A9A96" stroke-width="5.5" stroke-linecap="round"/>
+  <rect x="56" y="25" width="9" height="9" rx="2.25" fill="#2C6B5B"/>
+  <rect x="56" y="39.5" width="9" height="9" rx="2.25" fill="#D5A23F"/>
+  <rect x="56" y="54" width="9" height="9" rx="2.25" fill="#18312B"/>
+  <rect x="8.75" y="12.75" width="62.5" height="62.5" rx="13.25" stroke="#D9E0DD" stroke-width="1.5"/>
+  <text x="88" y="43" fill="#18312B" font-family="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="30" font-weight="700" letter-spacing="0">FinTrack</text>
+  <text x="90" y="62" fill="#53786E" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="600" letter-spacing="1.6">IMPORT / STAGE / LEDGER</text>
+</svg>

@@ -1,0 +1,18 @@
+<svg width="144" height="144" viewBox="0 0 144 144" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">FinTrack audit pipeline mark</title>
+  <desc id="desc">An alternate FinTrack mark showing raw records normalized into an auditable ledger handoff.</desc>
+  <rect x="20" y="24" width="104" height="96" rx="18" fill="#F7F9F8"/>
+  <rect x="31" y="37" width="32" height="14" rx="4" fill="#E8EEEB"/>
+  <rect x="31" y="65" width="32" height="14" rx="4" fill="#E8EEEB"/>
+  <rect x="31" y="93" width="32" height="14" rx="4" fill="#E8EEEB"/>
+  <path d="M70 44H82C88.6274 44 94 49.3726 94 56V88C94 94.6274 99.3726 100 106 100H113" stroke="#18312B" stroke-width="6" stroke-linecap="round"/>
+  <path d="M70 72H86" stroke="#53786E" stroke-width="6" stroke-linecap="round"/>
+  <path d="M70 100H88" stroke="#8A9A96" stroke-width="6" stroke-linecap="round"/>
+  <rect x="104" y="35" width="14" height="18" rx="3" fill="#2C6B5B"/>
+  <rect x="104" y="63" width="14" height="18" rx="3" fill="#D5A23F"/>
+  <rect x="104" y="91" width="14" height="18" rx="3" fill="#18312B"/>
+  <path d="M40 43H54" stroke="#8A9A96" stroke-width="3" stroke-linecap="round"/>
+  <path d="M40 71H54" stroke="#8A9A96" stroke-width="3" stroke-linecap="round"/>
+  <path d="M40 99H54" stroke="#8A9A96" stroke-width="3" stroke-linecap="round"/>
+  <rect x="20.75" y="24.75" width="102.5" height="94.5" rx="17.25" stroke="#D9E0DD" stroke-width="1.5"/>
+</svg>
