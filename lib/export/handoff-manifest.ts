@@ -6,6 +6,7 @@ import {
 } from '@/lib/export/beancount-ledger'
 import { currentPeriod, runBeancountPreflight } from '@/lib/export/preflight'
 import { runBalanceAssertionPreflight } from '@/lib/export/balance-assertions'
+import type { BeancountValidationSummary } from '@/lib/export/beancount-validation'
 
 export interface BeancountHandoffManifest {
   schemaVersion: 1
@@ -42,6 +43,7 @@ export interface BeancountHandoffManifest {
     transactionsOk: boolean
     balanceAssertionsOk: boolean
   }
+  validation: BeancountValidationSummary | null
   sourceIds: string[]
 }
 
@@ -110,6 +112,7 @@ export function buildBeancountHandoffManifest(options: {
       transactionsOk: transactionPreflight.ok,
       balanceAssertionsOk: balancePreflight.ok,
     },
+    validation: null,
     sourceIds: uniqueSorted([...transactionSourceIds, ...balanceSourceIds]),
   }
 }

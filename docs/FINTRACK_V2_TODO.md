@@ -335,7 +335,8 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] confirmed transfers
   - [x] balance assertions
 - [x] Preserve existing preflight checks and handoff writer.
-- [ ] Let external Beancount validation or worker remain the final validation step.
+- [x] Let external Beancount validation or worker remain the final validation step.
+  - Progress: Beancount draft downloads and handoff writes now run an external validator (`bean-check` by default) against a temporary file that includes the existing ledger plus the generated draft; failed validation blocks output/export-run creation, while missing optional tooling is recorded as unavailable.
 
 ### v2.0 Page Changes
 
@@ -432,7 +433,7 @@ ingestion is stable.
 ## Long-Term Optional
 
 - [ ] Restore reports only as secondary diagnostics if they help the prep workflow.
-- [ ] Add external Beancount worker integration for final validation.
+- [ ] Add external Beancount worker integration for promotion-time validation.
 - [ ] Add Git PR/export target only after download and handoff are stable.
 - [ ] Add AI categorization improvements after manual/rule workflows are reliable.
 

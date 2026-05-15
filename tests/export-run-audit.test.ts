@@ -18,6 +18,7 @@ process.env.FINTRACK_HANDOFF_ROOT = handoffRoot
 
 const { sqlite } = require('../lib/db') as typeof import('../lib/db')
 const {
+  HandoffValidationError,
   writeBeancountHandoff,
 } = require('../lib/export/handoff-writer') as typeof import('../lib/export/handoff-writer')
 
@@ -72,6 +73,10 @@ function writeLedger(): void {
       'option "title" "Export Run Audit Test"',
       '2026-01-01 open Assets:US:Banks:ExportRunChecking USD',
       '2026-01-01 open Expenses:Food:Coffee USD',
+      '2026-01-01 open Equity:Opening-Balances USD',
+      '2026-01-01 * "Opening balance"',
+      '  Assets:US:Banks:ExportRunChecking          1239.31 USD',
+      '  Equity:Opening-Balances',
       '',
     ].join('\n'),
   )
@@ -203,6 +208,11 @@ function selectAuditRun(id: string): AuditLogRow {
   `).get(id) as AuditLogRow
 }
 
+function scalar(sql: string): number {
+  const row = sqlite.prepare(sql).get() as { value: number }
+  return row.value
+}
+
 beforeEach(() => {
   resetDb()
   fs.rmSync(handoffRoot, { recursive: true, force: true })
@@ -230,6 +240,11 @@ test('beancount handoff writes an export run and audit row', () => {
     period: '2026-04',
     generatedAt,
     handoffRoot,
+    validation: {
+      validatorCommand: process.execPath,
+      validatorArgs: ['-e', 'process.exit(0)'],
+      mode: 'required',
+    },
     audit: {
       actor: 'tester',
       reason: 'monthly_close',
@@ -245,6 +260,20 @@ test('beancount handoff writes an export run and audit row', () => {
   assert.equal(result.exportRun.ledgerRevision, result.manifest.ledger.revision)
   assert.equal(result.exportRun.exportTarget, 'beancount_handoff')
   assert.equal(result.exportRun.createdAt, expectedTimestamp)
+  assert.equal(result.validation.status, 'passed')
+  assert.deepEqual(result.manifest.validation, {
+    ok: true,
+    status: 'passed',
+    mode: 'required',
+    command: process.execPath,
+    args: ['-e', 'process.exit(0)'],
+    exitCode: 0,
+    signal: null,
+    stdout: '',
+    stderr: '',
+    error: null,
+    durationMs: result.validation.durationMs,
+  })
   assert.deepEqual(result.exportRun.exportedSourceIds, [
     'fintrack:acct-export-run-checking:txn-export-run-coffee',
     'fintrack:balance:acct-export-run-checking:2026-04-30',
@@ -271,11 +300,13 @@ test('beancount handoff writes an export run and audit row', () => {
     handoffDirectory: string
     counts: { transactions: number; balanceAssertions: number }
     files: Array<{ kind: string; relativePath: string; bytes: number }>
+    validation: { status: string }
   }
   assert.equal(metadata.handoffDirectory, '2026-04/fintrack')
   assert.equal(metadata.counts.transactions, 1)
   assert.equal(metadata.counts.balanceAssertions, 1)
   assert.equal(metadata.files.length, 4)
+  assert.equal(metadata.validation.status, 'passed')
 
   const auditRow = selectAuditRun(result.exportRun.id)
   assert.equal(auditRow.action, 'export_run_creation')
@@ -293,8 +324,29 @@ test('beancount handoff writes an export run and audit row', () => {
     exportTarget: string
     generatedFileCount: number
     exportedSourceIdCount: number
+    validationStatus: string
   }
   assert.equal(auditMetadata.exportTarget, 'beancount_handoff')
   assert.equal(auditMetadata.generatedFileCount, 4)
   assert.equal(auditMetadata.exportedSourceIdCount, 2)
+  assert.equal(auditMetadata.validationStatus, 'passed')
+})
+
+test('beancount handoff validation failure blocks files and export run creation', () => {
+  assert.throws(
+    () => writeBeancountHandoff({
+      period: '2026-04',
+      generatedAt: new Date('2026-05-13T12:00:00.000Z'),
+      handoffRoot,
+      validation: {
+        validatorCommand: process.execPath,
+        validatorArgs: ['-e', 'process.stderr.write("invalid handoff"); process.exit(2)'],
+        mode: 'required',
+      },
+    }),
+    HandoffValidationError,
+  )
+
+  assert.equal(scalar('SELECT COUNT(*) AS value FROM export_runs'), 0)
+  assert.equal(fs.existsSync(path.join(handoffRoot, '2026-04', 'fintrack', 'manifest.json')), false)
 })

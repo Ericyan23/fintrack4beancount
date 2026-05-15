@@ -221,6 +221,8 @@ npm run db:push
 | `CLAUDE_API_KEY` | No | Optional Claude API key used as classification fallback. |
 | `BEANCOUNT_ROOT` | No | Beancount checkout path inside the app container. |
 | `FINTRACK_HANDOFF_ROOT` | No | Writable handoff directory inside the app container. Leave unset to disable handoff writes. |
+| `FINTRACK_BEANCOUNT_VALIDATOR` | No | External Beancount validator command. Defaults to `bean-check`. |
+| `FINTRACK_BEANCOUNT_VALIDATION` | No | Validator mode: `optional` by default, `required` to block when the validator is missing, or `disabled` to skip. |
 | `FINTRACK_DATA_HOST` | Docker only | Host path mounted at `/app/data`. |
 | `BEANCOUNT_ROOT_HOST` | Docker only | Host path mounted read-only at `/beancount`. |
 | `FINTRACK_HANDOFF_ROOT_HOST` | Docker only | Host path mounted read-write at `/handoff`. |
@@ -267,6 +269,7 @@ FinTrack responsibilities:
 
 - Read the Beancount checkout for accounts and preflight checks.
 - Generate draft handoff files.
+- Run external Beancount validation before draft download or handoff write when the validator is available.
 - Read worker status.
 - Record approve/reject decisions.
 

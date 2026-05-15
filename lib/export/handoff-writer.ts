@@ -9,6 +9,12 @@ import {
   type BeancountHandoffManifest,
   buildBeancountHandoffManifest,
 } from '@/lib/export/handoff-manifest'
+import {
+  type BeancountValidationMode,
+  type BeancountValidationResult,
+  summarizeBeancountValidation,
+  validateBeancountDraft,
+} from '@/lib/export/beancount-validation'
 import { currentPeriod, runBeancountPreflight } from '@/lib/export/preflight'
 
 type HandoffFileKind = 'manifest' | 'combinedDraft' | 'transactionDraft' | 'balanceAssertionDraft'
@@ -52,6 +58,7 @@ export interface WriteBeancountHandoffResult {
   manifest: BeancountHandoffManifest
   files: WrittenHandoffFile[]
   resetFiles: string[]
+  validation: BeancountValidationResult
   exportRun: HandoffExportRun
 }
 
@@ -65,6 +72,12 @@ export interface WriteBeancountHandoffOptions {
     actor?: string | null
     reason?: string | null
   }
+  validation?: {
+    validatorCommand?: string
+    validatorArgs?: string[]
+    mode?: BeancountValidationMode
+    timeoutMs?: number
+  }
 }
 
 export class HandoffConfigError extends Error {}
@@ -72,6 +85,15 @@ export class HandoffConfigError extends Error {}
 export class HandoffPreflightError extends Error {
   constructor(public readonly manifest: BeancountHandoffManifest) {
     super('Beancount handoff preflight has blockers')
+  }
+}
+
+export class HandoffValidationError extends Error {
+  constructor(
+    public readonly manifest: BeancountHandoffManifest,
+    public readonly validation: BeancountValidationResult,
+  ) {
+    super('External Beancount validation failed')
   }
 }
 
@@ -235,6 +257,7 @@ function insertExportRun(input: {
   overwrite: boolean
   excludeExported: boolean
   manifest: BeancountHandoffManifest
+  validation: BeancountValidationResult
   files: WrittenHandoffFile[]
   resetFiles: string[]
   dateRange: { start: string; end: string }
@@ -251,6 +274,7 @@ function insertExportRun(input: {
     beancountRoot: input.manifest.beancountRoot,
     counts: input.manifest.counts,
     preflight: input.manifest.preflight,
+    validation: input.manifest.validation,
     files: input.files.map(file => ({
       kind: file.kind,
       relativePath: file.relativePath,
@@ -337,6 +361,7 @@ function insertExportRun(input: {
         manifestPath: exportRun.manifestPath,
         generatedFileCount: exportRun.generatedFileNames.length,
         exportedSourceIdCount: exportRun.exportedSourceIds.length,
+        validationStatus: input.validation.status,
       }),
       timestamp,
     )
@@ -364,12 +389,26 @@ export function writeBeancountHandoff(
   const transactionDraft = renderBeancountDraft(transactionPreflight, { generatedAt })
   const balanceDraft = renderBalanceAssertionDraft(balancePreflight, { generatedAt })
   const combinedDraft = renderCombinedDraft(transactionDraft, balanceDraft)
+  const validation = validateBeancountDraft({
+    draft: combinedDraft,
+    beancountRoot: manifest.beancountRoot,
+    validatorCommand: options.validation?.validatorCommand,
+    validatorArgs: options.validation?.validatorArgs,
+    mode: options.validation?.mode,
+    timeoutMs: options.validation?.timeoutMs,
+  })
+  const validatedManifest: BeancountHandoffManifest = {
+    ...manifest,
+    ok: manifest.ok && validation.ok,
+    validation: summarizeBeancountValidation(validation),
+  }
+  if (!validation.ok) throw new HandoffValidationError(validatedManifest, validation)
 
   const plannedFiles: HandoffFilePlan[] = [
-    { kind: 'transactionDraft', relativePath: manifest.handoff.transactionDraftFile, content: transactionDraft },
-    { kind: 'balanceAssertionDraft', relativePath: manifest.handoff.balanceAssertionDraftFile, content: balanceDraft },
-    { kind: 'combinedDraft', relativePath: manifest.handoff.combinedDraftFile, content: combinedDraft },
-    { kind: 'manifest', relativePath: manifest.handoff.manifestFile, content: `${JSON.stringify(manifest, null, 2)}\n` },
+    { kind: 'transactionDraft', relativePath: validatedManifest.handoff.transactionDraftFile, content: transactionDraft },
+    { kind: 'balanceAssertionDraft', relativePath: validatedManifest.handoff.balanceAssertionDraftFile, content: balanceDraft },
+    { kind: 'combinedDraft', relativePath: validatedManifest.handoff.combinedDraftFile, content: combinedDraft },
+    { kind: 'manifest', relativePath: validatedManifest.handoff.manifestFile, content: `${JSON.stringify(validatedManifest, null, 2)}\n` },
   ]
 
   if (!overwrite) {
@@ -379,7 +418,7 @@ export function writeBeancountHandoff(
     }
   }
 
-  const resetFiles = overwrite ? resetHandoffFiles(handoffRoot, manifest) : []
+  const resetFiles = overwrite ? resetHandoffFiles(handoffRoot, validatedManifest) : []
   const files = plannedFiles.map(plan => writeFile(handoffRoot, plan, overwrite))
   const exportRun = insertExportRun({
     period,
@@ -387,7 +426,8 @@ export function writeBeancountHandoff(
     generatedAt,
     overwrite,
     excludeExported,
-    manifest,
+    manifest: validatedManifest,
+    validation,
     files,
     resetFiles,
     dateRange: transactionPreflight.dateRange,
@@ -398,10 +438,11 @@ export function writeBeancountHandoff(
     ok: true,
     period,
     handoffRoot,
-    directory: handoffTargetPath(handoffRoot, manifest.handoff.directory),
-    manifest,
+    directory: handoffTargetPath(handoffRoot, validatedManifest.handoff.directory),
+    manifest: validatedManifest,
     files,
     resetFiles,
+    validation,
     exportRun,
   }
 }

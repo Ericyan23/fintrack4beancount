@@ -373,6 +373,8 @@ FINTRACK_HANDOFF_ROOT/YYYY-MM/fintrack/
 
 FinTrack 不会写入 Beancount repository。
 
+写入前，FinTrack 会先运行外部 Beancount validation。默认命令是 `bean-check`。如果 validator 存在且返回失败，handoff 不会写入，也不会创建 export run。若环境中没有安装 validator，默认会记录为 unavailable 并继续；可以设置 `FINTRACK_BEANCOUNT_VALIDATION=required` 让缺失 validator 也阻止导出。
+
 写入后，UI 会显示 handoff path 和文件列表。此时 Beancount worker 不一定已经处理这些文件。
 
 如果该 handoff 之前失败或被拒绝，再次写入可能会替换该期间已知的 handoff 文件。FinTrack 不应该覆盖已经 merged 的 handoff。

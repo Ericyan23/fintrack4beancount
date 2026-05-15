@@ -113,7 +113,22 @@ interface HandoffManifest {
     transactionsOk: boolean
     balanceAssertionsOk: boolean
   }
+  validation: HandoffValidationSummary | null
   sourceIds: string[]
+}
+
+interface HandoffValidationSummary {
+  ok: boolean
+  status: string
+  mode: string
+  command: string
+  args: string[]
+  exitCode: number | null
+  signal: string | null
+  stdout: string
+  stderr: string
+  error: string | null
+  durationMs: number
 }
 
 interface HandoffWrittenFile {
@@ -131,6 +146,7 @@ interface HandoffWriteResult {
   manifest: HandoffManifest
   files: HandoffWrittenFile[]
   resetFiles?: string[]
+  validation: HandoffValidationSummary
 }
 
 interface HandoffWorkerStatus {
@@ -799,6 +815,19 @@ export default function BeancountPage() {
           <div className="mt-3 rounded-lg border border-emerald-900/60 bg-emerald-950/20 px-3 py-2 text-xs text-emerald-200">
             <div className="font-medium">Handoff written</div>
             <div className="mt-1 break-all font-mono text-emerald-100">{handoffResult.directory}</div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-slate-300">
+              <span>External validation</span>
+              <span className={`rounded-full border px-2 py-0.5 ${
+                handoffResult.validation.status === 'passed'
+                  ? 'border-emerald-900/70 bg-emerald-950/30 text-emerald-300'
+                  : handoffResult.validation.status === 'failed'
+                    ? 'border-red-900/70 bg-red-950/30 text-red-300'
+                    : 'border-amber-900/70 bg-amber-950/30 text-amber-300'
+              }`}>
+                {handoffResult.validation.status}
+              </span>
+              <span className="font-mono text-slate-500">{handoffResult.validation.command}</span>
+            </div>
             <div className="mt-2 grid gap-1 text-slate-400 md:grid-cols-2">
               {handoffResult.files.map(file => (
                 <div key={file.kind} className="break-all">

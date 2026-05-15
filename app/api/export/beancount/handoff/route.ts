@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   HandoffFileExistsError,
   HandoffPreflightError,
+  HandoffValidationError,
   writeBeancountHandoff,
 } from '@/lib/export/handoff-writer'
 import { currentPeriod } from '@/lib/export/preflight'
@@ -53,6 +54,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         error: err.message,
         file: err.file,
+      }, { status: 409 })
+    }
+
+    if (err instanceof HandoffValidationError) {
+      return NextResponse.json({
+        error: err.message,
+        manifest: err.manifest,
+        validation: err.validation,
       }, { status: 409 })
     }
 
