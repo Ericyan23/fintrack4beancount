@@ -404,7 +404,7 @@ Goal: add Fidelity/investment ingestion conservatively after cash-transaction
 ingestion is stable.
 
 - [x] Add Fidelity CSV raw import and parser profiles.
-  - Progress: Fidelity brokerage CSV is auto-detected or selectable as a parser profile, raw rows are archived, investment activity metadata is extracted into staging payloads, and rows are blocked from cash promotion until investment staging models/export are implemented.
+  - Progress: Fidelity brokerage CSV is auto-detected or selectable as a parser profile, raw rows are archived, investment activity metadata is extracted into staging payloads, and rows are blocked from cash promotion until investment review/export are implemented.
 - [x] Add investment staging models as needed:
   - [x] `securities`
   - [x] `investment_activities`
@@ -422,7 +422,8 @@ ingestion is stable.
   - [ ] Position or balance assertion
   - Progress: Fidelity activity metadata now records activity type, instrument type, option open/close position effect, option type, expiration, strike, quantity, prices, fees, settlement date, and blocked review status.
 - [ ] Add security mapping UI.
-- [ ] Add investment activity review UI.
+- [x] Add investment activity review UI.
+  - Progress: import run detail now shows staged investment activities with status, security, activity type, option open/close metadata, validation errors, and reviewed/ignored/blocked status actions.
 - [ ] Add Beancount investment renderer:
   - [ ] cash postings
   - [ ] commodity/security postings

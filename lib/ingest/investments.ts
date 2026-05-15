@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'crypto'
 import { sqlite } from '@/lib/db'
 import type { CsvInvestmentActivity } from '@/lib/ingest/csv'
 import { stableStringify } from '@/lib/ingest/identity'
+import type { InvestmentActivityStatus } from '@/lib/ingest/types'
 
 interface RecordInvestmentActivityInput {
   importRunId: string
@@ -18,6 +19,52 @@ interface RecordInvestmentActivityInput {
   normalizerVersion: string
   validationErrors: string[]
   activity: CsvInvestmentActivity
+}
+
+export interface InvestmentActivityAuditMetadata {
+  actor?: string | null
+  reason?: string | null
+}
+
+export interface UpdateInvestmentActivityStatusInput {
+  importRunId: string
+  investmentActivityId: string
+  status: InvestmentActivityStatus
+  audit?: InvestmentActivityAuditMetadata
+}
+
+export interface InvestmentActivityStatusResult {
+  id: string
+  status: InvestmentActivityStatus
+  updatedAt: number
+}
+
+interface InvestmentActivityStatusRow {
+  id: string
+  importRunId: string | null
+  status: InvestmentActivityStatus
+  sourceConnectionId: string | null
+  sourceAccountId: string | null
+  rawItemId: string | null
+  stagedTransactionId: string | null
+  sourceItemKey: string | null
+  updatedAt: number
+}
+
+export class InvestmentActivityNotFoundError extends Error {
+  constructor(importRunId: string, investmentActivityId: string) {
+    super(`Investment activity not found: ${investmentActivityId} in import run ${importRunId}`)
+    this.name = 'InvestmentActivityNotFoundError'
+  }
+}
+
+export class InvestmentActivityInvalidInputError extends Error {
+  readonly status = 400
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'InvestmentActivityInvalidInputError'
+  }
 }
 
 function nowSeconds(): number {
@@ -108,6 +155,92 @@ function ensureSecurity(input: RecordInvestmentActivityInput, timestamp: number)
   return row?.id ?? id
 }
 
+const insertAuditLog = sqlite.prepare(`
+  INSERT INTO audit_log (
+    entity_type,
+    entity_id,
+    action,
+    actor,
+    reason,
+    before_values,
+    after_values,
+    metadata,
+    created_at
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`)
+
+function auditActor(audit: InvestmentActivityAuditMetadata | undefined): string {
+  const trimmed = audit?.actor?.trim()
+  return trimmed || 'local'
+}
+
+function auditReason(
+  audit: InvestmentActivityAuditMetadata | undefined,
+  fallback: string,
+): string {
+  const trimmed = audit?.reason?.trim()
+  return trimmed || fallback
+}
+
+function investmentActivityStatusAction(status: InvestmentActivityStatus): string {
+  if (status === 'reviewed') return 'investment_activity_review'
+  if (status === 'ignored') return 'investment_activity_ignore'
+  return 'investment_activity_status_update'
+}
+
+function selectInvestmentActivityStatusRow(
+  importRunId: string,
+  investmentActivityId: string,
+): InvestmentActivityStatusRow | null {
+  const row = sqlite.prepare(`
+    SELECT id,
+           import_run_id AS importRunId,
+           status,
+           source_connection_id AS sourceConnectionId,
+           source_account_id AS sourceAccountId,
+           raw_item_id AS rawItemId,
+           staged_transaction_id AS stagedTransactionId,
+           source_item_key AS sourceItemKey,
+           updated_at AS updatedAt
+    FROM investment_activities
+    WHERE id = ?
+      AND import_run_id = ?
+  `).get(investmentActivityId, importRunId) as InvestmentActivityStatusRow | undefined
+
+  return row ?? null
+}
+
+function recordInvestmentActivityStatusAudit(input: {
+  beforeRow: InvestmentActivityStatusRow
+  afterRow: InvestmentActivityStatusRow
+  audit?: InvestmentActivityAuditMetadata
+  timestamp: number
+}): void {
+  if (input.beforeRow.status === input.afterRow.status) return
+
+  const action = investmentActivityStatusAction(input.afterRow.status)
+  insertAuditLog.run(
+    'investment_activity',
+    input.beforeRow.id,
+    action,
+    auditActor(input.audit),
+    auditReason(input.audit, action),
+    JSON.stringify({ investmentActivity: { status: input.beforeRow.status } }),
+    JSON.stringify({ investmentActivity: { status: input.afterRow.status } }),
+    JSON.stringify({
+      importRunId: input.beforeRow.importRunId,
+      sourceConnectionId: input.beforeRow.sourceConnectionId,
+      sourceAccountId: input.beforeRow.sourceAccountId,
+      rawItemId: input.beforeRow.rawItemId,
+      stagedTransactionId: input.beforeRow.stagedTransactionId,
+      sourceItemKey: input.beforeRow.sourceItemKey,
+      fields: ['status'],
+    }),
+    input.timestamp,
+  )
+}
+
 export function recordInvestmentActivity(input: RecordInvestmentActivityInput): string {
   const timestamp = nowSeconds()
   const securityId = ensureSecurity(input, timestamp)
@@ -193,4 +326,44 @@ export function recordInvestmentActivity(input: RecordInvestmentActivityInput): 
   )
 
   return id
+}
+
+export function updateInvestmentActivityStatus(
+  input: UpdateInvestmentActivityStatusInput,
+): InvestmentActivityStatusResult {
+  if (!['blocked', 'needs_review', 'reviewed', 'ignored'].includes(input.status)) {
+    throw new InvestmentActivityInvalidInputError(`Unsupported investment activity status: ${input.status}`)
+  }
+
+  return sqlite.transaction(() => {
+    const row = selectInvestmentActivityStatusRow(input.importRunId, input.investmentActivityId)
+    if (!row) {
+      throw new InvestmentActivityNotFoundError(input.importRunId, input.investmentActivityId)
+    }
+
+    const updatedAt = nowSeconds()
+    sqlite.prepare(`
+      UPDATE investment_activities
+      SET status = ?,
+          updated_at = ?
+      WHERE id = ?
+        AND import_run_id = ?
+    `).run(input.status, updatedAt, input.investmentActivityId, input.importRunId)
+
+    const afterRow = selectInvestmentActivityStatusRow(input.importRunId, input.investmentActivityId)
+    if (afterRow) {
+      recordInvestmentActivityStatusAudit({
+        beforeRow: row,
+        afterRow,
+        audit: input.audit,
+        timestamp: updatedAt,
+      })
+    }
+
+    return {
+      id: row.id,
+      status: input.status,
+      updatedAt,
+    }
+  })()
 }

@@ -13,9 +13,15 @@ const store = require('../lib/ingest/store') as typeof import('../lib/ingest/sto
 const listRoute = require('../app/api/import/runs/route') as typeof import('../app/api/import/runs/route')
 const runRoute = require('../app/api/import/runs/[id]/route') as typeof import('../app/api/import/runs/[id]/route')
 const stagedRoute = require('../app/api/import/runs/[id]/staged/route') as typeof import('../app/api/import/runs/[id]/staged/route')
+const investmentActivitiesRoute = require('../app/api/import/runs/[id]/investment-activities/route') as typeof import('../app/api/import/runs/[id]/investment-activities/route')
+const investmentActivityRoute = require('../app/api/import/runs/[id]/investment-activities/[activityId]/route') as typeof import('../app/api/import/runs/[id]/investment-activities/[activityId]/route')
 
 interface RouteContext {
   params: Promise<{ id: string }>
+}
+
+interface InvestmentActivityRouteContext {
+  params: Promise<{ id: string; activityId: string }>
 }
 
 interface PromoteRoute {
@@ -34,9 +40,16 @@ function params(id: string): RouteContext {
   return { params: Promise.resolve({ id }) }
 }
 
+function investmentActivityParams(id: string, activityId: string): InvestmentActivityRouteContext {
+  return { params: Promise.resolve({ id, activityId }) }
+}
+
 function resetDb(): void {
   sqlite.exec(`
     DELETE FROM audit_log;
+    DELETE FROM investment_positions;
+    DELETE FROM investment_activities;
+    DELETE FROM securities;
     DELETE FROM staged_transactions;
     DELETE FROM transfer_matches;
     DELETE FROM transactions;
@@ -236,6 +249,117 @@ function seedImportRun(): { runId: string } {
   return { runId: run.id }
 }
 
+function seedInvestmentActivity(runId: string): string {
+  sqlite.prepare(`
+    INSERT INTO securities (
+      id,
+      source_connection_id,
+      source_symbol,
+      name,
+      instrument_type,
+      underlying_symbol,
+      contract_symbol,
+      option_type,
+      expiration_date,
+      strike_price,
+      beancount_commodity,
+      raw_payload,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'security-api-option',
+    'connection-api-csv',
+    '-FCT250620C50',
+    'FICTCORP CALL',
+    'option',
+    'FCT',
+    '-FCT250620C50',
+    'call',
+    '2025-06-20',
+    '50',
+    null,
+    JSON.stringify({ fixture: true }),
+    1777680000,
+    1777680000,
+  )
+
+  const activityId = 'investment-activity-api-option'
+  sqlite.prepare(`
+    INSERT INTO investment_activities (
+      id,
+      import_run_id,
+      raw_item_id,
+      staged_transaction_id,
+      source_connection_id,
+      source_account_id,
+      account_id,
+      security_id,
+      external_id,
+      source_item_key,
+      trade_date,
+      settlement_date,
+      activity_type,
+      instrument_type,
+      position_effect,
+      option_type,
+      quantity,
+      price,
+      amount,
+      currency,
+      commission,
+      fees,
+      accrued_interest,
+      cash_balance,
+      action,
+      description,
+      status,
+      validation_errors,
+      normalized_payload,
+      normalizer_version,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    activityId,
+    runId,
+    'raw-ready',
+    'staged-ready',
+    'connection-api-csv',
+    'source-account-api-checking',
+    'acct-api-checking',
+    'security-api-option',
+    'external-investment',
+    'key-investment',
+    1777680000,
+    '2026-05-02',
+    'buy',
+    'option',
+    'open',
+    'call',
+    '1',
+    '1.25',
+    '-125.65',
+    'USD',
+    '0.65',
+    null,
+    null,
+    '5000.00',
+    'YOU BOUGHT OPENING TRANSACTION CALL',
+    'FICTCORP CALL',
+    'blocked',
+    JSON.stringify(['Investment activity review/export is required before this parser profile can be promoted']),
+    JSON.stringify({ fixture: true }),
+    'fidelity-brokerage-csv-v1',
+    1777680000,
+    1777680000,
+  )
+
+  return activityId
+}
+
 beforeEach(() => {
   resetDb()
 })
@@ -381,6 +505,145 @@ test('GET /api/import/runs/:id/staged returns 404 JSON for a missing run', async
 
   assert.equal(response.status, 404)
   assert.equal(payload.error, 'Import run not found')
+})
+
+test('GET /api/import/runs/:id/investment-activities returns staged investment metadata', async () => {
+  const { runId } = seedImportRun()
+  const activityId = seedInvestmentActivity(runId)
+  const response = await investmentActivitiesRoute.GET(
+    request(`/api/import/runs/${runId}/investment-activities`),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    rows: Array<{
+      id: string
+      status: string
+      stagedTransactionId: string
+      stagedStatus: string
+      accountName: string
+      sourceAccountName: string
+      sourceSymbol: string
+      securityName: string
+      activityType: string
+      instrumentType: string
+      positionEffect: string
+      optionType: string
+      quantity: string
+      price: string
+      amount: string
+      commission: string
+      tradeDate: number
+      settlementDate: string
+      validationErrors: string[]
+      normalizerVersion: string
+    }>
+  }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.rows.length, 1)
+
+  const row = payload.rows[0]
+  assert.equal(row.id, activityId)
+  assert.equal(row.status, 'blocked')
+  assert.equal(row.stagedTransactionId, 'staged-ready')
+  assert.equal(row.stagedStatus, 'ready')
+  assert.equal(row.accountName, 'API Checking')
+  assert.equal(row.sourceAccountName, 'Imported Checking')
+  assert.equal(row.sourceSymbol, '-FCT250620C50')
+  assert.equal(row.securityName, 'FICTCORP CALL')
+  assert.equal(row.activityType, 'buy')
+  assert.equal(row.instrumentType, 'option')
+  assert.equal(row.positionEffect, 'open')
+  assert.equal(row.optionType, 'call')
+  assert.equal(row.quantity, '1')
+  assert.equal(row.price, '1.25')
+  assert.equal(row.amount, '-125.65')
+  assert.equal(row.commission, '0.65')
+  assert.equal(row.tradeDate, 1777680000)
+  assert.equal(row.settlementDate, '2026-05-02')
+  assert.deepEqual(row.validationErrors, [
+    'Investment activity review/export is required before this parser profile can be promoted',
+  ])
+  assert.equal(row.normalizerVersion, 'fidelity-brokerage-csv-v1')
+})
+
+test('GET /api/import/runs/:id/investment-activities returns 404 JSON for a missing run', async () => {
+  const response = await investmentActivitiesRoute.GET(
+    request('/api/import/runs/missing-run/investment-activities'),
+    params('missing-run'),
+  )
+  const payload = await response.json() as { error?: string }
+
+  assert.equal(response.status, 404)
+  assert.equal(payload.error, 'Import run not found')
+})
+
+test('PATCH /api/import/runs/:id/investment-activities/:activityId updates review status with audit', async () => {
+  const { runId } = seedImportRun()
+  const activityId = seedInvestmentActivity(runId)
+  const response = await investmentActivityRoute.PATCH(
+    request(`/api/import/runs/${runId}/investment-activities/${activityId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'reviewed', actor: 'tester', reason: 'investment review' }),
+    }),
+    investmentActivityParams(runId, activityId),
+  )
+  const payload = await response.json() as { id: string; status: string; updatedAt: number }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.id, activityId)
+  assert.equal(payload.status, 'reviewed')
+  assert.equal(typeof payload.updatedAt, 'number')
+
+  const row = sqlite.prepare(`
+    SELECT status
+    FROM investment_activities
+    WHERE id = ?
+  `).get(activityId) as { status: string }
+  assert.equal(row.status, 'reviewed')
+
+  const audit = sqlite.prepare(`
+    SELECT action,
+           actor,
+           reason,
+           before_values AS beforeValues,
+           after_values AS afterValues,
+           metadata
+    FROM audit_log
+    WHERE entity_type = 'investment_activity'
+      AND entity_id = ?
+  `).get(activityId) as {
+    action: string
+    actor: string
+    reason: string
+    beforeValues: string
+    afterValues: string
+    metadata: string
+  }
+  assert.equal(audit.action, 'investment_activity_review')
+  assert.equal(audit.actor, 'tester')
+  assert.equal(audit.reason, 'investment review')
+  assert.equal((JSON.parse(audit.beforeValues) as { investmentActivity: { status: string } }).investmentActivity.status, 'blocked')
+  assert.equal((JSON.parse(audit.afterValues) as { investmentActivity: { status: string } }).investmentActivity.status, 'reviewed')
+  assert.equal((JSON.parse(audit.metadata) as { importRunId: string }).importRunId, runId)
+})
+
+test('PATCH /api/import/runs/:id/investment-activities/:activityId rejects invalid status', async () => {
+  const { runId } = seedImportRun()
+  const activityId = seedInvestmentActivity(runId)
+  const response = await investmentActivityRoute.PATCH(
+    request(`/api/import/runs/${runId}/investment-activities/${activityId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'posted' }),
+    }),
+    investmentActivityParams(runId, activityId),
+  )
+  const payload = await response.json() as { error?: string }
+
+  assert.equal(response.status, 400)
+  assert.equal(payload.error, 'status must be blocked, needs_review, reviewed, or ignored')
 })
 
 const promoteServicePath = path.join(process.cwd(), 'lib', 'ingest', 'promote.ts')

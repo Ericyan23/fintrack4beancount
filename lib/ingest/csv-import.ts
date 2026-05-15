@@ -202,7 +202,7 @@ export function stageTransactionsCsv(
       : null
     const validationErrors = rowErrors(row, account)
     if (parserProfile?.blocksCashPromotion) {
-      validationErrors.push('Investment activity staging models are required before this parser profile can be promoted')
+      validationErrors.push('Investment activity review/export is required before this parser profile can be promoted')
     }
     const finalDisposition = sourceItemKey
       ? selectHistoricalFinalDisposition(connection.id, sourceItemKey, run.id)

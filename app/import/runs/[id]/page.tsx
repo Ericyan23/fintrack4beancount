@@ -5,7 +5,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 
 type StagedRow = Record<string, unknown>
+type InvestmentActivityRow = Record<string, unknown>
 type RowAction = 'save' | 'ignore' | 'delete' | 'restore' | 'cancelPending' | 'keepPending'
+type InvestmentActivityAction = 'review' | 'ignore' | 'block'
 type SummaryKey = 'raw' | 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted' | 'error' | 'canonical'
 type Summary = Record<SummaryKey, number | null>
 
@@ -55,6 +57,14 @@ interface ReplayNotice {
   reviewUrl: string
   rawReplayed: number
   stagedReplayed: number
+}
+
+interface InvestmentActivityCounts {
+  total: number
+  blocked: number
+  needsReview: number
+  reviewed: number
+  ignored: number
 }
 
 type RowStatusFilter = 'attention' | 'all' | 'error' | 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted'
@@ -162,6 +172,14 @@ function extractStagedRows(payload: unknown): StagedRow[] {
     if (Array.isArray(value)) return value.filter(isRecord)
   }
   return []
+}
+
+function extractInvestmentActivities(payload: unknown): InvestmentActivityRow[] {
+  if (Array.isArray(payload)) return payload.filter(isRecord)
+  if (!isRecord(payload)) return []
+
+  const rows = payload.rows
+  return Array.isArray(rows) ? rows.filter(isRecord) : []
 }
 
 function extractAccounts(payload: unknown): AccountInfo[] {
@@ -401,6 +419,67 @@ function rowValidationErrors(row: StagedRow): string {
   return messages.length > 0 ? messages.join('; ') : '-'
 }
 
+function arrayText(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+}
+
+function activityValidationErrors(row: InvestmentActivityRow): string {
+  const messages = arrayText(getFirst(row, ['validationErrors', 'validation_errors']))
+  return messages.length > 0 ? messages.join('; ') : '-'
+}
+
+function activityStatus(row: InvestmentActivityRow): string {
+  return stringValue(getFirst(row, ['status'])) || 'blocked'
+}
+
+function activityId(row: InvestmentActivityRow): string {
+  return stringValue(getFirst(row, ['id']))
+}
+
+function activityKey(row: InvestmentActivityRow, index: number): string {
+  return activityId(row) || `investment-activity-${index}`
+}
+
+function activityLabel(row: InvestmentActivityRow): string {
+  const activityType = stringValue(getFirst(row, ['activityType', 'activity_type'])) || 'other'
+  const instrumentType = stringValue(getFirst(row, ['instrumentType', 'instrument_type'])) || 'unknown'
+  const positionEffect = stringValue(getFirst(row, ['positionEffect', 'position_effect']))
+  return [activityType, instrumentType, positionEffect === 'none' ? '' : positionEffect]
+    .filter(Boolean)
+    .join(' / ')
+}
+
+function activitySecurityLabel(row: InvestmentActivityRow): string {
+  return stringValue(
+    getFirst(row, ['sourceSymbol', 'source_symbol']),
+    getFirst(row, ['beancountCommodity', 'beancount_commodity']),
+    getFirst(row, ['securityName', 'security_name']),
+  ) || '-'
+}
+
+function activityDescription(row: InvestmentActivityRow): string {
+  return stringValue(getFirst(row, ['description', 'action'])) || '-'
+}
+
+function activityOptionLabel(row: InvestmentActivityRow): string {
+  const optionType = stringValue(getFirst(row, ['optionType', 'option_type']))
+  const positionEffect = stringValue(getFirst(row, ['positionEffect', 'position_effect']))
+  const settlementDate = stringValue(getFirst(row, ['settlementDate', 'settlement_date']))
+  const parts = [
+    optionType,
+    positionEffect && positionEffect !== 'none' ? positionEffect : '',
+    settlementDate ? `settles ${settlementDate}` : '',
+  ].filter(Boolean)
+  return parts.length > 0 ? parts.join(' / ') : '-'
+}
+
+function investmentActivityActionLabel(action: InvestmentActivityAction): string {
+  if (action === 'review') return 'Reviewing...'
+  if (action === 'ignore') return 'Ignoring...'
+  return 'Blocking...'
+}
+
 function rowReconciliationStatus(row: StagedRow): string {
   return stringValue(getFirst(row, ['reconciliationStatus', 'reconciliation_status']))
 }
@@ -460,7 +539,7 @@ function statusClass(status: string): string {
   const normalized = status.toLowerCase()
   if (normalized === 'ready' || normalized === 'reviewed') return 'border-emerald-700 bg-emerald-900/30 text-emerald-200'
   if (normalized === 'merged' || normalized === 'canonical' || normalized === 'export_ready' || normalized === 'exported') return 'border-blue-700 bg-blue-900/30 text-blue-200'
-  if (normalized === 'needs_review') return 'border-amber-800 bg-amber-900/30 text-amber-200'
+  if (normalized === 'needs_review' || normalized === 'blocked') return 'border-amber-800 bg-amber-900/30 text-amber-200'
   if (normalized === 'ignored') return 'border-slate-600 bg-slate-700/50 text-slate-300'
   if (normalized === 'error' || normalized === 'failed') return 'border-red-800 bg-red-900/30 text-red-200'
   return 'border-slate-600 bg-slate-700/50 text-slate-300'
@@ -518,6 +597,7 @@ export default function ImportRunPage() {
   const [runInfo, setRunInfo] = useState<RunInfo | null>(null)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [rows, setRows] = useState<StagedRow[]>([])
+  const [investmentActivities, setInvestmentActivities] = useState<InvestmentActivityRow[]>([])
   const [accounts, setAccounts] = useState<AccountInfo[]>([])
   const [sourceAccounts, setSourceAccounts] = useState<SourceAccountMapping[]>([])
   const [accountsLoading, setAccountsLoading] = useState(false)
@@ -525,6 +605,8 @@ export default function ImportRunPage() {
   const [drafts, setDrafts] = useState<Record<string, EditDraft>>({})
   const [rowActions, setRowActions] = useState<Record<string, RowAction>>({})
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({})
+  const [investmentActions, setInvestmentActions] = useState<Record<string, InvestmentActivityAction>>({})
+  const [investmentErrors, setInvestmentErrors] = useState<Record<string, string>>({})
   const [mappingActions, setMappingActions] = useState<Record<string, boolean>>({})
   const [mappingErrors, setMappingErrors] = useState<Record<string, string>>({})
   const [statusFilter, setStatusFilter] = useState<RowStatusFilter>('attention')
@@ -570,15 +652,17 @@ export default function ImportRunPage() {
     setError(null)
 
     try {
-      const [runRes, stagedRes, sourceAccountsRes] = await Promise.all([
+      const [runRes, stagedRes, sourceAccountsRes, investmentActivitiesRes] = await Promise.all([
         fetch(`/api/import/runs/${encodeURIComponent(runId)}`),
         fetch(`/api/import/runs/${encodeURIComponent(runId)}/staged`),
         fetch(`/api/import/runs/${encodeURIComponent(runId)}/source-accounts`),
+        fetch(`/api/import/runs/${encodeURIComponent(runId)}/investment-activities`),
       ])
-      const [runPayload, stagedPayload, sourceAccountsPayload] = await Promise.all([
+      const [runPayload, stagedPayload, sourceAccountsPayload, investmentActivitiesPayload] = await Promise.all([
         readJson(runRes),
         readJson(stagedRes),
         readJson(sourceAccountsRes),
+        readJson(investmentActivitiesRes),
       ])
 
       if (!runRes.ok) {
@@ -593,12 +677,18 @@ export default function ImportRunPage() {
         setError(responseError(sourceAccountsRes, sourceAccountsPayload, 'Source account mapping'))
         return
       }
+      if (!investmentActivitiesRes.ok) {
+        setError(responseError(investmentActivitiesRes, investmentActivitiesPayload, 'Investment activities'))
+        return
+      }
 
       const nextRows = extractStagedRows(stagedPayload)
       setSourceAccounts(extractSourceAccounts(sourceAccountsPayload))
+      setInvestmentActivities(extractInvestmentActivities(investmentActivitiesPayload))
       setRunInfo(normalizeRun(runPayload, runId))
       setRows(nextRows)
       setRowErrors({})
+      setInvestmentErrors({})
       setMappingErrors({})
       setSummary(normalizeSummary([runPayload, stagedPayload], nextRows))
     } catch {
@@ -657,6 +747,25 @@ export default function ImportRunPage() {
 
     return base.filter(row => sourceAccountFilter === 'all' || rowSourceAccountId(row) === sourceAccountFilter)
   }, [attentionRows.length, sortedRows, sourceAccountFilter, statusFilter])
+  const investmentActivityCounts = useMemo<InvestmentActivityCounts>(() => {
+    const counts: InvestmentActivityCounts = {
+      total: investmentActivities.length,
+      blocked: 0,
+      needsReview: 0,
+      reviewed: 0,
+      ignored: 0,
+    }
+
+    for (const activity of investmentActivities) {
+      const status = activityStatus(activity)
+      if (status === 'blocked') counts.blocked++
+      else if (status === 'needs_review') counts.needsReview++
+      else if (status === 'reviewed') counts.reviewed++
+      else if (status === 'ignored') counts.ignored++
+    }
+
+    return counts
+  }, [investmentActivities])
   const errorCount = summary?.error ?? rows.filter(row => rowStatus(row).toLowerCase() === 'error').length
   const promoteBlockReason = useMemo(() => {
     if (unmappedSourceAccounts.length > 0) return `${unmappedSourceAccounts.length} source account${unmappedSourceAccounts.length === 1 ? '' : 's'} unmapped`
@@ -664,6 +773,72 @@ export default function ImportRunPage() {
     if (eligibleCount === 0) return 'No eligible rows'
     return null
   }, [eligibleCount, errorCount, unmappedSourceAccounts.length])
+
+  function setInvestmentActionState(key: string, action: InvestmentActivityAction | null) {
+    setInvestmentActions(prev => {
+      const next = { ...prev }
+      if (action) next[key] = action
+      else delete next[key]
+      return next
+    })
+  }
+
+  function setInvestmentErrorState(key: string, message: string | null) {
+    setInvestmentErrors(prev => {
+      const next = { ...prev }
+      if (message) next[key] = message
+      else delete next[key]
+      return next
+    })
+  }
+
+  async function updateInvestmentActivity(
+    activity: InvestmentActivityRow,
+    key: string,
+    action: InvestmentActivityAction,
+    status: string,
+  ) {
+    if (!runId) return
+
+    const id = activityId(activity)
+    if (!id) {
+      setInvestmentErrorState(key, 'Missing investment activity id')
+      return
+    }
+
+    setInvestmentActionState(key, action)
+    setInvestmentErrorState(key, null)
+    setError(null)
+    setNotice(null)
+    setReplayNotice(null)
+
+    try {
+      const res = await fetch(
+        `/api/import/runs/${encodeURIComponent(runId)}/investment-activities/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status,
+            actor: 'local',
+            reason: `investment_activity_${status}`,
+          }),
+        },
+      )
+      const payload = await readJson(res)
+
+      if (!res.ok) {
+        setInvestmentErrorState(key, responseError(res, payload, 'Investment activity'))
+        return
+      }
+
+      await loadRun(false)
+    } catch {
+      setInvestmentErrorState(key, 'Unable to update investment activity')
+    } finally {
+      setInvestmentActionState(key, null)
+    }
+  }
 
   async function promoteRun() {
     if (!runId) return
@@ -1122,6 +1297,130 @@ export default function ImportRunPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {investmentActivityCounts.total > 0 && (
+        <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+          <div className="flex flex-col gap-3 border-b border-slate-700 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-sm font-medium text-slate-300">Investment Activities</h2>
+              <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                <span>{investmentActivityCounts.total} total</span>
+                <span>{investmentActivityCounts.blocked} blocked</span>
+                <span>{investmentActivityCounts.needsReview} needs review</span>
+                <span>{investmentActivityCounts.reviewed} reviewed</span>
+                <span>{investmentActivityCounts.ignored} ignored</span>
+              </div>
+            </div>
+            <span className="rounded-full border border-amber-800 bg-amber-900/30 px-2 py-1 text-xs text-amber-200">
+              Fidelity staging
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <div className="min-w-[1520px]">
+              <div className="grid grid-cols-[120px_170px_230px_170px_130px_120px_160px_160px_minmax(260px,1fr)_210px] gap-3 border-b border-slate-700 px-4 py-2 text-xs text-slate-500">
+                <span>Status</span>
+                <span>Activity</span>
+                <span>Security</span>
+                <span>Account</span>
+                <span>Trade date</span>
+                <span>Quantity</span>
+                <span>Price / amount</span>
+                <span>Option</span>
+                <span>Validation</span>
+                <span>Actions</span>
+              </div>
+              {investmentActivities.map((activity, index) => {
+                const key = activityKey(activity, index)
+                const status = activityStatus(activity)
+                const busyAction = investmentActions[key]
+                const validationErrors = activityValidationErrors(activity)
+                const account = stringValue(
+                  getFirst(activity, ['accountName', 'account_name']),
+                  getFirst(activity, ['sourceAccountName', 'source_account_name']),
+                ) || '-'
+                const tradeDate = dateInputValue(getFirst(activity, ['tradeDate', 'trade_date'])) || '-'
+                const quantity = stringValue(getFirst(activity, ['quantity'])) || '-'
+                const price = stringValue(getFirst(activity, ['price'])) || '-'
+                const amount = stringValue(getFirst(activity, ['amount'])) || '-'
+                const commission = stringValue(getFirst(activity, ['commission']))
+                const fees = stringValue(getFirst(activity, ['fees']))
+                const feeText = [commission ? `commission ${commission}` : '', fees ? `fees ${fees}` : '']
+                  .filter(Boolean)
+                  .join(' / ')
+
+                return (
+                  <div
+                    key={key}
+                    className="grid grid-cols-[120px_170px_230px_170px_130px_120px_160px_160px_minmax(260px,1fr)_210px] items-start gap-3 border-b border-slate-700 px-4 py-2 text-sm last:border-b-0"
+                  >
+                    <span className={`inline-flex max-w-full rounded-full border px-2 py-0.5 text-xs ${statusClass(status)}`}>
+                      <span className="truncate">{stateLabel(status)}</span>
+                    </span>
+                    <span>
+                      <span className="block truncate text-slate-100">{activityLabel(activity)}</span>
+                      <span className="mt-1 block truncate text-[11px] text-slate-500">
+                        {activityDescription(activity)}
+                      </span>
+                    </span>
+                    <span>
+                      <span className="block truncate text-slate-100">{activitySecurityLabel(activity)}</span>
+                      <span className="mt-1 block truncate text-[11px] text-slate-500">
+                        {stringValue(getFirst(activity, ['securityName', 'security_name'])) || '-'}
+                      </span>
+                    </span>
+                    <span className="truncate">{account}</span>
+                    <span className="tabular-nums">{tradeDate}</span>
+                    <span className="tabular-nums">{quantity}</span>
+                    <span>
+                      <span className="block tabular-nums">{price}</span>
+                      <span className="mt-1 block tabular-nums text-[11px] text-slate-500">{amount}</span>
+                    </span>
+                    <span>
+                      <span className="block truncate">{activityOptionLabel(activity)}</span>
+                      {feeText && <span className="mt-1 block truncate text-[11px] text-slate-500">{feeText}</span>}
+                    </span>
+                    <span className={validationErrors === '-' ? 'text-slate-500' : 'text-red-200'}>
+                      {validationErrors}
+                    </span>
+                    <span className="space-y-1">
+                      <span className="flex flex-wrap gap-1.5">
+                        {status !== 'reviewed' && (
+                          <button
+                            onClick={() => updateInvestmentActivity(activity, key, 'review', 'reviewed')}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+                          >
+                            {busyAction === 'review' ? investmentActivityActionLabel(busyAction) : 'Mark reviewed'}
+                          </button>
+                        )}
+                        {status !== 'ignored' && (
+                          <button
+                            onClick={() => updateInvestmentActivity(activity, key, 'ignore', 'ignored')}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
+                          >
+                            {busyAction === 'ignore' ? investmentActivityActionLabel(busyAction) : 'Ignore'}
+                          </button>
+                        )}
+                        {status !== 'blocked' && (
+                          <button
+                            onClick={() => updateInvestmentActivity(activity, key, 'block', 'blocked')}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md border border-amber-800 bg-amber-950/50 px-2 py-1 text-xs text-amber-200 hover:bg-amber-900/70 disabled:opacity-60"
+                          >
+                            {busyAction === 'block' ? investmentActivityActionLabel(busyAction) : 'Block'}
+                          </button>
+                        )}
+                      </span>
+                      {investmentErrors[key] && <span className="block text-xs text-red-200">{investmentErrors[key]}</span>}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
       )}
 
       <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">

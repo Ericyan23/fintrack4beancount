@@ -233,7 +233,7 @@ test('uses the default account when the CSV has no account column', () => {
   assert.equal(staged.status, 'staged')
 })
 
-test('archives Fidelity brokerage CSV rows and blocks cash promotion until investment staging exists', () => {
+test('archives Fidelity brokerage CSV rows and blocks cash promotion until investment review/export exists', () => {
   const accountId = insertInvestmentAccount()
   const result = stageTransactionsCsv(
     readFixture('csv', 'fidelity-brokerage.csv'),
@@ -288,7 +288,7 @@ test('archives Fidelity brokerage CSV rows and blocks cash promotion until inves
   assert.equal(staged.status, 'error')
   assert.equal(staged.normalizerVersion, 'fidelity-brokerage-csv-v1')
   assert.deepEqual(JSON.parse(staged.validationErrors), [
-    'Investment activity staging models are required before this parser profile can be promoted',
+    'Investment activity review/export is required before this parser profile can be promoted',
   ])
 
   const normalizedPayload = JSON.parse(staged.normalizedPayload) as {
