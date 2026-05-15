@@ -134,6 +134,9 @@ export interface BeancountPreflightResult {
 interface TransactionRow {
   id: string
   accountId: string
+  sourceConnectionId: string | null
+  sourceAccountId: string | null
+  sourceItemKey: string | null
   accountName: string
   currency: string
   accountType: string
@@ -226,7 +229,17 @@ export function currentPeriod(): string {
   return new Date().toISOString().slice(0, 7)
 }
 
-function sourceIdForTransaction(row: Pick<TransactionRow, 'accountId' | 'id'>): string {
+function sourceIdForTransaction(row: Pick<TransactionRow, 'accountId' | 'id' | 'sourceConnectionId' | 'sourceAccountId' | 'sourceItemKey'>): string {
+  if (row.sourceConnectionId && row.sourceAccountId && row.sourceItemKey) {
+    return [
+      'fintrack',
+      'source',
+      encodeURIComponent(row.sourceConnectionId),
+      encodeURIComponent(row.sourceAccountId),
+      encodeURIComponent(row.sourceItemKey),
+    ].join(':')
+  }
+
   return `fintrack:${row.accountId}:${row.id}`
 }
 
@@ -265,6 +278,9 @@ function loadTransactions(startTs: number, endTs: number): TransactionRow[] {
     SELECT
       t.id,
       t.account_id AS accountId,
+      t.source_connection_id AS sourceConnectionId,
+      t.source_account_id AS sourceAccountId,
+      t.source_item_key AS sourceItemKey,
       a.name AS accountName,
       a.currency,
       a.account_type AS accountType,
@@ -318,6 +334,9 @@ function loadConfirmedTransferMatches(startTs: number, endTs: number): TransferM
       m.kind,
       out_t.id AS out_id,
       out_t.account_id AS out_accountId,
+      out_t.source_connection_id AS out_sourceConnectionId,
+      out_t.source_account_id AS out_sourceAccountId,
+      out_t.source_item_key AS out_sourceItemKey,
       out_a.name AS out_accountName,
       out_a.currency AS out_currency,
       out_a.account_type AS out_accountType,
@@ -330,6 +349,9 @@ function loadConfirmedTransferMatches(startTs: number, endTs: number): TransferM
       COALESCE(NULLIF(out_t.ledger_account, ''), out_t.category) AS out_category,
       in_t.id AS in_id,
       in_t.account_id AS in_accountId,
+      in_t.source_connection_id AS in_sourceConnectionId,
+      in_t.source_account_id AS in_sourceAccountId,
+      in_t.source_item_key AS in_sourceItemKey,
       in_a.name AS in_accountName,
       in_a.currency AS in_currency,
       in_a.account_type AS in_accountType,
@@ -353,6 +375,9 @@ function loadConfirmedTransferMatches(startTs: number, endTs: number): TransferM
     kind: string
     out_id: string
     out_accountId: string
+    out_sourceConnectionId: string | null
+    out_sourceAccountId: string | null
+    out_sourceItemKey: string | null
     out_accountName: string
     out_currency: string
     out_accountType: string
@@ -365,6 +390,9 @@ function loadConfirmedTransferMatches(startTs: number, endTs: number): TransferM
     out_category: string | null
     in_id: string
     in_accountId: string
+    in_sourceConnectionId: string | null
+    in_sourceAccountId: string | null
+    in_sourceItemKey: string | null
     in_accountName: string
     in_currency: string
     in_accountType: string
@@ -383,6 +411,9 @@ function loadConfirmedTransferMatches(startTs: number, endTs: number): TransferM
     outflow: {
       id: row.out_id,
       accountId: row.out_accountId,
+      sourceConnectionId: row.out_sourceConnectionId,
+      sourceAccountId: row.out_sourceAccountId,
+      sourceItemKey: row.out_sourceItemKey,
       accountName: row.out_accountName,
       currency: row.out_currency,
       accountType: row.out_accountType,
@@ -397,6 +428,9 @@ function loadConfirmedTransferMatches(startTs: number, endTs: number): TransferM
     inflow: {
       id: row.in_id,
       accountId: row.in_accountId,
+      sourceConnectionId: row.in_sourceConnectionId,
+      sourceAccountId: row.in_sourceAccountId,
+      sourceItemKey: row.in_sourceItemKey,
       accountName: row.in_accountName,
       currency: row.in_currency,
       accountType: row.in_accountType,

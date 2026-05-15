@@ -20,6 +20,9 @@ function resetDb(): void {
     DELETE FROM transfer_matches;
     DELETE FROM balance_assertions;
     DELETE FROM transactions;
+    DELETE FROM source_accounts;
+    DELETE FROM source_connections;
+    DELETE FROM sources;
     DELETE FROM accounts;
   `)
 }
@@ -67,10 +70,15 @@ function insertAccount(input: {
 function insertTransaction(input: {
   id: string
   accountId: string
+  sourceConnectionId?: string | null
+  sourceAccountId?: string | null
+  externalId?: string | null
+  sourceItemKey?: string | null
   amount: string
   description: string
   category: string | null
   postedAt?: number
+  source?: string
 }): void {
   const postedAt = input.postedAt ?? posted
 
@@ -78,6 +86,10 @@ function insertTransaction(input: {
     INSERT INTO transactions (
       id,
       account_id,
+      source_connection_id,
+      source_account_id,
+      external_id,
+      source_item_key,
       source,
       posted,
       transacted_at,
@@ -92,11 +104,15 @@ function insertTransaction(input: {
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     input.id,
     input.accountId,
-    'csv',
+    input.sourceConnectionId ?? null,
+    input.sourceAccountId ?? null,
+    input.externalId ?? null,
+    input.sourceItemKey ?? null,
+    input.source ?? 'csv',
     postedAt,
     postedAt,
     input.amount,
@@ -110,6 +126,20 @@ function insertTransaction(input: {
     postedAt,
     postedAt,
   )
+}
+
+function expectedProvenanceSourceId(input: {
+  sourceConnectionId: string
+  sourceAccountId: string
+  sourceItemKey: string
+}): string {
+  return [
+    'fintrack',
+    'source',
+    encodeURIComponent(input.sourceConnectionId),
+    encodeURIComponent(input.sourceAccountId),
+    encodeURIComponent(input.sourceItemKey),
+  ].join(':')
 }
 
 function insertSplit(input: {
@@ -215,6 +245,84 @@ test('preflight emits a cash transaction ledger intent for a normal transaction'
       },
     ],
   )
+})
+
+test('preflight uses provenance source id for cash transactions across editable changes', () => {
+  writeLedger([
+    'Assets:US:Banks:IntentChecking',
+    'Expenses:Food:Coffee',
+    'Expenses:Office',
+  ])
+  insertAccount({
+    id: 'acct-intent-checking',
+    name: 'Intent Checking',
+    beancountAccount: 'Assets:US:Banks:IntentChecking',
+  })
+  const provenance = {
+    sourceConnectionId: 'csv:manual',
+    sourceAccountId: 'source-account:intent-checking',
+    sourceItemKey: 'source-account:source-account:intent-checking:external:bank-csv-001',
+  }
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO sources (id, kind, name, status, metadata, created_at, updated_at)
+    VALUES (?, ?, ?, ?, NULL, ?, ?)
+  `).run('csv', 'csv', 'CSV Import', 'active', posted, posted)
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO source_connections (id, source_id, name, status, config, created_at, updated_at)
+    VALUES (?, ?, ?, ?, NULL, ?, ?)
+  `).run(provenance.sourceConnectionId, 'csv', 'Manual CSV Uploads', 'active', posted, posted)
+  sqlite.prepare(`
+    INSERT OR IGNORE INTO source_accounts (
+      id, source_connection_id, fintrack_account_id, external_account_id,
+      name, currency, status, raw_payload, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+  `).run(
+    provenance.sourceAccountId,
+    provenance.sourceConnectionId,
+    'acct-intent-checking',
+    'intent-checking',
+    'Intent Checking',
+    'USD',
+    'active',
+    posted,
+    posted,
+  )
+  insertTransaction({
+    id: 'txn-intent-provenance',
+    accountId: 'acct-intent-checking',
+    externalId: 'bank-csv-001',
+    ...provenance,
+    amount: '-4.75',
+    description: 'Coffee',
+    category: 'Expenses:Food:Coffee',
+  })
+
+  const before = runBeancountPreflight({ period: '2026-04', beancountRoot })
+  const expectedSourceId = expectedProvenanceSourceId(provenance)
+
+  sqlite.prepare(`
+    UPDATE transactions
+    SET description = ?,
+        ledger_account = ?,
+        updated_at = ?
+    WHERE id = ?
+  `).run('Office coffee', 'Expenses:Office', posted + 1, 'txn-intent-provenance')
+  sqlite.prepare(`
+    UPDATE accounts
+    SET name = ?,
+        updated_at = ?
+    WHERE id = ?
+  `).run('Renamed Checking', posted + 1, 'acct-intent-checking')
+
+  const after = runBeancountPreflight({ period: '2026-04', beancountRoot })
+
+  assert.equal(before.ok, true)
+  assert.equal(before.exportableIntents[0].sourceId, expectedSourceId)
+  assert.equal(after.ok, true)
+  assert.equal(after.exportableIntents[0].sourceId, expectedSourceId)
+  assert.equal(after.exportableTransactions[0].description, 'Office coffee')
+  assert.equal(after.exportableTransactions[0].category, 'Expenses:Office')
 })
 
 test('preflight emits a split transaction ledger intent with split postings and parent source id', () => {

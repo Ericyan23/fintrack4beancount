@@ -225,6 +225,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] fallback to deterministic hash of source account, date, amount, description, and raw payload.
   - [x] include normalizer version where needed.
 - [x] Ensure source_id used by Beancount export comes from provenance and does not change when the user edits description or category.
+  - Progress: cash transaction export now prefers `source_connection_id` + `source_account_id` + `source_item_key` for Beancount `source_id`, with legacy/manual rows falling back to the older account/id source id.
 
 ### Import Pipeline
 
