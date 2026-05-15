@@ -29,17 +29,32 @@ backups/
 *.tar.gz
 *.tgz
 
-# Versioned test fixtures
+# Versioned test fixtures: allowlist sanitized files only.
 !fixtures/
-!fixtures/**/
-!fixtures/**/*.csv
-!fixtures/**/*.bean
+!fixtures/csv/
+!fixtures/csv/duplicate-import.csv
+!fixtures/csv/fidelity-brokerage.csv
+!fixtures/csv/generic-bank.csv
+!fixtures/beancount/
+!fixtures/beancount/expected-draft.bean
+fixtures/private/
+fixtures/**/private/
+private-fixtures/
+scratch/
 
 # Private/generated SimpleFIN fixture material
 fixtures/simplefin/*.json
 !fixtures/simplefin/sample-payload.json
 !fixtures/simplefin/multi-account-pending.json
 scripts/sanitize-simplefin-fixture.mjs
+
+# Legacy V1/local experiment surfaces. Keep these out of V2 commits unless
+# they are deliberately restored through review.
+components/NetWorthChart.tsx
+components/SpendingChart.tsx
+components/SyncButton.tsx
+lib/import/
+lib/sync/simplefin.ts
 
 # Local environment
 .env

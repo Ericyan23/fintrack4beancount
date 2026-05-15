@@ -32,3 +32,10 @@ tsconfig.tsbuildinfo
 *.tar.gz
 *.tgz
 README.local.md
+
+# Local V1/experimental files that may exist untracked during V2 work.
+components/NetWorthChart.tsx
+components/SpendingChart.tsx
+components/SyncButton.tsx
+lib/import
+lib/sync/simplefin.ts
