@@ -393,8 +393,10 @@ Goal: make repeated operation reliable and auditable.
     - Progress: rule-driven reclassification and post-import enrichment write `rule_application` audit entries with before/after classification fields and source provenance metadata.
   - [x] export run creation
     - Progress: successful Beancount handoff writes an `export_run_creation` audit entry linked to the `export_runs` row.
-- [ ] Merge or rename `/categories` into Ledger Accounts & Rules.
-- [ ] Improve rule management around ledger accounts and review statuses.
+- [x] Merge or rename `/categories` into Ledger Accounts & Rules.
+  - Progress: primary navigation is Rules-first, Rules embeds ledger account management, and `/categories` remains a compatibility taxonomy route/API for older links.
+- [x] Improve rule management around ledger accounts and review statuses.
+  - Progress: rules can be edited in place, API PATCH validates updates, and rule rows show whether the target ledger account auto-reviews or sends transactions to manual review.
 
 ## v2.2
 

@@ -5,6 +5,8 @@ import type { Rule } from '@/lib/db/schema'
 import CategorySelect from '@/components/CategorySelect'
 import CategoryManager from '@/components/CategoryManager'
 
+const REVIEW_LEDGER_ACCOUNTS = new Set(['Expenses:Review', 'Income:Review', 'Equity:Review'])
+
 interface CategoryStat {
   name: string
   is_default: number
@@ -42,6 +44,10 @@ export default function RulesPage() {
   const [classifyResult, setClassifyResult] = useState<{ suggested: number; remaining: number; error?: string; info?: string } | null>(null)
   const [catStats, setCatStats] = useState<CategoryStat[]>([])
   const [showCatManager, setShowCatManager] = useState(false)
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
+  const [editPattern, setEditPattern] = useState('')
+  const [editCategory, setEditCategory] = useState('')
+  const [editPriority, setEditPriority] = useState(0)
 
 
   const loadRules = useCallback(async () => {
@@ -76,6 +82,43 @@ export default function RulesPage() {
       setCategory('')
       setPriority(0)
     }
+  }
+
+  function startEdit(rule: Rule) {
+    if (!rule.id) return
+    setEditingRuleId(rule.id)
+    setEditPattern(rule.pattern)
+    setEditCategory(rule.category)
+    setEditPriority(rule.priority)
+    setError(null)
+  }
+
+  function cancelEdit() {
+    setEditingRuleId(null)
+    setEditPattern('')
+    setEditCategory('')
+    setEditPriority(0)
+  }
+
+  async function saveRule(id: number) {
+    setError(null)
+    const res = await fetch('/api/rules', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        pattern: editPattern,
+        category: editCategory,
+        priority: editPriority,
+      }),
+    })
+    const data = (await res.json()) as { rules?: Rule[]; error?: string }
+    if (data.error) {
+      setError(data.error)
+      return
+    }
+    setRules(data.rules ?? [])
+    cancelEdit()
   }
 
   async function deleteRule(id: number) {
@@ -155,6 +198,16 @@ export default function RulesPage() {
       }
     }
     setTestResult('No matching rule (no ledger account)')
+  }
+
+  function reviewStatusLabel(categoryName: string): string {
+    return REVIEW_LEDGER_ACCOUNTS.has(categoryName) ? 'Needs review' : 'Auto-reviewed'
+  }
+
+  function reviewStatusClass(categoryName: string): string {
+    return REVIEW_LEDGER_ACCOUNTS.has(categoryName)
+      ? 'border-amber-900/70 bg-amber-950/40 text-amber-300'
+      : 'border-emerald-900/70 bg-emerald-950/40 text-emerald-300'
   }
 
   return (
@@ -309,30 +362,84 @@ export default function RulesPage() {
           </div>
         ) : (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-            <div className="hidden md:grid grid-cols-[60px_1fr_1fr_60px_80px] gap-4 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
+            <div className="hidden md:grid grid-cols-[70px_1fr_1fr_120px_60px_120px] gap-4 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
               <span>Priority</span>
               <span>Pattern (regex)</span>
               <span>Ledger account</span>
+              <span>Result</span>
               <span>ID</span>
               <span>Actions</span>
             </div>
             {rules.map((rule, i) => (
               <div
                 key={rule.id}
-                className={`flex flex-col md:grid md:grid-cols-[60px_1fr_1fr_60px_80px] gap-2 md:gap-4 px-4 py-3 ${
+                className={`flex flex-col md:grid md:grid-cols-[70px_1fr_1fr_120px_60px_120px] gap-2 md:gap-4 px-4 py-3 ${
                   i > 0 ? 'border-t border-slate-700' : ''
                 }`}
               >
-                <span className="text-blue-400 font-mono text-sm">{rule.priority}</span>
-                <code className="text-amber-300 text-sm font-mono break-all">{rule.pattern}</code>
-                <span className="text-slate-300 text-sm">{rule.category}</span>
-                <span className="text-slate-500 text-xs">#{rule.id}</span>
-                <button
-                  onClick={() => deleteRule(rule.id!)}
-                  className="text-red-400 hover:text-red-300 text-xs"
-                >
-                  Delete
-                </button>
+                {editingRuleId === rule.id ? (
+                  <>
+                    <input
+                      type="number"
+                      value={editPriority}
+                      onChange={e => setEditPriority(Number.isFinite(Number(e.target.value)) ? parseInt(e.target.value, 10) : 0)}
+                      className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100"
+                    />
+                    <input
+                      type="text"
+                      value={editPattern}
+                      onChange={e => setEditPattern(e.target.value)}
+                      className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100"
+                    />
+                    <CategorySelect
+                      value={editCategory}
+                      onChange={setEditCategory}
+                      className="w-full py-1 text-xs"
+                    />
+                    <span className={`w-fit rounded-full border px-2 py-0.5 text-[11px] ${reviewStatusClass(editCategory)}`}>
+                      {reviewStatusLabel(editCategory)}
+                    </span>
+                    <span className="text-slate-500 text-xs">#{rule.id}</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => saveRule(rule.id!)}
+                        className="text-emerald-300 hover:text-emerald-200 text-xs"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="text-slate-400 hover:text-slate-300 text-xs"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-blue-400 font-mono text-sm">{rule.priority}</span>
+                    <code className="text-amber-300 text-sm font-mono break-all">{rule.pattern}</code>
+                    <span className="text-slate-300 text-sm">{rule.category}</span>
+                    <span className={`w-fit rounded-full border px-2 py-0.5 text-[11px] ${reviewStatusClass(rule.category)}`}>
+                      {reviewStatusLabel(rule.category)}
+                    </span>
+                    <span className="text-slate-500 text-xs">#{rule.id}</span>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => startEdit(rule)}
+                        className="text-blue-300 hover:text-blue-200 text-xs"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => deleteRule(rule.id!)}
+                        className="text-red-400 hover:text-red-300 text-xs"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
