@@ -250,14 +250,20 @@ test('GET /api/import/runs/:id returns the import run and review summary', async
   const { runId } = seedImportRun()
   const response = await runRoute.GET(request(`/api/import/runs/${runId}`), params(runId))
   const payload = await response.json() as {
-    run: { id: string; sourceConnectionId: string; status: string; itemCount: number }
+    run: { id: string; sourceConnectionId: string; status: string; lifecycleState: string; itemCount: number }
     summary: Record<string, number>
+    lifecycle: {
+      raw: Record<string, number>
+      staged: Record<string, number>
+      canonical: Record<string, number>
+    }
   }
 
   assert.equal(response.status, 200)
   assert.equal(payload.run.id, runId)
   assert.equal(payload.run.sourceConnectionId, 'connection-api-csv')
   assert.equal(payload.run.status, 'completed')
+  assert.equal(payload.run.lifecycleState, 'reviewed')
   assert.equal(payload.run.itemCount, 4)
   assert.deepEqual(payload.summary, {
     raw: 4,
@@ -268,6 +274,39 @@ test('GET /api/import/runs/:id returns the import run and review summary', async
     deleted: 0,
     error: 1,
     canonical: 1,
+  })
+  assert.deepEqual(payload.lifecycle.raw, {
+    raw_imported: 4,
+    staged: 0,
+    needs_review: 0,
+    reviewed: 0,
+    ignored: 0,
+    deleted: 0,
+    export_ready: 0,
+    exported: 0,
+    failed: 0,
+  })
+  assert.deepEqual(payload.lifecycle.staged, {
+    raw_imported: 0,
+    staged: 1,
+    needs_review: 1,
+    reviewed: 1,
+    ignored: 0,
+    deleted: 0,
+    export_ready: 1,
+    exported: 0,
+    failed: 0,
+  })
+  assert.deepEqual(payload.lifecycle.canonical, {
+    raw_imported: 0,
+    staged: 0,
+    needs_review: 1,
+    reviewed: 0,
+    ignored: 0,
+    deleted: 0,
+    export_ready: 0,
+    exported: 0,
+    failed: 0,
   })
 })
 
@@ -286,6 +325,7 @@ test('GET /api/import/runs/:id/staged returns staged rows with source account na
     rows: Array<{
       id: string
       status: string
+      lifecycleState: string
       accountId: string | null
       sourceAccountId: string | null
       sourceAccountName: string | null
@@ -308,6 +348,7 @@ test('GET /api/import/runs/:id/staged returns staged rows with source account na
   const ready = payload.rows.find(row => row.id === 'staged-ready')
   assert.ok(ready)
   assert.equal(ready.status, 'ready')
+  assert.equal(ready.lifecycleState, 'reviewed')
   assert.equal(ready.accountId, 'acct-api-checking')
   assert.equal(ready.sourceAccountId, 'source-account-api-checking')
   assert.equal(ready.sourceAccountName, 'Imported Checking')
@@ -323,9 +364,11 @@ test('GET /api/import/runs/:id/staged returns staged rows with source account na
   const merged = payload.rows.find(row => row.id === 'staged-merged')
   assert.ok(merged)
   assert.equal(merged.transactionId, 'txn-merged')
+  assert.equal(merged.lifecycleState, 'export_ready')
 
   const error = payload.rows.find(row => row.id === 'staged-error')
   assert.ok(error)
+  assert.equal(error.lifecycleState, 'needs_review')
   assert.deepEqual(error.validationErrors, ['Missing posted date'])
 })
 
@@ -554,6 +597,7 @@ describe('GET /api/import/runs', () => {
       runs: Array<{
         id: string
         status: string
+        lifecycleState: string
         itemCount: number
         connectionName: string | null
         sourceKind: string | null
@@ -569,6 +613,7 @@ describe('GET /api/import/runs', () => {
     const run = payload.runs[0]
     assert.equal(run.id, runId)
     assert.equal(run.status, 'completed')
+    assert.equal(run.lifecycleState, 'reviewed')
     assert.equal(run.itemCount, 4)
     assert.equal(run.connectionName, 'API CSV Connection')
     assert.equal(run.sourceKind, 'csv')

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { sqlite } from '@/lib/db'
+import { stagedTransactionLifecycleState } from '@/lib/ingest/lifecycle'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -8,6 +9,7 @@ interface RouteParams {
 interface StagedImportRunRow {
   id: string
   status: string
+  lifecycleState: string
   accountId: string | null
   accountName: string | null
   sourceAccountId: string | null
@@ -30,7 +32,7 @@ interface StagedImportRunRow {
   updatedAt: number
 }
 
-interface StagedImportRunDbRow extends Omit<StagedImportRunRow, 'pending' | 'tags' | 'validationErrors'> {
+interface StagedImportRunDbRow extends Omit<StagedImportRunRow, 'lifecycleState' | 'pending' | 'tags' | 'validationErrors'> {
   pending: number
   tags: string | null
   validationErrors: string | null
@@ -86,6 +88,9 @@ function loadStagedRows(importRunId: string): StagedImportRunRow[] {
     pending: Boolean(row.pending),
     tags: parseTags(row.tags),
     validationErrors: parseValidationErrors(row.validationErrors),
+  })).map(row => ({
+    ...row,
+    lifecycleState: stagedTransactionLifecycleState(row),
   }))
 }
 

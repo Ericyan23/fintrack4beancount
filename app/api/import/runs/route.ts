@@ -4,6 +4,7 @@ import { sqlite } from '@/lib/db'
 interface RunRow {
   id: string
   status: string
+  lifecycleState: string
   itemCount: number
   startedAt: number | null
   error: string | null
@@ -19,6 +20,11 @@ export async function GET(): Promise<NextResponse> {
     SELECT
       ir.id,
       ir.status,
+      CASE
+        WHEN ir.status = 'failed' THEN 'failed'
+        WHEN ir.status = 'completed' THEN 'reviewed'
+        ELSE 'raw_imported'
+      END AS lifecycleState,
       ir.item_count                                                              AS itemCount,
       ir.started_at                                                              AS startedAt,
       ir.error,

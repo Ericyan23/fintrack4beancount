@@ -226,6 +226,18 @@ function rowStatus(row: StagedRow): string {
   return stringValue(getFirst(row, ['status', 'stageStatus', 'state'])) || 'staged'
 }
 
+function rowLifecycleState(row: StagedRow): string {
+  return stringValue(getFirst(row, ['lifecycleState', 'lifecycle_state'])) || rowStatus(row)
+}
+
+function stateLabel(value: string): string {
+  return value
+    .split('_')
+    .filter(Boolean)
+    .map(part => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`)
+    .join(' ')
+}
+
 function normalizeSummary(payloads: unknown[], rows: StagedRow[]): Summary {
   const summary: Summary = {
     raw: null,
@@ -423,17 +435,20 @@ function rowNeedsAccountMapping(row: StagedRow): boolean {
 }
 
 function rowNeedsAttention(row: StagedRow): boolean {
-  return rowStatus(row).toLowerCase() === 'error' || rowNeedsAccountMapping(row)
+  const lifecycleState = rowLifecycleState(row).toLowerCase()
+  return lifecycleState === 'needs_review' || lifecycleState === 'failed' || rowNeedsAccountMapping(row)
 }
 
 function rowPriority(row: StagedRow): number {
+  const lifecycleState = rowLifecycleState(row).toLowerCase()
   const status = rowStatus(row).toLowerCase()
-  if (status === 'error') return 0
+  if (lifecycleState === 'failed') return 0
+  if (lifecycleState === 'needs_review') return 1
   if (rowNeedsAccountMapping(row)) return 1
-  if (status === 'ready') return 2
+  if (lifecycleState === 'reviewed') return 2
   if (status === 'staged') return 3
-  if (status === 'merged') return 4
-  if (status === 'ignored' || status === 'deleted') return 5
+  if (lifecycleState === 'export_ready' || lifecycleState === 'exported') return 4
+  if (lifecycleState === 'ignored' || lifecycleState === 'deleted') return 5
   return 6
 }
 
@@ -443,10 +458,11 @@ function sourceAccountLabel(sourceAccount: SourceAccountMapping): string {
 
 function statusClass(status: string): string {
   const normalized = status.toLowerCase()
-  if (normalized === 'ready') return 'border-emerald-700 bg-emerald-900/30 text-emerald-200'
-  if (normalized === 'merged' || normalized === 'canonical') return 'border-blue-700 bg-blue-900/30 text-blue-200'
+  if (normalized === 'ready' || normalized === 'reviewed') return 'border-emerald-700 bg-emerald-900/30 text-emerald-200'
+  if (normalized === 'merged' || normalized === 'canonical' || normalized === 'export_ready' || normalized === 'exported') return 'border-blue-700 bg-blue-900/30 text-blue-200'
+  if (normalized === 'needs_review') return 'border-amber-800 bg-amber-900/30 text-amber-200'
   if (normalized === 'ignored') return 'border-slate-600 bg-slate-700/50 text-slate-300'
-  if (normalized === 'error') return 'border-red-800 bg-red-900/30 text-red-200'
+  if (normalized === 'error' || normalized === 'failed') return 'border-red-800 bg-red-900/30 text-red-200'
   return 'border-slate-600 bg-slate-700/50 text-slate-300'
 }
 
@@ -1164,6 +1180,7 @@ export default function ImportRunPage() {
               {displayedRows.map((row, index) => {
                 const key = rowKey(row, index)
                 const status = rowStatus(row)
+                const lifecycleState = rowLifecycleState(row)
                 const draft = drafts[key] ?? draftFromRow(row)
                 const locked = rowIsLocked(row)
                 const restorable = rowIsRestorable(row)
@@ -1187,9 +1204,12 @@ export default function ImportRunPage() {
                     className="grid grid-cols-[100px_220px_130px_130px_minmax(260px,1fr)_180px_220px_190px_90px_minmax(220px,1fr)_190px] items-start gap-3 border-b border-slate-700 px-4 py-2 text-sm last:border-b-0"
                   >
                     <span>
-                      <span className={`inline-flex max-w-full rounded-full border px-2 py-0.5 text-xs ${statusClass(status)}`}>
-                        <span className="truncate">{status}</span>
+                      <span className={`inline-flex max-w-full rounded-full border px-2 py-0.5 text-xs ${statusClass(lifecycleState)}`}>
+                        <span className="truncate">{stateLabel(lifecycleState)}</span>
                       </span>
+                      {status !== lifecycleState && (
+                        <span className="mt-1 block truncate text-[11px] text-slate-500">{status}</span>
+                      )}
                     </span>
                     <span className="space-y-1">
                       <select

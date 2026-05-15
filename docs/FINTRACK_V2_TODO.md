@@ -197,17 +197,17 @@ Beancount preparation system for SimpleFIN and generic CSV.
 
 ### State Machine
 
-- [ ] Define explicit states for raw/staged/canonical records:
-  - [ ] `raw_imported`
+- [x] Define explicit states for raw/staged/canonical records:
+  - [x] `raw_imported`
   - [x] `staged`
-  - [ ] `needs_review`
-  - [ ] `reviewed`
+  - [x] `needs_review`
+  - [x] `reviewed`
   - [x] `ignored`
   - [x] `deleted`
-  - [ ] `export_ready`
-  - [ ] `exported`
-  - [ ] `failed`
-  - Progress: current implementation has raw `pending/staged/ignored/error`, staged `staged/ready/merged/ignored/deleted/error`, and import run `pending/running/completed/failed`; final naming still needs consolidation.
+  - [x] `export_ready`
+  - [x] `exported`
+  - [x] `failed`
+  - Progress: `lib/ingest/lifecycle.ts` defines the v2 lifecycle state vocabulary and maps legacy raw/staged/canonical persisted statuses into explicit `lifecycleState` values; import run APIs now return lifecycle summaries while preserving old `status` fields for compatibility.
 - [x] Define immutable source facts:
   - [x] raw payload
   - [x] payload hash
