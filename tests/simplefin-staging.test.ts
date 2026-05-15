@@ -3,6 +3,7 @@ import { after, beforeEach, test } from 'node:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { fakeSimpleFinAccessUrl } from './helpers/simplefin'
 import { readJsonFixture } from './helpers/fixtures'
 import type { SimpleFinPayload } from '../lib/ingest/simplefin'
 
@@ -416,7 +417,7 @@ test('redacts SimpleFIN connection config secrets before persisting staging meta
     sourceConnectionName: 'SimpleFIN Fixture Connection',
     config: {
       mode: 'shadow',
-      accessUrl: 'https://fixture-user:fixture-pass@simplefin.example.test/access',
+      accessUrl: fakeSimpleFinAccessUrl(),
       nested: {
         authorization: 'Basic secret',
         token: 'secret-token',

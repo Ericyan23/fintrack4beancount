@@ -1,6 +1,7 @@
 .git
 .github
 .next
+.next-trash-*
 node_modules
 data
 /handoff
@@ -24,6 +25,14 @@ tsconfig.tsbuildinfo
 *.bean
 *.beancount
 *.ledger
+*.ofx
+*.qfx
+*.qif
+*.pdf
+*.xls
+*.xlsx
+*.xlsm
+*.ods
 *.bak
 *.backup
 *.dump

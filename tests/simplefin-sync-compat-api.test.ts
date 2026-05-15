@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { readJsonFixture } from './helpers/fixtures'
+import { fakeSimpleFinAccessUrl } from './helpers/simplefin'
 import type { SimpleFinPayload } from '../lib/ingest/simplefin'
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-simplefin-sync-compat-api-'))
@@ -74,7 +75,7 @@ after(() => {
 
 test('POST /api/sync stages SimpleFIN payloads without canonical writes', async () => {
   const payload = readJsonFixture<SimpleFinPayload>('simplefin', 'multi-account-pending.json')
-  setSetting('simplefin_access_url', 'https://fixture-user:fixture-pass@simplefin.example.test/access')
+  setSetting('simplefin_access_url', fakeSimpleFinAccessUrl())
   setFetch(async () => new Response(JSON.stringify(payload), {
     status: 200,
     headers: { 'content-type': 'application/json' },

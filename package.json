@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node scripts/sanitize-standalone-build.mjs",
+    "build": "node scripts/clean-next-build.mjs && next build && node scripts/sanitize-standalone-build.mjs",
     "start": "next start",
     "test": "node --import tsx --test tests/*.test.ts",
     "lint": "next lint",

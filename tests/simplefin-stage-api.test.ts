@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { readJsonFixture } from './helpers/fixtures'
+import { fakeSimpleFinAccessUrl } from './helpers/simplefin'
 import type { SimpleFinPayload } from '../lib/ingest/simplefin'
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-simplefin-stage-api-'))
@@ -92,7 +93,7 @@ test('POST /api/import/simplefin/stage returns 400 when SimpleFIN is not configu
 test('POST /api/import/simplefin/stage stages fetched SimpleFIN payload without canonical transactions', async () => {
   const payload = readJsonFixture<SimpleFinPayload>('simplefin', 'multi-account-pending.json')
   const requests: Array<{ url: string; authorization: string | null }> = []
-  setSetting('simplefin_access_url', 'https://fixture-user:fixture-pass@simplefin.example.test/access')
+  setSetting('simplefin_access_url', fakeSimpleFinAccessUrl())
   setFetch(async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
     const headers = new Headers(init?.headers)
@@ -137,7 +138,7 @@ test('POST /api/import/simplefin/stage stages fetched SimpleFIN payload without 
 })
 
 test('POST /api/import/simplefin/stage does not leak access URL credentials on fetch errors', async () => {
-  setSetting('simplefin_access_url', 'https://fixture-user:fixture-pass@simplefin.example.test/access')
+  setSetting('simplefin_access_url', fakeSimpleFinAccessUrl())
   setFetch(async () => {
     throw new Error('fixture-user fixture-pass network failure')
   })

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readJsonFixture } from './helpers/fixtures'
+import { fakeSimpleFinAccessUrl } from './helpers/simplefin'
 import type { SimpleFinPayload } from '../lib/ingest/simplefin'
 
 interface SimpleFinAdapterApi {
@@ -57,7 +58,7 @@ test('SimpleFIN adapter fetches fixture payload through the source adapter bound
   }
 
   const result = await api.fetchSimpleFINPayload(
-    'https://fixture-user:fixture-pass@simplefin.example.test/access',
+    fakeSimpleFinAccessUrl(),
     {
       startDate: 1774224000,
       pending: true,
@@ -103,7 +104,10 @@ test('SimpleFIN adapter decodes URL-encoded credentials before building Basic au
   }
 
   await api.fetchSimpleFINPayload(
-    'https://fixture-user%40example.test:fixture%3Apass@simplefin.example.test/access',
+    fakeSimpleFinAccessUrl({
+      username: 'fixture-user@example.test',
+      password: 'fixture:pass',
+    }),
     {
       startDate: 1774224000,
       fetchImpl: fakeFetch,
