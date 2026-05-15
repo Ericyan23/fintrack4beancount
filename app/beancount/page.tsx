@@ -374,6 +374,9 @@ function InvestmentActivityRow({ activity }: { activity: PreflightInvestmentActi
   const label = [activity.activityType, activity.instrumentType, activity.positionEffect === 'none' ? '' : activity.positionEffect]
     .filter(Boolean)
     .join(' / ')
+  const securityLabel = activity.activityType === 'dividend' || activity.activityType === 'interest'
+    ? (activity.beancountCommodity ?? activity.sourceSymbol ?? 'Not required')
+    : (activity.beancountCommodity ?? activity.sourceSymbol ?? 'Unmapped')
 
   return (
     <article className="rounded-xl border border-slate-700 bg-slate-800 p-3">
@@ -387,7 +390,7 @@ function InvestmentActivityRow({ activity }: { activity: PreflightInvestmentActi
           <p className="mt-1 truncate text-sm font-medium text-slate-100">{activity.description}</p>
           <div className="mt-2 grid gap-1 text-xs md:grid-cols-2">
             <DetailLine label="account" value={activity.beancountAccount ?? 'Unmapped'} />
-            <DetailLine label="security" value={activity.beancountCommodity ?? activity.sourceSymbol ?? 'Unmapped'} />
+            <DetailLine label="security" value={securityLabel} />
             <DetailLine label="quantity" value={activity.quantity ?? '-'} />
             <DetailLine label="sourceId" value={<span className="font-mono">{activity.sourceId}</span>} />
           </div>

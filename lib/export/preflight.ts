@@ -183,9 +183,11 @@ interface ParsedDecimal {
 const REVIEW_CATEGORIES = new Set(REVIEW_CATEGORY_NAMES)
 const DUPLICATE_POSTING_DATE_TOLERANCE_DAYS = 7
 const SUPPORTED_EXPORT_ACCOUNT_TYPES = new Set(['depository', 'credit'])
-const SUPPORTED_INVESTMENT_ACTIVITY_TYPES = new Set(['buy', 'sell'])
+const SUPPORTED_INVESTMENT_ACTIVITY_TYPES = new Set(['buy', 'sell', 'dividend', 'interest', 'reinvest_dividend'])
 const INVESTMENT_FEE_ACCOUNT = process.env.FINTRACK_INVESTMENT_FEE_ACCOUNT ?? 'Expenses:Fees:Financial'
 const INVESTMENT_PNL_ACCOUNT = process.env.FINTRACK_INVESTMENT_PNL_ACCOUNT ?? 'Income:Investments:Trading'
+const INVESTMENT_DIVIDEND_ACCOUNT = process.env.FINTRACK_INVESTMENT_DIVIDEND_ACCOUNT ?? 'Income:Investment:Dividends'
+const INVESTMENT_INTEREST_ACCOUNT = process.env.FINTRACK_INVESTMENT_INTEREST_ACCOUNT ?? 'Income:Investment:Interest'
 
 function dateFromUnix(ts: number): string {
   return new Date(ts * 1000).toISOString().slice(0, 10)
@@ -844,8 +846,34 @@ function unitInvestmentPrice(activity: PreflightInvestmentActivity, feeAmount: s
   return formatMoneyNumber(gross / quantity)
 }
 
+function isTradeInvestmentActivity(activity: PreflightInvestmentActivity): boolean {
+  return activity.activityType === 'buy' || activity.activityType === 'sell'
+}
+
+function isInvestmentIncomeActivity(activity: PreflightInvestmentActivity): boolean {
+  return activity.activityType === 'dividend' || activity.activityType === 'interest'
+}
+
+function isReinvestDividendActivity(activity: PreflightInvestmentActivity): boolean {
+  return activity.activityType === 'reinvest_dividend'
+}
+
+function requiresInvestmentSecurity(activity: PreflightInvestmentActivity): boolean {
+  return isTradeInvestmentActivity(activity) || isReinvestDividendActivity(activity)
+}
+
 function requiresInvestmentPnlPosting(activity: PreflightInvestmentActivity): boolean {
   return activity.activityType === 'sell' || activity.positionEffect === 'close'
+}
+
+function incomeAccountForInvestment(activity: PreflightInvestmentActivity): string | null {
+  if (activity.activityType === 'dividend' || activity.activityType === 'reinvest_dividend') {
+    return INVESTMENT_DIVIDEND_ACCOUNT
+  }
+  if (activity.activityType === 'interest') {
+    return INVESTMENT_INTEREST_ACCOUNT
+  }
+  return null
 }
 
 function investmentIntentFromPreflight(
@@ -854,6 +882,40 @@ function investmentIntentFromPreflight(
   const feeAmount = feeAmountForInvestment(activity)
   const unitPrice = unitInvestmentPrice(activity, feeAmount)
   const requiresPnl = requiresInvestmentPnlPosting(activity)
+  const incomeAccount = incomeAccountForInvestment(activity)
+
+  if (isInvestmentIncomeActivity(activity)) {
+    return {
+      id: activity.id,
+      sourceId: activity.sourceId,
+      date: activity.date,
+      description: activity.description,
+      activityType: activity.activityType as 'dividend' | 'interest',
+      positionEffect: activity.positionEffect,
+      investmentAccount: activity.beancountAccount,
+      cashAmount: activity.amount ?? '',
+      cashCurrency: activity.currency ?? 'USD',
+      incomeAccount,
+    }
+  }
+
+  if (isReinvestDividendActivity(activity)) {
+    return {
+      id: activity.id,
+      sourceId: activity.sourceId,
+      date: activity.date,
+      description: activity.description,
+      activityType: 'reinvest_dividend',
+      positionEffect: activity.positionEffect,
+      investmentAccount: activity.beancountAccount,
+      commodity: activity.beancountCommodity ?? '',
+      quantity: activity.quantity ?? '',
+      cashAmount: activity.amount ?? '',
+      cashCurrency: activity.currency ?? 'USD',
+      unitCost: unitPrice,
+      incomeAccount,
+    }
+  }
 
   return {
     id: activity.id,
@@ -900,7 +962,10 @@ function validateInvestmentActivity(
     valid = false
   }
 
-  if (!activity.beancountCommodity) {
+  const requiresSecurity = requiresInvestmentSecurity(activity)
+  const incomeAccount = incomeAccountForInvestment(activity)
+
+  if (requiresSecurity && !activity.beancountCommodity) {
     addIssue(blockers, {
       ...issueBase,
       code: 'missing_security_mapping',
@@ -909,7 +974,7 @@ function validateInvestmentActivity(
     valid = false
   }
 
-  if (!activity.quantity) {
+  if (requiresSecurity && !activity.quantity) {
     addIssue(blockers, {
       ...issueBase,
       code: 'missing_investment_quantity',
@@ -940,7 +1005,7 @@ function validateInvestmentActivity(
     if (activity.amount) decimalNumber(activity.amount, 'Investment cash amount')
     if (activity.price) decimalNumber(activity.price, 'Investment price')
     feeAmount = feeAmountForInvestment(activity)
-    unitInvestmentPrice(activity, feeAmount)
+    if (requiresSecurity) unitInvestmentPrice(activity, feeAmount)
   } catch (error) {
     addIssue(blockers, {
       ...issueBase,
@@ -950,10 +1015,42 @@ function validateInvestmentActivity(
     valid = false
   }
 
-  if (feeAmount) {
+  if (feeAmount && !isTradeInvestmentActivity(activity)) {
+    addIssue(blockers, {
+      ...issueBase,
+      code: 'unsupported_investment_income_fee',
+      message: 'Investment income and reinvested dividend rows with fees are not exportable yet',
+    }, 'blocker')
+    valid = false
+  }
+
+  if (isReinvestDividendActivity(activity) && activity.amount) {
+    try {
+      const cashAmount = decimalNumber(activity.amount, 'Reinvested dividend amount')
+      if (cashAmount <= 0) {
+        addIssue(blockers, {
+          ...issueBase,
+          code: 'invalid_reinvest_dividend_amount',
+          message: 'Reinvested dividend export requires a positive dividend amount',
+        }, 'blocker')
+        valid = false
+      }
+    } catch {
+      // The generic amount validation above already records the decimal parsing issue.
+    }
+  }
+
+  if (feeAmount && isTradeInvestmentActivity(activity)) {
     valid = validateLedgerAccount(snapshot, INVESTMENT_FEE_ACCOUNT, activity.date, {
       ...issueBase,
       account: INVESTMENT_FEE_ACCOUNT,
+    }, blockers) && valid
+  }
+
+  if (incomeAccount) {
+    valid = validateLedgerAccount(snapshot, incomeAccount, activity.date, {
+      ...issueBase,
+      account: incomeAccount,
     }, blockers) && valid
   }
 
@@ -967,6 +1064,15 @@ function validateInvestmentActivity(
       code: 'investment_pnl_requires_lot_review',
       account: INVESTMENT_PNL_ACCOUNT,
       message: 'Investment sell/close export uses an inferred PnL posting until lot and cost basis support is implemented',
+    }, 'review')
+  }
+
+  if (isReinvestDividendActivity(activity)) {
+    addIssue(reviewItems, {
+      ...issueBase,
+      code: 'reinvest_dividend_requires_review',
+      account: incomeAccount,
+      message: 'Reinvested dividend export uses the row amount as dividend income and security cost; confirm before handoff',
     }, 'review')
   }
 

@@ -33,6 +33,8 @@ function writeLedger(extraAccounts: string[] = []): void {
       'option "title" "Investment Export Test"',
       '2026-01-01 open Assets:US:Fidelity:Brokerage USD',
       '2026-01-01 open Expenses:Fees:Financial USD',
+      '2026-01-01 open Income:Investment:Dividends USD',
+      '2026-01-01 open Income:Investment:Interest USD',
       '2026-01-01 open Income:Investments:Trading USD',
       ...extraAccounts.map(account => `2026-01-01 open ${account} USD`),
       '',
@@ -109,14 +111,16 @@ function insertSecurity(input: {
 
 function insertInvestmentActivity(input: {
   id: string
-  securityId: string
-  activityType: 'buy' | 'sell'
-  positionEffect: 'open' | 'close'
-  optionType: 'call' | 'put'
-  quantity: string
-  price: string
+  securityId?: string | null
+  activityType: 'buy' | 'sell' | 'dividend' | 'interest' | 'reinvest_dividend'
+  instrumentType?: string
+  positionEffect?: 'open' | 'close' | 'none' | 'unknown'
+  optionType?: 'call' | 'put' | null
+  quantity?: string | null
+  price?: string | null
   amount: string
   commission?: string | null
+  fees?: string | null
   action: string
   description?: string
   status?: string
@@ -153,19 +157,19 @@ function insertInvestmentActivity(input: {
   `).run(
     input.id,
     'acct-fidelity',
-    input.securityId,
+    input.securityId ?? null,
     tradeDate,
     '2026-04-21',
     input.activityType,
-    'option',
-    input.positionEffect,
-    input.optionType,
-    input.quantity,
-    input.price,
+    input.instrumentType ?? 'option',
+    input.positionEffect ?? 'none',
+    input.optionType ?? null,
+    input.quantity ?? null,
+    input.price ?? null,
     input.amount,
     'USD',
     input.commission ?? null,
-    null,
+    input.fees ?? null,
     null,
     null,
     input.action,
@@ -326,6 +330,152 @@ test('sell-to-close option activity renders security, cash, fees, and inferred P
   assert.match(draft, /Assets:US:Fidelity:Brokerage\s+209\.35 USD/)
   assert.match(draft, /Expenses:Fees:Financial\s+0\.65 USD/)
   assert.match(draft, /\n  Income:Investments:Trading\n/)
+})
+
+test('dividend activity renders cash and dividend income postings', () => {
+  insertSecurity({
+    id: 'security-dividend-equity',
+    sourceSymbol: 'FCT',
+    commodity: 'FCT',
+    instrumentType: 'equity',
+  })
+  insertInvestmentActivity({
+    id: 'investment-dividend',
+    securityId: 'security-dividend-equity',
+    activityType: 'dividend',
+    instrumentType: 'equity',
+    positionEffect: 'none',
+    quantity: null,
+    price: null,
+    amount: '12.50',
+    action: 'DIVIDEND RECEIVED FICTCORP',
+  })
+
+  const result = runBeancountPreflight({ period: '2026-04', beancountRoot })
+  const intent = result.exportableIntents[0]
+  const draft = renderBeancountDraft(result, { generatedAt: new Date('2026-05-15T12:00:00.000Z') })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.blockers.length, 0)
+  assert.equal(intent.kind, 'investment_activity')
+  assert.deepEqual(intent.postings.map(posting => ({
+    account: posting.account,
+    amount: posting.amount,
+    currency: posting.currency,
+    role: posting.role,
+  })), [
+    {
+      account: 'Assets:US:Fidelity:Brokerage',
+      amount: '12.50',
+      currency: 'USD',
+      role: 'investment_cash',
+    },
+    {
+      account: 'Income:Investment:Dividends',
+      amount: '-12.50',
+      currency: 'USD',
+      role: 'investment_income',
+    },
+  ])
+  assert.match(draft, /Assets:US:Fidelity:Brokerage\s+12\.50 USD/)
+  assert.match(draft, /Income:Investment:Dividends\s+-12\.50 USD/)
+})
+
+test('interest activity renders cash and interest income postings without a security', () => {
+  insertInvestmentActivity({
+    id: 'investment-interest',
+    securityId: null,
+    activityType: 'interest',
+    instrumentType: 'cash',
+    positionEffect: 'none',
+    quantity: null,
+    price: null,
+    amount: '4.20',
+    action: 'INTEREST EARNED',
+  })
+
+  const result = runBeancountPreflight({ period: '2026-04', beancountRoot })
+  const intent = result.exportableIntents[0]
+  const draft = renderBeancountDraft(result, { generatedAt: new Date('2026-05-15T12:00:00.000Z') })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.blockers.length, 0)
+  assert.equal(intent.kind, 'investment_activity')
+  assert.deepEqual(intent.postings.map(posting => ({
+    account: posting.account,
+    amount: posting.amount,
+    currency: posting.currency,
+    role: posting.role,
+  })), [
+    {
+      account: 'Assets:US:Fidelity:Brokerage',
+      amount: '4.20',
+      currency: 'USD',
+      role: 'investment_cash',
+    },
+    {
+      account: 'Income:Investment:Interest',
+      amount: '-4.20',
+      currency: 'USD',
+      role: 'investment_income',
+    },
+  ])
+  assert.match(draft, /Assets:US:Fidelity:Brokerage\s+4\.20 USD/)
+  assert.match(draft, /Income:Investment:Interest\s+-4\.20 USD/)
+})
+
+test('simple reinvested dividend renders security purchase and dividend income postings', () => {
+  insertSecurity({
+    id: 'security-reinvest-equity',
+    sourceSymbol: 'FCT',
+    commodity: 'FCT',
+    instrumentType: 'equity',
+  })
+  insertInvestmentActivity({
+    id: 'investment-reinvest-dividend',
+    securityId: 'security-reinvest-equity',
+    activityType: 'reinvest_dividend',
+    instrumentType: 'equity',
+    positionEffect: 'none',
+    quantity: '0.25',
+    price: '40.00',
+    amount: '10.00',
+    action: 'REINVESTMENT FICTCORP',
+  })
+
+  const result = runBeancountPreflight({ period: '2026-04', beancountRoot })
+  const intent = result.exportableIntents[0]
+  const draft = renderBeancountDraft(result, { generatedAt: new Date('2026-05-15T12:00:00.000Z') })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.blockers.length, 0)
+  assert.equal(result.reviewItems.length, 1)
+  assert.equal(result.reviewItems[0].code, 'reinvest_dividend_requires_review')
+  assert.equal(intent.kind, 'investment_activity')
+  assert.deepEqual(intent.postings.map(posting => ({
+    account: posting.account,
+    amount: posting.amount,
+    currency: posting.currency,
+    role: posting.role,
+    cost: posting.cost,
+  })), [
+    {
+      account: 'Assets:US:Fidelity:Brokerage',
+      amount: '0.25',
+      currency: 'FCT',
+      role: 'investment_security',
+      cost: { amount: '40.00', currency: 'USD' },
+    },
+    {
+      account: 'Income:Investment:Dividends',
+      amount: '-10.00',
+      currency: 'USD',
+      role: 'investment_income',
+      cost: undefined,
+    },
+  ])
+  assert.match(draft, /Assets:US:Fidelity:Brokerage\s+0\.25 FCT \{40\.00 USD\}/)
+  assert.match(draft, /Income:Investment:Dividends\s+-10\.00 USD/)
 })
 
 test('preflight blocks reviewed investment activity without security commodity mapping', () => {

@@ -95,6 +95,7 @@ function requirePostingAccount(intent: LedgerIntent, posting: LedgerPostingInten
     case 'investment_cash':
     case 'investment_fee':
     case 'investment_pnl':
+    case 'investment_income':
       if (!posting.account) {
         throw new Error(`Missing Beancount account for investment activity ${posting.investmentActivityId ?? intent.id}`)
       }

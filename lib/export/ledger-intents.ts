@@ -13,6 +13,7 @@ export type LedgerPostingRole =
   | 'investment_cash'
   | 'investment_fee'
   | 'investment_pnl'
+  | 'investment_income'
 
 export interface LedgerPostingPrice {
   amount: string
@@ -93,11 +94,11 @@ export interface LedgerIntentInvestmentActivityInput {
   sourceId: string
   date: string
   description: string
-  activityType: 'buy' | 'sell'
+  activityType: 'buy' | 'sell' | 'dividend' | 'interest' | 'reinvest_dividend'
   positionEffect?: string | null
   investmentAccount: string | null
-  commodity: string
-  quantity: string
+  commodity?: string | null
+  quantity?: string | null
   cashAmount: string
   cashCurrency: string
   unitCost?: string | null
@@ -105,6 +106,7 @@ export interface LedgerIntentInvestmentActivityInput {
   feeAmount?: string | null
   feeAccount?: string | null
   pnlAccount?: string | null
+  incomeAccount?: string | null
 }
 
 export interface BalanceAssertionCandidateInput {
@@ -195,31 +197,123 @@ export function ledgerIntentFromTransfer(transfer: LedgerIntentTransferInput): L
 export function ledgerIntentFromInvestmentActivity(
   activity: LedgerIntentInvestmentActivityInput,
 ): LedgerIntent {
-  const quantity = signedInvestmentQuantity(activity.activityType, activity.quantity)
+  const postings = investmentPostings(activity)
+
+  return {
+    id: `intent:investment:${activity.id}`,
+    kind: 'investment_activity',
+    sourceId: activity.sourceId,
+    date: activity.date,
+    description: activity.description,
+    postings,
+    transactionIds: [],
+  }
+}
+
+function investmentPostings(activity: LedgerIntentInvestmentActivityInput): LedgerPostingIntent[] {
+  switch (activity.activityType) {
+    case 'buy':
+    case 'sell':
+      return tradeInvestmentPostings(activity)
+    case 'dividend':
+    case 'interest':
+      return incomeInvestmentPostings(activity)
+    case 'reinvest_dividend':
+      return reinvestDividendPostings(activity)
+  }
+
+  const exhaustiveActivityType: never = activity.activityType
+  return exhaustiveActivityType
+}
+
+function tradeInvestmentPostings(activity: LedgerIntentInvestmentActivityInput): LedgerPostingIntent[] {
+  if (activity.activityType !== 'buy' && activity.activityType !== 'sell') {
+    throw new Error(`Unsupported trade investment activity type: ${activity.activityType}`)
+  }
+
+  const quantity = signedInvestmentQuantity(activity.activityType, activity.quantity ?? '')
   const requiresPnlPosting = Boolean(activity.pnlAccount)
   const postings: LedgerPostingIntent[] = [
-    {
-      account: activity.investmentAccount,
-      amount: quantity,
-      currency: activity.commodity,
-      role: 'investment_security',
-      investmentActivityId: activity.id,
+    securityPosting(activity, quantity, {
       cost: requiresPnlPosting || !activity.unitCost
         ? null
         : { amount: activity.unitCost, currency: activity.cashCurrency },
       price: activity.unitPrice
         ? { amount: activity.unitPrice, currency: activity.cashCurrency }
         : null,
-    },
+    }),
+    cashPosting(activity, activity.cashAmount),
+  ]
+
+  appendFeeAndPnlPostings(postings, activity, requiresPnlPosting)
+  return postings
+}
+
+function incomeInvestmentPostings(activity: LedgerIntentInvestmentActivityInput): LedgerPostingIntent[] {
+  return [
+    cashPosting(activity, activity.cashAmount),
     {
-      account: activity.investmentAccount,
-      amount: activity.cashAmount,
+      account: activity.incomeAccount ?? null,
+      amount: negateDecimalString(activity.cashAmount),
       currency: activity.cashCurrency,
-      role: 'investment_cash',
+      role: 'investment_income',
       investmentActivityId: activity.id,
     },
   ]
+}
 
+function reinvestDividendPostings(activity: LedgerIntentInvestmentActivityInput): LedgerPostingIntent[] {
+  return [
+    securityPosting(activity, activity.quantity ?? '', {
+      cost: activity.unitCost
+        ? { amount: activity.unitCost, currency: activity.cashCurrency }
+        : null,
+      price: null,
+    }),
+    {
+      account: activity.incomeAccount ?? null,
+      amount: negateDecimalString(activity.cashAmount),
+      currency: activity.cashCurrency,
+      role: 'investment_income',
+      investmentActivityId: activity.id,
+    },
+  ]
+}
+
+function securityPosting(
+  activity: LedgerIntentInvestmentActivityInput,
+  amount: string,
+  annotation: Pick<LedgerPostingIntent, 'cost' | 'price'>,
+): LedgerPostingIntent {
+  return {
+    account: activity.investmentAccount,
+    amount,
+    currency: activity.commodity ?? null,
+    role: 'investment_security',
+    investmentActivityId: activity.id,
+    cost: annotation.cost,
+    price: annotation.price,
+  }
+}
+
+function cashPosting(
+  activity: LedgerIntentInvestmentActivityInput,
+  amount: string,
+): LedgerPostingIntent {
+  return {
+    account: activity.investmentAccount,
+    amount,
+    currency: activity.cashCurrency,
+    role: 'investment_cash',
+    investmentActivityId: activity.id,
+  }
+}
+
+function appendFeeAndPnlPostings(
+  postings: LedgerPostingIntent[],
+  activity: LedgerIntentInvestmentActivityInput,
+  requiresPnlPosting: boolean,
+): void {
   if (activity.feeAmount && !isZeroDecimalString(activity.feeAmount)) {
     postings.push({
       account: activity.feeAccount ?? null,
@@ -238,16 +332,6 @@ export function ledgerIntentFromInvestmentActivity(
       role: 'investment_pnl',
       investmentActivityId: activity.id,
     })
-  }
-
-  return {
-    id: `intent:investment:${activity.id}`,
-    kind: 'investment_activity',
-    sourceId: activity.sourceId,
-    date: activity.date,
-    description: activity.description,
-    postings,
-    transactionIds: [],
   }
 }
 

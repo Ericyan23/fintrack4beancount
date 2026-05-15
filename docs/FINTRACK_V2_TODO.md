@@ -429,9 +429,9 @@ ingestion is stable.
   - [x] cash postings
   - [x] commodity/security postings
   - [x] fees
-  - [ ] dividend and interest income
+  - [x] dividend and interest income
   - [ ] balance/position assertions
-  - Progress: reviewed buy/sell investment activities with mapped securities now enter preflight as LedgerIntent records and render security, cash, fee, and inferred PnL postings for option/equity open-close activity.
+  - Progress: reviewed buy/sell investment activities with mapped securities now enter preflight as LedgerIntent records and render security, cash, fee, and inferred PnL postings for option/equity open-close activity. Reviewed dividend and interest rows now render cash/income postings, and simple reinvested dividend rows render security cost plus dividend income when quantity, amount, and security mapping are explicit.
 - [ ] Be conservative with complex lots, DRIP, transfer-in-kind, and cost basis:
   - [x] block export when uncertain.
   - [x] require review.
