@@ -67,6 +67,8 @@ interface BalanceAssertionPreflightResult {
   summary: {
     assertionsScanned: number
     exportableAssertions: number
+    positionAssertionsScanned?: number
+    exportablePositionAssertions?: number
     blockers: number
     reviewItems: number
     duplicateCandidates: number
@@ -555,12 +557,15 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
         </div>
 
         {preflight && (
-          <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-6">
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-7">
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
               scanned <span className="text-slate-200">{preflight.summary.assertionsScanned}</span>
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
               exportable <span className="text-emerald-300">{preflight.summary.exportableAssertions}</span>
+            </div>
+            <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
+              positions <span className="text-blue-300">{preflight.summary.exportablePositionAssertions ?? 0}</span>
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
               blockers <span className="text-red-300">{preflight.summary.blockers}</span>

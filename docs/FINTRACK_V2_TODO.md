@@ -420,7 +420,7 @@ ingestion is stable.
   - [x] Cash sweep
   - [x] Transfer
   - [ ] Position or balance assertion
-  - Progress: Fidelity activity metadata now records activity type, instrument type, option open/close position effect, option type, expiration, strike, quantity, prices, fees, settlement date, and blocked review status.
+  - Progress: Fidelity activity metadata now records activity type, instrument type, option open/close position effect, option type, expiration, strike, quantity, prices, fees, settlement date, and blocked review status. Persisted investment position snapshots can now be exported as Beancount position balance assertions once mapped; Fidelity position CSV ingestion is still pending.
 - [x] Add security mapping UI.
   - Progress: import run detail now lists securities linked to staged investment activities, suggests Beancount commodity names, supports map/clear actions, and writes audit rows for mapping changes.
 - [x] Add investment activity review UI.
@@ -430,8 +430,8 @@ ingestion is stable.
   - [x] commodity/security postings
   - [x] fees
   - [x] dividend and interest income
-  - [ ] balance/position assertions
-  - Progress: reviewed buy/sell investment activities with mapped securities now enter preflight as LedgerIntent records and render security, cash, fee, and inferred PnL postings for option/equity open-close activity. Reviewed dividend and interest rows now render cash/income postings, and simple reinvested dividend rows render security cost plus dividend income when quantity, amount, and security mapping are explicit.
+  - [x] balance/position assertions
+  - Progress: reviewed buy/sell investment activities with mapped securities now enter preflight as LedgerIntent records and render security, cash, fee, and inferred PnL postings for option/equity open-close activity. Reviewed dividend and interest rows now render cash/income postings, simple reinvested dividend rows render security cost plus dividend income when quantity, amount, and security mapping are explicit, and persisted investment positions render as Beancount balance assertions against the mapped commodity.
 - [ ] Be conservative with complex lots, DRIP, transfer-in-kind, and cost basis:
   - [x] block export when uncertain.
   - [x] require review.
