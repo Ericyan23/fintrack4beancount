@@ -6,9 +6,11 @@ import { useParams } from 'next/navigation'
 
 type StagedRow = Record<string, unknown>
 type InvestmentActivityRow = Record<string, unknown>
+type InvestmentPositionRow = Record<string, unknown>
 type SecurityMappingRow = Record<string, unknown>
 type RowAction = 'save' | 'ignore' | 'delete' | 'restore' | 'cancelPending' | 'keepPending'
 type InvestmentActivityAction = 'review' | 'ignore' | 'block'
+type InvestmentPositionAction = InvestmentActivityAction
 type SecurityMappingAction = 'save' | 'clear'
 type SummaryKey = 'raw' | 'staged' | 'ready' | 'merged' | 'ignored' | 'deleted' | 'error' | 'canonical'
 type Summary = Record<SummaryKey, number | null>
@@ -62,6 +64,14 @@ interface ReplayNotice {
 }
 
 interface InvestmentActivityCounts {
+  total: number
+  blocked: number
+  needsReview: number
+  reviewed: number
+  ignored: number
+}
+
+interface InvestmentPositionCounts {
   total: number
   blocked: number
   needsReview: number
@@ -183,6 +193,14 @@ function extractStagedRows(payload: unknown): StagedRow[] {
 }
 
 function extractInvestmentActivities(payload: unknown): InvestmentActivityRow[] {
+  if (Array.isArray(payload)) return payload.filter(isRecord)
+  if (!isRecord(payload)) return []
+
+  const rows = payload.rows
+  return Array.isArray(rows) ? rows.filter(isRecord) : []
+}
+
+function extractInvestmentPositions(payload: unknown): InvestmentPositionRow[] {
   if (Array.isArray(payload)) return payload.filter(isRecord)
   if (!isRecord(payload)) return []
 
@@ -445,16 +463,33 @@ function activityValidationErrors(row: InvestmentActivityRow): string {
   return messages.length > 0 ? messages.join('; ') : '-'
 }
 
+function positionValidationErrors(row: InvestmentPositionRow): string {
+  const messages = arrayText(getFirst(row, ['validationErrors', 'validation_errors']))
+  return messages.length > 0 ? messages.join('; ') : '-'
+}
+
 function activityStatus(row: InvestmentActivityRow): string {
   return stringValue(getFirst(row, ['status'])) || 'blocked'
+}
+
+function positionStatus(row: InvestmentPositionRow): string {
+  return stringValue(getFirst(row, ['status'])) || 'needs_review'
 }
 
 function activityId(row: InvestmentActivityRow): string {
   return stringValue(getFirst(row, ['id']))
 }
 
+function positionId(row: InvestmentPositionRow): string {
+  return stringValue(getFirst(row, ['id']))
+}
+
 function activityKey(row: InvestmentActivityRow, index: number): string {
   return activityId(row) || `investment-activity-${index}`
+}
+
+function positionKey(row: InvestmentPositionRow, index: number): string {
+  return positionId(row) || `investment-position-${index}`
 }
 
 function activityLabel(row: InvestmentActivityRow): string {
@@ -494,6 +529,20 @@ function investmentActivityActionLabel(action: InvestmentActivityAction): string
   if (action === 'review') return 'Reviewing...'
   if (action === 'ignore') return 'Ignoring...'
   return 'Blocking...'
+}
+
+function investmentPositionActionLabel(action: InvestmentPositionAction): string {
+  if (action === 'review') return 'Reviewing...'
+  if (action === 'ignore') return 'Ignoring...'
+  return 'Blocking...'
+}
+
+function positionSecurityLabel(row: InvestmentPositionRow): string {
+  return stringValue(
+    getFirst(row, ['sourceSymbol', 'source_symbol']),
+    getFirst(row, ['beancountCommodity', 'beancount_commodity']),
+    getFirst(row, ['securityName', 'security_name']),
+  ) || '-'
 }
 
 function securityId(row: SecurityMappingRow): string {
@@ -673,6 +722,7 @@ export default function ImportRunPage() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [rows, setRows] = useState<StagedRow[]>([])
   const [investmentActivities, setInvestmentActivities] = useState<InvestmentActivityRow[]>([])
+  const [investmentPositions, setInvestmentPositions] = useState<InvestmentPositionRow[]>([])
   const [securityMappings, setSecurityMappings] = useState<SecurityMappingRow[]>([])
   const [accounts, setAccounts] = useState<AccountInfo[]>([])
   const [sourceAccounts, setSourceAccounts] = useState<SourceAccountMapping[]>([])
@@ -683,6 +733,8 @@ export default function ImportRunPage() {
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({})
   const [investmentActions, setInvestmentActions] = useState<Record<string, InvestmentActivityAction>>({})
   const [investmentErrors, setInvestmentErrors] = useState<Record<string, string>>({})
+  const [positionActions, setPositionActions] = useState<Record<string, InvestmentPositionAction>>({})
+  const [positionErrors, setPositionErrors] = useState<Record<string, string>>({})
   const [securityCommodityDrafts, setSecurityCommodityDrafts] = useState<Record<string, string>>({})
   const [securityActions, setSecurityActions] = useState<Record<string, SecurityMappingAction>>({})
   const [securityErrors, setSecurityErrors] = useState<Record<string, string>>({})
@@ -731,18 +783,20 @@ export default function ImportRunPage() {
     setError(null)
 
     try {
-      const [runRes, stagedRes, sourceAccountsRes, investmentActivitiesRes, securitiesRes] = await Promise.all([
+      const [runRes, stagedRes, sourceAccountsRes, investmentActivitiesRes, investmentPositionsRes, securitiesRes] = await Promise.all([
         fetch(`/api/import/runs/${encodeURIComponent(runId)}`),
         fetch(`/api/import/runs/${encodeURIComponent(runId)}/staged`),
         fetch(`/api/import/runs/${encodeURIComponent(runId)}/source-accounts`),
         fetch(`/api/import/runs/${encodeURIComponent(runId)}/investment-activities`),
+        fetch(`/api/import/runs/${encodeURIComponent(runId)}/investment-positions`),
         fetch(`/api/import/runs/${encodeURIComponent(runId)}/securities`),
       ])
-      const [runPayload, stagedPayload, sourceAccountsPayload, investmentActivitiesPayload, securitiesPayload] = await Promise.all([
+      const [runPayload, stagedPayload, sourceAccountsPayload, investmentActivitiesPayload, investmentPositionsPayload, securitiesPayload] = await Promise.all([
         readJson(runRes),
         readJson(stagedRes),
         readJson(sourceAccountsRes),
         readJson(investmentActivitiesRes),
+        readJson(investmentPositionsRes),
         readJson(securitiesRes),
       ])
 
@@ -762,6 +816,10 @@ export default function ImportRunPage() {
         setError(responseError(investmentActivitiesRes, investmentActivitiesPayload, 'Investment activities'))
         return
       }
+      if (!investmentPositionsRes.ok) {
+        setError(responseError(investmentPositionsRes, investmentPositionsPayload, 'Investment positions'))
+        return
+      }
       if (!securitiesRes.ok) {
         setError(responseError(securitiesRes, securitiesPayload, 'Security mappings'))
         return
@@ -770,11 +828,13 @@ export default function ImportRunPage() {
       const nextRows = extractStagedRows(stagedPayload)
       setSourceAccounts(extractSourceAccounts(sourceAccountsPayload))
       setInvestmentActivities(extractInvestmentActivities(investmentActivitiesPayload))
+      setInvestmentPositions(extractInvestmentPositions(investmentPositionsPayload))
       setSecurityMappings(extractSecurityMappings(securitiesPayload))
       setRunInfo(normalizeRun(runPayload, runId))
       setRows(nextRows)
       setRowErrors({})
       setInvestmentErrors({})
+      setPositionErrors({})
       setSecurityErrors({})
       setMappingErrors({})
       setSummary(normalizeSummary([runPayload, stagedPayload], nextRows))
@@ -863,6 +923,25 @@ export default function ImportRunPage() {
 
     return counts
   }, [investmentActivities])
+  const investmentPositionCounts = useMemo<InvestmentPositionCounts>(() => {
+    const counts: InvestmentPositionCounts = {
+      total: investmentPositions.length,
+      blocked: 0,
+      needsReview: 0,
+      reviewed: 0,
+      ignored: 0,
+    }
+
+    for (const position of investmentPositions) {
+      const status = positionStatus(position)
+      if (status === 'blocked') counts.blocked++
+      else if (status === 'needs_review') counts.needsReview++
+      else if (status === 'reviewed') counts.reviewed++
+      else if (status === 'ignored') counts.ignored++
+    }
+
+    return counts
+  }, [investmentPositions])
   const securityMappingCounts = useMemo<SecurityMappingCounts>(() => {
     const mapped = securityMappings.filter(security => securityMappingStatus(security) === 'mapped').length
     return {
@@ -1015,6 +1094,72 @@ export default function ImportRunPage() {
       setInvestmentErrorState(key, 'Unable to update investment activity')
     } finally {
       setInvestmentActionState(key, null)
+    }
+  }
+
+  function setPositionActionState(key: string, action: InvestmentPositionAction | null) {
+    setPositionActions(prev => {
+      const next = { ...prev }
+      if (action) next[key] = action
+      else delete next[key]
+      return next
+    })
+  }
+
+  function setPositionErrorState(key: string, message: string | null) {
+    setPositionErrors(prev => {
+      const next = { ...prev }
+      if (message) next[key] = message
+      else delete next[key]
+      return next
+    })
+  }
+
+  async function updateInvestmentPosition(
+    position: InvestmentPositionRow,
+    key: string,
+    action: InvestmentPositionAction,
+    status: string,
+  ) {
+    if (!runId) return
+
+    const id = positionId(position)
+    if (!id) {
+      setPositionErrorState(key, 'Missing investment position id')
+      return
+    }
+
+    setPositionActionState(key, action)
+    setPositionErrorState(key, null)
+    setError(null)
+    setNotice(null)
+    setReplayNotice(null)
+
+    try {
+      const res = await fetch(
+        `/api/import/runs/${encodeURIComponent(runId)}/investment-positions/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status,
+            actor: 'local',
+            reason: `investment_position_${status}`,
+          }),
+        },
+      )
+      const payload = await readJson(res)
+
+      if (!res.ok) {
+        setPositionErrorState(key, responseError(res, payload, 'Investment position'))
+        return
+      }
+
+      await loadRun(false)
+    } catch {
+      setPositionErrorState(key, 'Unable to update investment position')
+    } finally {
+      setPositionActionState(key, null)
     }
   }
 
@@ -1571,6 +1716,115 @@ export default function ImportRunPage() {
                         )}
                       </span>
                       {securityErrors[key] && <span className="block text-xs text-red-200">{securityErrors[key]}</span>}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {investmentPositionCounts.total > 0 && (
+        <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+          <div className="flex flex-col gap-3 border-b border-slate-700 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-sm font-medium text-slate-300">Investment Positions</h2>
+              <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                <span>{investmentPositionCounts.total} total</span>
+                <span>{investmentPositionCounts.blocked} blocked</span>
+                <span>{investmentPositionCounts.needsReview} needs review</span>
+                <span>{investmentPositionCounts.reviewed} reviewed</span>
+                <span>{investmentPositionCounts.ignored} ignored</span>
+              </div>
+            </div>
+            <span className="rounded-full border border-amber-800 bg-amber-900/30 px-2 py-1 text-xs text-amber-200">
+              Position snapshots
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <div className="min-w-[1320px]">
+              <div className="grid grid-cols-[120px_230px_170px_130px_130px_130px_minmax(260px,1fr)_210px] gap-3 border-b border-slate-700 px-4 py-2 text-xs text-slate-500">
+                <span>Status</span>
+                <span>Security</span>
+                <span>Account</span>
+                <span>As of</span>
+                <span>Quantity</span>
+                <span>Value</span>
+                <span>Validation</span>
+                <span>Actions</span>
+              </div>
+              {investmentPositions.map((position, index) => {
+                const key = positionKey(position, index)
+                const status = positionStatus(position)
+                const busyAction = positionActions[key]
+                const validationErrors = positionValidationErrors(position)
+                const account = stringValue(
+                  getFirst(position, ['accountName', 'account_name']),
+                  getFirst(position, ['sourceAccountName', 'source_account_name']),
+                ) || '-'
+                const asOfDate = dateInputValue(getFirst(position, ['asOfDate', 'as_of_date'])) || '-'
+                const quantity = stringValue(getFirst(position, ['quantity'])) || '-'
+                const marketValue = stringValue(getFirst(position, ['marketValue', 'market_value'])) || '-'
+                const price = stringValue(getFirst(position, ['price']))
+                const currency = stringValue(getFirst(position, ['currency']))
+                const valueLabel = [marketValue, currency].filter(Boolean).join(' ')
+
+                return (
+                  <div
+                    key={key}
+                    className="grid grid-cols-[120px_230px_170px_130px_130px_130px_minmax(260px,1fr)_210px] items-start gap-3 border-b border-slate-700 px-4 py-2 text-sm last:border-b-0"
+                  >
+                    <span className={`inline-flex max-w-full rounded-full border px-2 py-0.5 text-xs ${statusClass(status)}`}>
+                      <span className="truncate">{stateLabel(status)}</span>
+                    </span>
+                    <span>
+                      <span className="block truncate text-slate-100">{positionSecurityLabel(position)}</span>
+                      <span className="mt-1 block truncate text-[11px] text-slate-500">
+                        {stringValue(getFirst(position, ['securityName', 'security_name'])) || '-'}
+                      </span>
+                    </span>
+                    <span className="truncate">{account}</span>
+                    <span className="tabular-nums">{asOfDate}</span>
+                    <span className="tabular-nums">{quantity}</span>
+                    <span>
+                      <span className="block tabular-nums">{valueLabel || '-'}</span>
+                      {price && <span className="mt-1 block tabular-nums text-[11px] text-slate-500">@ {price}</span>}
+                    </span>
+                    <span className={validationErrors === '-' ? 'text-slate-500' : 'text-red-200'}>
+                      {validationErrors}
+                    </span>
+                    <span className="space-y-1">
+                      <span className="flex flex-wrap gap-1.5">
+                        {status !== 'reviewed' && (
+                          <button
+                            onClick={() => updateInvestmentPosition(position, key, 'review', 'reviewed')}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+                          >
+                            {busyAction === 'review' ? investmentPositionActionLabel(busyAction) : 'Mark reviewed'}
+                          </button>
+                        )}
+                        {status !== 'ignored' && (
+                          <button
+                            onClick={() => updateInvestmentPosition(position, key, 'ignore', 'ignored')}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
+                          >
+                            {busyAction === 'ignore' ? investmentPositionActionLabel(busyAction) : 'Ignore'}
+                          </button>
+                        )}
+                        {status !== 'blocked' && (
+                          <button
+                            onClick={() => updateInvestmentPosition(position, key, 'block', 'blocked')}
+                            disabled={Boolean(busyAction)}
+                            className="rounded-md border border-amber-800 bg-amber-950/50 px-2 py-1 text-xs text-amber-200 hover:bg-amber-900/70 disabled:opacity-60"
+                          >
+                            {busyAction === 'block' ? investmentPositionActionLabel(busyAction) : 'Block'}
+                          </button>
+                        )}
+                      </span>
+                      {positionErrors[key] && <span className="block text-xs text-red-200">{positionErrors[key]}</span>}
                     </span>
                   </div>
                 )

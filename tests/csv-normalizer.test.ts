@@ -76,6 +76,7 @@ describe('CSV ingestion normalizer', () => {
       sourceItemIdentityInput: null,
       parserProfileId: null,
       investmentActivity: null,
+      investmentPosition: null,
       rawPayload: {
         rowNumber: 2,
         columns: result.columns,
@@ -245,5 +246,40 @@ describe('Fidelity brokerage CSV', () => {
     assert.equal(sellClose.investmentActivity?.positionEffect, 'close')
     assert.equal(sellClose.investmentActivity?.optionType, 'put')
     assert.equal(sellClose.investmentActivity?.strikePrice, '45')
+  })
+})
+
+describe('Fidelity positions CSV', () => {
+  test('auto-detects Fidelity position snapshot columns', () => {
+    const csv = readFixture('csv', 'fidelity-positions.csv')
+    const result = normalizeCsvTransactions(csv)
+
+    assert.equal(result.parserProfile?.id, 'fidelity-positions-csv')
+    assert.equal(result.mapping.date, 'As of Date')
+    assert.equal(result.mapping.amount, 'Current Value ($)')
+    assert.equal(result.mapping.description, 'Description')
+    assert.equal(result.mapping.account, 'Account Name')
+    assert.equal(result.mapping.externalId, 'Position ID')
+    assert.equal(result.totalRows, 2)
+  })
+
+  test('extracts Fidelity position snapshot metadata', () => {
+    const csv = readFixture('csv', 'fidelity-positions.csv')
+    const result = normalizeCsvTransactions(csv)
+
+    const [equity, fund] = result.rows
+    assert.equal(equity.parserProfileId, 'fidelity-positions-csv')
+    assert.equal(equity.investmentActivity, null)
+    assert.equal(equity.investmentPosition?.symbol, 'FCT')
+    assert.equal(equity.investmentPosition?.securityDescription, 'Fictitious Corp')
+    assert.equal(equity.investmentPosition?.instrumentType, 'equity')
+    assert.equal(equity.investmentPosition?.quantity, '12.3456')
+    assert.equal(equity.investmentPosition?.price, '40.00')
+    assert.equal(equity.investmentPosition?.marketValue, '493.824')
+    assert.equal(equity.investmentPosition?.currency, 'USD')
+    assert.equal(equity.validationErrors.length, 0)
+
+    assert.equal(fund.investmentPosition?.symbol, 'FMFXX')
+    assert.equal(fund.investmentPosition?.instrumentType, 'fund')
   })
 })

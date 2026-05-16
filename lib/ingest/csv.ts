@@ -21,7 +21,7 @@ export type CsvImportField =
 
 export type CsvImportMapping = Partial<Record<CsvImportField, string>>
 export type CsvTransactionStatus = 'posted' | 'pending' | 'cancelled'
-export type CsvParserProfileId = 'fidelity-brokerage-csv'
+export type CsvParserProfileId = 'fidelity-brokerage-csv' | 'fidelity-positions-csv'
 
 export interface CsvParserProfile {
   id: CsvParserProfileId
@@ -53,6 +53,19 @@ export interface CsvInvestmentActivity extends IngestionJsonObject {
   accruedInterest: string | null
   cashBalance: string | null
   settlementDate: string | null
+}
+
+export interface CsvInvestmentPosition extends IngestionJsonObject {
+  profileId: CsvParserProfileId
+  asOfDate: string
+  symbol: string | null
+  securityDescription: string | null
+  securityType: string | null
+  instrumentType: InvestmentInstrumentType
+  quantity: string | null
+  price: string | null
+  marketValue: string | null
+  currency: string | null
 }
 
 export interface CsvNormalizerOptions {
@@ -94,6 +107,7 @@ export interface CsvNormalizedTransaction extends IngestionJsonObject {
   sourceItemIdentityInput: SourceItemKeyInput | null
   parserProfileId: CsvParserProfileId | null
   investmentActivity: CsvInvestmentActivity | null
+  investmentPosition: CsvInvestmentPosition | null
   rawPayload: CsvRawRowPayload
   validationErrors: string[]
 }
@@ -118,6 +132,20 @@ export const CSV_PARSER_PROFILES: CsvParserProfile[] = [
       date: 'Run Date',
       amount: 'Amount ($)',
       description: 'Action',
+    },
+    blocksCashPromotion: true,
+  },
+  {
+    id: 'fidelity-positions-csv',
+    name: 'Fidelity Positions CSV',
+    sourceName: 'Fidelity Positions CSV',
+    normalizerVersion: 'fidelity-positions-csv-v1',
+    mapping: {
+      date: 'As of Date',
+      amount: 'Current Value ($)',
+      description: 'Description',
+      account: 'Account Name',
+      externalId: 'Position ID',
     },
     blocksCashPromotion: true,
   },
@@ -162,8 +190,15 @@ export function detectCsvParserProfile(columns: string[]): CsvParserProfile | nu
     && compactColumns.has('amount')
     && compactColumns.has('settlementdate')
     && compactColumns.has('cashbalance')
+  const hasFidelityPositionShape =
+    compactColumns.has('asofdate')
+    && compactColumns.has('symbol')
+    && compactColumns.has('quantity')
+    && compactColumns.has('lastprice')
+    && compactColumns.has('currentvalue')
 
-  return hasFidelityShape ? getCsvParserProfile('fidelity-brokerage-csv') : null
+  if (hasFidelityShape) return getCsvParserProfile('fidelity-brokerage-csv')
+  return hasFidelityPositionShape ? getCsvParserProfile('fidelity-positions-csv') : null
 }
 
 export function detectCsvMapping(columns: string[], parserProfileId?: string | null): CsvImportMapping {
@@ -306,7 +341,7 @@ function fidelityInstrumentType(
   const normalizedSymbol = symbol?.toUpperCase() ?? ''
   if (/\b(CALL|PUT)\b|TO OPEN|TO CLOSE|OPENING TRANSACTION|CLOSING TRANSACTION/.test(normalizedAction)) return 'option'
   if (/^-?[A-Z.]{1,6}\d{6}[CP]\d+(?:\.\d+)?$/.test(normalizedSymbol)) return 'option'
-  if (/FUND/.test(normalizedAction) || /MONEY MARKET/.test(normalizedAction)) return 'fund'
+  if (/FUND|MUTUAL/.test(normalizedAction) || /FUND|MUTUAL/.test(normalizedType) || /MONEY MARKET/.test(normalizedAction)) return 'fund'
   if (/CASH|MONEY MARKET/.test(normalizedType) || (!symbol && /TRANSFER|JOURNALED|DIRECT DEPOSIT|CASH/.test(normalizedAction))) return 'cash'
   if (symbol) return 'equity'
   return 'unknown'
@@ -349,6 +384,32 @@ function fidelityInvestmentActivity(
   }
 }
 
+function fidelityInvestmentPosition(
+  row: Record<string, string>,
+  parserProfile: CsvParserProfile | null,
+  asOfDate: string,
+): CsvInvestmentPosition | null {
+  if (parserProfile?.id !== 'fidelity-positions-csv') return null
+
+  const symbol = optionalCell(row, 'Symbol')
+  const securityType = optionalCell(row, 'Type')
+  const marketValue = normalizeAmount(cell(row, 'Current Value ($)'))
+  const currency = optionalCell(row, 'Currency') ?? 'USD'
+
+  return {
+    profileId: parserProfile.id,
+    asOfDate,
+    symbol,
+    securityDescription: optionalCell(row, 'Description'),
+    securityType,
+    instrumentType: fidelityInstrumentType('', symbol, securityType),
+    quantity: normalizeAmount(cell(row, 'Quantity')),
+    price: normalizeAmount(cell(row, 'Last Price ($)')),
+    marketValue,
+    currency,
+  }
+}
+
 export function buildCsvSourceItemKey(
   row: Pick<CsvNormalizedTransaction, 'sourceAccountId' | 'externalId' | 'date' | 'amount' | 'description'>,
   sourceAccountId = row.sourceAccountId,
@@ -362,6 +423,31 @@ export function buildCsvSourceItemKey(
     amount: row.amount,
     description: row.description,
   })
+}
+
+export function buildCsvInvestmentPositionSourceItemKey(
+  position: CsvInvestmentPosition,
+  sourceAccountId: string | null,
+  externalId: string | null,
+): string | null {
+  if (!sourceAccountId || !position.asOfDate || !position.symbol || !position.quantity) return null
+
+  if (externalId) {
+    return [
+      'source-account',
+      encodeURIComponent(sourceAccountId),
+      'position-external',
+      encodeURIComponent(externalId),
+    ].join(':')
+  }
+
+  return buildSourceItemKey({
+    sourceAccountId,
+    externalId: null,
+    date: position.asOfDate,
+    amount: position.quantity,
+    description: `${position.symbol}:${position.securityDescription ?? ''}`,
+  }).replace(':hash:', ':position-hash:')
 }
 
 export function normalizeCsvTransactions(
@@ -405,12 +491,17 @@ export function normalizeCsvTransactions(
     const tags = splitTags(cell(row, mapping.tags))
     const externalId = cell(row, mapping.externalId) || null
     const investmentActivity = fidelityInvestmentActivity(row, parserProfile)
+    const investmentPosition = fidelityInvestmentPosition(row, parserProfile, dateText)
     const validationErrors: string[] = []
 
     if (posted === null) validationErrors.push('Invalid date')
     if (amount === null) validationErrors.push('Invalid amount')
     if (!description) validationErrors.push('Missing description')
     if (!accountName) validationErrors.push('Missing account')
+    if (investmentPosition) {
+      if (!investmentPosition.symbol) validationErrors.push('Missing position symbol')
+      if (!investmentPosition.quantity) validationErrors.push('Invalid position quantity')
+    }
 
     const sourceItemIdentityInput =
       posted === null || amount === null || !description || !sourceAccountId
@@ -454,6 +545,7 @@ export function normalizeCsvTransactions(
       sourceItemIdentityInput,
       parserProfileId: parserProfile?.id ?? null,
       investmentActivity,
+      investmentPosition,
       rawPayload,
       validationErrors,
     }]

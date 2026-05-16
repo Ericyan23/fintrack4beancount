@@ -1,13 +1,14 @@
 import { createHash } from 'crypto'
 import { sqlite } from '@/lib/db'
 import {
+  buildCsvInvestmentPositionSourceItemKey,
   buildCsvSourceItemKey,
   normalizeCsvTransactions,
   type CsvImportMapping,
   type CsvNormalizedTransaction,
 } from '@/lib/ingest/csv'
 import { stableStringify } from '@/lib/ingest/identity'
-import { recordInvestmentActivity } from '@/lib/ingest/investments'
+import { recordInvestmentActivity, recordInvestmentPosition } from '@/lib/ingest/investments'
 import {
   createImportRun,
   ensureSource,
@@ -138,6 +139,7 @@ function normalizedPayload(row: CsvNormalizedTransaction): IngestionJsonObject {
     externalId: row.externalId,
     sourceItemKey: row.sourceItemKey,
     investmentActivity: row.investmentActivity,
+    investmentPosition: row.investmentPosition,
   }
 }
 
@@ -217,9 +219,12 @@ export function stageTransactionsCsv(
       : null
     const account = matchedAccount ?? mappedAccount
     const sourceItemKey = sourceAccount
-      ? buildCsvSourceItemKey(row, sourceAccount.id)
+      ? row.investmentPosition
+        ? buildCsvInvestmentPositionSourceItemKey(row.investmentPosition, sourceAccount.id, row.externalId)
+        : buildCsvSourceItemKey(row, sourceAccount.id)
       : null
-    const validationErrors = rowErrors(row, account)
+    const rowValidationErrors = rowErrors(row, account)
+    const validationErrors = [...rowValidationErrors]
     if (parserProfile?.blocksCashPromotion) {
       validationErrors.push('Investment activity review/export is required before this parser profile can be promoted')
     }
@@ -290,6 +295,20 @@ export function stageTransactionsCsv(
         normalizerVersion,
         validationErrors: effectiveValidationErrors,
         activity: row.investmentActivity,
+      })
+    }
+    if (row.investmentPosition) {
+      recordInvestmentPosition({
+        importRunId: run.id,
+        rawItemId: raw.item.id,
+        sourceConnectionId: connection.id,
+        sourceAccountId: sourceAccount?.id ?? null,
+        accountId: account?.id ?? null,
+        externalId: row.externalId,
+        sourceItemKey,
+        normalizerVersion,
+        validationErrors: finalDisposition ? [] : rowValidationErrors,
+        position: row.investmentPosition,
       })
     }
     if (!finalDisposition && validationErrors.length === 0 && sourceItemKey) staged++

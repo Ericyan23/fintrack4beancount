@@ -411,7 +411,7 @@ ingestion is stable.
   - [x] `investment_activities`
   - [x] `positions`
   - [ ] `lots` only if cost basis support is needed.
-- [ ] Support common Fidelity activity types:
+- [x] Support common Fidelity activity types:
   - [x] Buy
   - [x] Sell
   - [x] Dividend
@@ -420,23 +420,23 @@ ingestion is stable.
   - [x] Fee
   - [x] Cash sweep
   - [x] Transfer
-  - [ ] Position or balance assertion
-  - Progress: Fidelity activity metadata now records activity type, instrument type, option open/close position effect, option type, expiration, strike, quantity, prices, fees, settlement date, and blocked review status. Persisted investment position snapshots can now be exported as Beancount position balance assertions once mapped, reviewed, and backed by source item provenance; Fidelity position CSV ingestion is still pending.
+  - [x] Position or balance assertion
+  - Progress: Fidelity activity metadata now records activity type, instrument type, option open/close position effect, option type, expiration, strike, quantity, prices, fees, settlement date, and blocked review status. Fidelity position CSV snapshots now archive raw rows, persist source-item-backed `investment_positions`, surface position review/status APIs, and can export Beancount position balance assertions once mapped and reviewed.
 - [x] Add security mapping UI.
   - Progress: import run detail now lists securities linked to staged investment activities, suggests Beancount commodity names, supports map/clear actions, and writes audit rows for mapping changes.
 - [x] Add investment activity review UI.
-  - Progress: import run detail now shows staged investment activities with status, security, activity type, option open/close metadata, validation errors, and reviewed/ignored/blocked status actions.
-- [ ] Add Beancount investment renderer:
+  - Progress: import run detail now shows staged investment activities and position snapshots with status, security, validation errors, and reviewed/ignored/blocked status actions.
+- [x] Add Beancount investment renderer:
   - [x] cash postings
   - [x] commodity/security postings
   - [x] fees
   - [x] dividend and interest income
   - [x] balance/position assertions
-  - Progress: reviewed buy investment activities with mapped securities now enter preflight as LedgerIntent records and render security, cash, and fee postings. Reviewed sell/close rows are Beancount preflight blockers until explicit lot, cost basis, or manual override support exists. Reviewed dividend and interest rows now render cash/income postings, simple reinvested dividend rows render security cost plus dividend income when quantity, amount, and security mapping are explicit, and persisted investment positions render as Beancount balance assertions only when the mapped position is reviewed and has source connection, source account, source item key, and raw payload provenance.
+  - Progress: reviewed buy investment activities with mapped securities now enter preflight as LedgerIntent records and render security, cash, and fee postings. Reviewed sell/close rows are Beancount preflight blockers until explicit lot, cost basis, or manual override support exists. Reviewed dividend and interest rows now render cash/income postings, simple reinvested dividend rows render security cost plus dividend income when quantity, amount, and security mapping are explicit, and reviewed persisted investment positions render as Beancount balance assertions only with source connection, source account, source item key, and raw payload provenance.
 - [ ] Be conservative with complex lots, DRIP, transfer-in-kind, and cost basis:
   - [x] block export when uncertain.
   - [x] require review.
-  - [ ] preserve raw rows for manual ledger work.
+  - [x] preserve raw rows for manual ledger work.
 
 ## Long-Term Optional
 

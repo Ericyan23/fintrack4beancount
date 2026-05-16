@@ -7,9 +7,13 @@ import { readFixture } from './helpers/fixtures'
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-csv-stage-'))
 process.env.DB_PATH = path.join(tempDir, 'fintrack.db')
+const beancountRoot = path.join(tempDir, 'beancount')
 
 const { sqlite } = require('../lib/db') as typeof import('../lib/db')
+const { runBalanceAssertionPreflight } = require('../lib/export/balance-assertions') as typeof import('../lib/export/balance-assertions')
 const { stageTransactionsCsv } = require('../lib/ingest/csv-import') as typeof import('../lib/ingest/csv-import')
+const { updateInvestmentPositionStatus } = require('../lib/ingest/investments') as typeof import('../lib/ingest/investments')
+const { updateSecurityMapping } = require('../lib/ingest/security-mapping') as typeof import('../lib/ingest/security-mapping')
 
 function resetDb(): void {
   sqlite.exec(`
@@ -81,8 +85,21 @@ function insertInvestmentAccount(): string {
   return id
 }
 
+function writeLedger(): void {
+  fs.mkdirSync(beancountRoot, { recursive: true })
+  fs.writeFileSync(
+    path.join(beancountRoot, 'main.bean'),
+    [
+      'option "title" "CSV Position Export Test"',
+      '2026-01-01 open Assets:US:Fidelity:Brokerage USD',
+      '',
+    ].join('\n'),
+  )
+}
+
 beforeEach(() => {
   resetDb()
+  writeLedger()
 })
 
 after(() => {
@@ -480,4 +497,193 @@ test('stages Fidelity option activities with security and position effect metada
   assert.equal(rows[1].positionEffect, 'close')
   assert.equal(rows[1].optionType, 'put')
   assert.equal(rows[1].strikePrice, '45')
+})
+
+test('stages Fidelity position snapshots with source item provenance', () => {
+  const accountId = insertInvestmentAccount()
+  const result = stageTransactionsCsv(
+    readFixture('csv', 'fidelity-positions.csv'),
+    {},
+    accountId,
+    'Fidelity Positions',
+    null,
+    undefined,
+    'fidelity-positions-csv',
+  )
+
+  assert.equal(result.parserProfileId, 'fidelity-positions-csv')
+  assert.equal(result.parserProfileName, 'Fidelity Positions CSV')
+  assert.equal(result.totalRows, 2)
+  assert.equal(result.rawInserted, 2)
+  assert.equal(result.staged, 0)
+  assert.equal(result.duplicates, 0)
+  assert.equal(result.errors.length, 2)
+  assert.equal(countRows('raw_import_items'), 2)
+  assert.equal(countRows('staged_transactions'), 2)
+  assert.equal(countRows('investment_positions'), 2)
+  assert.equal(countRows('investment_activities'), 0)
+  assert.equal(countRows('securities'), 2)
+  assert.equal(countRows('transactions'), 0)
+
+  const rows = sqlite.prepare(`
+    SELECT p.import_run_id AS importRunId,
+           p.raw_item_id AS rawItemId,
+           p.source_connection_id AS sourceConnectionId,
+           p.source_account_id AS sourceAccountId,
+           p.account_id AS accountId,
+           p.external_id AS externalId,
+           p.source_item_key AS sourceItemKey,
+           p.as_of_date AS asOfDate,
+           p.quantity,
+           p.market_value AS marketValue,
+           p.price,
+           p.currency,
+           p.status,
+           p.validation_errors AS validationErrors,
+           p.normalizer_version AS normalizerVersion,
+           p.raw_payload AS rawPayload,
+           s.source_symbol AS sourceSymbol,
+           s.name AS securityName,
+           s.instrument_type AS instrumentType
+    FROM investment_positions p
+    JOIN securities s ON s.id = p.security_id
+    ORDER BY p.as_of_date ASC, s.source_symbol ASC
+  `).all() as Array<{
+    importRunId: string
+    rawItemId: string
+    sourceConnectionId: string
+    sourceAccountId: string
+    accountId: string
+    externalId: string
+    sourceItemKey: string
+    asOfDate: string
+    quantity: string
+    marketValue: string
+    price: string
+    currency: string
+    status: string
+    validationErrors: string
+    normalizerVersion: string
+    rawPayload: string
+    sourceSymbol: string
+    securityName: string
+    instrumentType: string
+  }>
+
+  assert.equal(rows[0].importRunId, result.importRunId)
+  assert.equal(rows[0].rawItemId.length > 0, true)
+  assert.equal(rows[0].sourceConnectionId, 'csv:fidelity-positions')
+  assert.equal(rows[0].accountId, accountId)
+  assert.equal(rows[0].externalId, 'fake-position-fct-20260430')
+  assert.equal(
+    rows[0].sourceItemKey,
+    `source-account:${encodeURIComponent(rows[0].sourceAccountId)}:position-external:fake-position-fct-20260430`,
+  )
+  assert.equal(rows[0].asOfDate, '2026-04-30')
+  assert.equal(rows[0].quantity, '12.3456')
+  assert.equal(rows[0].marketValue, '493.824')
+  assert.equal(rows[0].price, '40.00')
+  assert.equal(rows[0].currency, 'USD')
+  assert.equal(rows[0].status, 'needs_review')
+  assert.deepEqual(JSON.parse(rows[0].validationErrors), [])
+  assert.equal(rows[0].normalizerVersion, 'fidelity-positions-csv-v1')
+  assert.equal(JSON.parse(rows[0].rawPayload).symbol, 'FCT')
+  assert.equal(rows[0].sourceSymbol, 'FCT')
+  assert.equal(rows[0].securityName, 'Fictitious Corp')
+  assert.equal(rows[0].instrumentType, 'equity')
+
+  assert.equal(rows[1].sourceSymbol, 'FMFXX')
+  assert.equal(rows[1].instrumentType, 'fund')
+})
+
+test('reviewed Fidelity position snapshots reach balance assertion preflight', () => {
+  const accountId = insertInvestmentAccount()
+  const result = stageTransactionsCsv(
+    readFixture('csv', 'fidelity-positions.csv'),
+    {},
+    accountId,
+    'Fidelity Positions',
+    null,
+    undefined,
+    'fidelity-positions-csv',
+  )
+
+  const positions = sqlite.prepare(`
+    SELECT p.id,
+           p.source_connection_id AS sourceConnectionId,
+           p.source_account_id AS sourceAccountId,
+           p.source_item_key AS sourceItemKey,
+           s.id AS securityId,
+           s.source_symbol AS sourceSymbol
+    FROM investment_positions p
+    JOIN securities s ON s.id = p.security_id
+    ORDER BY s.source_symbol ASC
+  `).all() as Array<{
+    id: string
+    sourceConnectionId: string
+    sourceAccountId: string
+    sourceItemKey: string
+    securityId: string
+    sourceSymbol: string
+  }>
+
+  for (const position of positions) {
+    updateSecurityMapping({
+      importRunId: result.importRunId,
+      securityId: position.securityId,
+      beancountCommodity: position.sourceSymbol,
+      actor: 'test',
+      reason: 'position export e2e',
+    })
+    updateInvestmentPositionStatus({
+      importRunId: result.importRunId,
+      investmentPositionId: position.id,
+      status: 'reviewed',
+      audit: {
+        actor: 'test',
+        reason: 'position export e2e',
+      },
+    })
+  }
+
+  const preflight = runBalanceAssertionPreflight({ period: '2026-04', beancountRoot })
+
+  assert.equal(preflight.ok, true)
+  assert.equal(preflight.summary.positionAssertionsScanned, 2)
+  assert.equal(preflight.summary.exportablePositionAssertions, 2)
+  assert.equal(preflight.exportableCandidates.length, 2)
+  const expectedSourceIdByCurrency = new Map(positions.map(position => [
+    position.sourceSymbol,
+    [
+      'fintrack',
+      'position-source',
+      encodeURIComponent(position.sourceConnectionId),
+      encodeURIComponent(position.sourceAccountId),
+      encodeURIComponent(position.sourceItemKey),
+    ].join(':'),
+  ]))
+  assert.deepEqual(
+    preflight.exportableCandidates
+      .map(candidate => ({
+        account: candidate.account,
+        amount: candidate.amount,
+        currency: candidate.currency,
+        sourceId: candidate.sourceId,
+      }))
+      .sort((a, b) => a.currency.localeCompare(b.currency)),
+    [
+      {
+        account: 'Assets:US:Fidelity:Brokerage',
+        amount: '12.3456',
+        currency: 'FCT',
+        sourceId: expectedSourceIdByCurrency.get('FCT'),
+      },
+      {
+        account: 'Assets:US:Fidelity:Brokerage',
+        amount: '100.0000',
+        currency: 'FMFXX',
+        sourceId: expectedSourceIdByCurrency.get('FMFXX'),
+      },
+    ],
+  )
 })

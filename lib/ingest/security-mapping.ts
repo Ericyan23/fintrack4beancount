@@ -109,7 +109,18 @@ function securityMappingQuery(filterBySecurity: boolean): string {
   const securityFilter = filterBySecurity ? 'WHERE securities.id = ?' : ''
 
   return `
-    WITH run_security_counts AS (
+    WITH run_security_events AS (
+      SELECT security_id, status
+      FROM investment_activities
+      WHERE import_run_id = ?
+        AND security_id IS NOT NULL
+      UNION ALL
+      SELECT security_id, status
+      FROM investment_positions
+      WHERE import_run_id = ?
+        AND security_id IS NOT NULL
+    ),
+    run_security_counts AS (
       SELECT
         security_id AS id,
         COUNT(*) AS activityCount,
@@ -117,9 +128,7 @@ function securityMappingQuery(filterBySecurity: boolean): string {
         SUM(CASE WHEN status = 'needs_review' THEN 1 ELSE 0 END) AS needsReviewCount,
         SUM(CASE WHEN status = 'reviewed' THEN 1 ELSE 0 END) AS reviewedCount,
         SUM(CASE WHEN status = 'ignored' THEN 1 ELSE 0 END) AS ignoredCount
-      FROM investment_activities
-      WHERE import_run_id = ?
-        AND security_id IS NOT NULL
+      FROM run_security_events
       GROUP BY security_id
     )
     SELECT
@@ -160,7 +169,7 @@ function selectImportRunSecurity(
   securityId: string,
 ): SecurityMapping | null {
   const row = database.prepare(securityMappingQuery(true))
-    .get(importRunId, securityId) as SecurityMappingDbRow | undefined
+    .get(importRunId, importRunId, securityId) as SecurityMappingDbRow | undefined
 
   return row ? withSuggestion(row) : null
 }
@@ -229,7 +238,7 @@ export function listImportRunSecurities(
   requireImportRun(database, input.importRunId)
 
   const rows = database.prepare(securityMappingQuery(false))
-    .all(input.importRunId) as SecurityMappingDbRow[]
+    .all(input.importRunId, input.importRunId) as SecurityMappingDbRow[]
 
   return rows.map(withSuggestion)
 }

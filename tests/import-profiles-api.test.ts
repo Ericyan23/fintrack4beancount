@@ -193,6 +193,27 @@ test('POST /api/import/profiles persists a Fidelity parser profile id', async ()
   assert.equal(countRows('import_profile_mappings'), 3)
 })
 
+test('POST /api/import/profiles persists a Fidelity positions parser profile id', async () => {
+  const response = await profilesRoute.POST(request('/api/import/profiles', {
+    name: 'Fidelity Positions CSV',
+    connectionName: 'Fidelity Positions',
+    parserProfileId: 'fidelity-positions-csv',
+    mapping: {
+      date: 'As of Date',
+      amount: 'Current Value ($)',
+      description: 'Description',
+      account: 'Account Name',
+      externalId: 'Position ID',
+    },
+  }))
+  const payload = (await response.json()) as ProfilePayload
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.profile.config.parserProfileId, 'fidelity-positions-csv')
+  assert.equal(payload.profile.mapping.date, 'As of Date')
+  assert.equal(countRows('import_profile_mappings'), 5)
+})
+
 test('staged CSV imports can link to a profile and apply default ledger hints', async () => {
   const accountId = insertAccount()
   const profileResponse = await profilesRoute.POST(request('/api/import/profiles', {
