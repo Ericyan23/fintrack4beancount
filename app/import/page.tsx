@@ -49,6 +49,7 @@ interface PreviewRow {
   category: string
   status: string
   error?: string
+  review?: string
 }
 
 interface ParserProfile {
@@ -66,12 +67,15 @@ interface PreviewResult {
   rows: PreviewRow[]
   totalRows: number
   validRows: number
+  reviewRows: number
   errorRows: number
 }
 
 interface StageImportResult {
   importRunId: string
   reviewUrl: string
+  parserProfileId: string | null
+  parserProfileName: string | null
   totalRows: number
   rawInserted: number
   staged: number
@@ -99,36 +103,43 @@ interface RunSummary {
 }
 
 const FIELD_LABELS: Array<[ImportField, string, boolean]> = [
-  ['date', 'Date', true],
-  ['amount', 'Amount', true],
-  ['description', 'Description', true],
-  ['account', 'Account column', false],
-  ['category', 'Ledger Account', false],
-  ['notes', 'Notes', false],
-  ['tags', 'Tags', false],
-  ['status', 'Status', false],
-  ['externalId', 'External ID', false],
+  ['date', '日期', true],
+  ['amount', '金额', true],
+  ['description', '描述', true],
+  ['account', '账户列', false],
+  ['category', 'Ledger 账户', false],
+  ['notes', '备注', false],
+  ['tags', '标签', false],
+  ['status', '状态', false],
+  ['externalId', '外部 ID', false],
 ]
 
 const PARSER_PROFILE_OPTIONS = [
-  { id: '', name: 'Auto detect' },
+  { id: '', name: '自动识别' },
   { id: 'fidelity-brokerage-csv', name: 'Fidelity Brokerage CSV' },
 ]
 
 function timeAgo(ts: number | null): string {
   if (!ts) return '—'
   const diff = Date.now() / 1000 - ts
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
+  return `${Math.floor(diff / 86400)} 天前`
 }
 
 function sourceLabel(kind: string | null, name: string | null): string {
   if (name) return name
   if (kind === 'simplefin') return 'SimpleFIN'
   if (kind === 'csv') return 'CSV'
-  return kind ?? 'Unknown source'
+  return kind ?? '未知来源'
+}
+
+function runStatusLabel(status: string): string {
+  if (status === 'completed') return '已完成'
+  if (status === 'running') return '运行中'
+  if (status === 'error') return '错误'
+  return status || '未知'
 }
 
 function runStatusClass(status: string): string {
@@ -159,6 +170,18 @@ export default function ImportPage() {
   const [profileMessage, setProfileMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [simpleFinLoading, setSimpleFinLoading] = useState(false)
+  const previewUsesInvestmentReview = Boolean(preview?.parserProfile?.blocksCashPromotion)
+  const stageButtonLabel = previewUsesInvestmentReview ? '暂存供审核' : '暂存导入'
+  const stageResultSummary = result
+    ? [
+        result.parserProfileId
+          ? `已归档 ${result.rawInserted} 条原始记录供 ${result.parserProfileName ?? 'investment'} 审核`
+          : `已暂存 ${result.staged} 条，归档 ${result.rawInserted} 条原始记录`,
+        `跳过 ${result.duplicates} 条重复记录`,
+        `${result.errors.length} 条校验提示`,
+        `导入批次 ${result.importRunId} 可审核`,
+      ].join(', ')
+    : ''
 
   function loadRecentRuns() {
     fetch('/api/import/runs')
@@ -210,7 +233,7 @@ export default function ImportPage() {
 
     const name = profileName.trim()
     if (!name) {
-      setProfileError('Profile name is required')
+      setProfileError('请输入 profile 名称')
       return
     }
 
@@ -231,7 +254,7 @@ export default function ImportPage() {
       const payload = (await res.json().catch(() => ({}))) as { profile?: ImportProfile; error?: string; validationErrors?: string[] }
 
       if (!res.ok || !payload.profile) {
-        setProfileError(payload.validationErrors?.join(', ') || payload.error || 'Profile save failed')
+        setProfileError(payload.validationErrors?.join(', ') || payload.error || '保存 profile 失败')
         return
       }
 
@@ -240,9 +263,9 @@ export default function ImportPage() {
         return [payload.profile!, ...next]
       })
       applyProfile(payload.profile)
-      setProfileMessage('Profile saved')
+      setProfileMessage('Profile 已保存')
     } catch {
-      setProfileError('Profile save failed')
+      setProfileError('保存 profile 失败')
     }
   }
 
@@ -271,7 +294,7 @@ export default function ImportPage() {
       })
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string }
-        setError(payload.error ?? 'Preview failed')
+        setError(payload.error ?? '预览失败')
         return
       }
       const payload = (await res.json()) as PreviewResult
@@ -305,7 +328,7 @@ export default function ImportPage() {
       })
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string }
-        setError(payload.error ?? 'Staging failed')
+        setError(payload.error ?? '暂存失败')
         return
       }
       setResult((await res.json()) as StageImportResult)
@@ -326,7 +349,7 @@ export default function ImportPage() {
       })
       const payload = (await res.json().catch(() => ({}))) as SimpleFinStageResult
       if (!res.ok || !payload.importRunId) {
-        setError(payload.error ?? 'SimpleFIN staging failed')
+        setError(payload.error ?? 'SimpleFIN 暂存失败')
         return
       }
       loadRecentRuns()
@@ -339,7 +362,7 @@ export default function ImportPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Import</h1>
+        <h1 className="text-xl font-bold">导入</h1>
       </div>
 
       {error && (
@@ -349,15 +372,12 @@ export default function ImportPage() {
       )}
       {result && (
         <div className="flex flex-col gap-2 rounded-md border border-emerald-800 bg-emerald-900/30 px-3 py-2 text-sm text-emerald-200 md:flex-row md:items-center md:justify-between">
-          <span>
-            Staged {result.staged}, archived {result.rawInserted} raw rows, skipped {result.duplicates} duplicates,
-            {' '}{result.errors.length} errors. Import run {result.importRunId} is ready for review.
-          </span>
+          <span>{stageResultSummary}.</span>
           <Link
             href={result.reviewUrl}
             className="self-start rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-600 md:self-auto"
           >
-            Review staged rows
+            审核暂存记录
           </Link>
         </div>
       )}
@@ -366,7 +386,7 @@ export default function ImportPage() {
       {recentRuns.length > 0 && (
         <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="border-b border-slate-700 px-4 py-3">
-            <h2 className="text-sm font-medium text-slate-300">Recent import runs</h2>
+            <h2 className="text-sm font-medium text-slate-300">最近导入批次</h2>
           </div>
           <div className="divide-y divide-slate-700">
             {recentRuns.map(run => {
@@ -383,27 +403,27 @@ export default function ImportPage() {
                         {sourceLabel(run.sourceKind, run.connectionName)}
                       </span>
                       <span className={`rounded-full border px-2 py-0.5 text-[11px] ${runStatusClass(run.status)}`}>
-                        {run.status}
+                        {runStatusLabel(run.status)}
                       </span>
                       {run.error && (
                         <span className="text-[11px] text-red-300 truncate max-w-[180px]">{run.error}</span>
                       )}
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
-                      <span>{run.itemCount} items</span>
+                      <span>{run.itemCount} 条</span>
                       {run.eligibleCount > 0 && (
-                        <span className="text-amber-300">{run.eligibleCount} ready to promote</span>
+                        <span className="text-amber-300">{run.eligibleCount} 条可提升</span>
                       )}
                       {run.errorCount > 0 && (
-                        <span className="text-red-400">{run.errorCount} errors</span>
+                        <span className="text-red-400">{run.errorCount} 条错误</span>
                       )}
-                      {run.mergedCount > 0 && <span>{run.mergedCount} merged</span>}
+                      {run.mergedCount > 0 && <span>{run.mergedCount} 条已合并</span>}
                     </div>
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-xs text-slate-500">{timeAgo(run.startedAt)}</p>
                     {hasWork && (
-                      <p className="mt-1 text-[11px] font-medium text-amber-300">Review</p>
+                      <p className="mt-1 text-[11px] font-medium text-amber-300">审核</p>
                     )}
                   </div>
                 </Link>
@@ -417,15 +437,15 @@ export default function ImportPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-500">SimpleFIN</p>
-            <h2 className="mt-1 text-base font-semibold text-slate-100">Stage latest import</h2>
-            <p className="mt-1 text-sm text-slate-400">Latest transactions into Ledger Prep.</p>
+            <h2 className="mt-1 text-base font-semibold text-slate-100">暂存最新导入</h2>
+            <p className="mt-1 text-sm text-slate-400">将最新交易送入 Ledger Prep。</p>
           </div>
           <button
             onClick={stageSimpleFin}
             disabled={loading || simpleFinLoading}
             className="self-start rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-50 md:self-auto"
           >
-            {simpleFinLoading ? 'Staging...' : 'Stage SimpleFIN'}
+            {simpleFinLoading ? '暂存中...' : '暂存 SimpleFIN'}
           </button>
         </div>
       </div>
@@ -434,14 +454,14 @@ export default function ImportPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-500">CSV profiles</p>
-            <h2 className="mt-1 text-base font-semibold text-slate-100">Mapping profile</h2>
+            <h2 className="mt-1 text-base font-semibold text-slate-100">映射 profile</h2>
           </div>
           <button
             onClick={saveProfile}
             disabled={!profileName.trim()}
             className="self-start rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600 disabled:opacity-50 md:self-auto"
           >
-            Save profile
+            保存 profile
           </button>
         </div>
 
@@ -458,7 +478,7 @@ export default function ImportPage() {
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">Saved profile</span>
+            <span className="text-xs text-slate-400 block mb-1">已保存 profile</span>
             <select
               value={selectedProfileId}
               onChange={event => {
@@ -476,7 +496,7 @@ export default function ImportPage() {
               }}
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
             >
-              <option value="">New profile</option>
+              <option value="">新建 profile</option>
               {profiles.map(profile => (
                 <option key={profile.id} value={profile.id}>{profile.name}</option>
               ))}
@@ -484,12 +504,12 @@ export default function ImportPage() {
           </label>
 
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">Profile name</span>
+            <span className="text-xs text-slate-400 block mb-1">Profile 名称</span>
             <input
               type="text"
               value={profileName}
               onChange={event => setProfileName(event.target.value)}
-              placeholder="e.g. Chase checking CSV"
+              placeholder="例如 Chase checking CSV"
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
             />
           </label>
@@ -511,7 +531,7 @@ export default function ImportPage() {
           </label>
 
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">Default ledger account hint</span>
+            <span className="text-xs text-slate-400 block mb-1">默认 Ledger account 提示</span>
             <input
               type="text"
               value={defaultLedgerAccount}
@@ -529,7 +549,7 @@ export default function ImportPage() {
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-[1fr_220px_220px] gap-3">
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">CSV file</span>
+            <span className="text-xs text-slate-400 block mb-1">CSV 文件</span>
             <input
               type="file"
               accept=".csv,text/csv"
@@ -550,17 +570,17 @@ export default function ImportPage() {
             />
           </label>
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">Source name <span className="text-slate-600">(optional)</span></span>
+            <span className="text-xs text-slate-400 block mb-1">来源名称 <span className="text-slate-600">（可选）</span></span>
             <input
               type="text"
               value={csvConnectionName}
               onChange={e => setCsvConnectionName(e.target.value)}
-              placeholder="e.g. Chase Checking"
+              placeholder="例如 Chase Checking"
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
             />
           </label>
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">Default account</span>
+            <span className="text-xs text-slate-400 block mb-1">默认账户</span>
             <select
               value={defaultAccountId}
               onChange={e => {
@@ -569,7 +589,7 @@ export default function ImportPage() {
               }}
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
             >
-              <option value="">Use CSV account column</option>
+              <option value="">使用 CSV 账户列</option>
               {accounts.map(account => (
                 <option key={account.id} value={account.id}>{account.name}</option>
               ))}
@@ -578,13 +598,13 @@ export default function ImportPage() {
         </div>
 
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-slate-500 truncate">{filename || 'No file selected'}</p>
+          <p className="text-xs text-slate-500 truncate">{filename || '尚未选择文件'}</p>
           <button
             onClick={() => runPreview()}
             disabled={!csv || loading || simpleFinLoading}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded-md"
           >
-            {loading ? 'Processing...' : 'Preview'}
+            {loading ? '处理中...' : '预览'}
           </button>
         </div>
       </div>
@@ -594,23 +614,27 @@ export default function ImportPage() {
           <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
             {preview.parserProfile && (
               <div className="rounded-md border border-amber-900/70 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
-                Parser profile: {preview.parserProfile.name}
+                解析 profile：{preview.parserProfile.name}
                 {preview.parserProfile.blocksCashPromotion
-                  ? '. Rows are archived for review, but investment review/export is required before promotion.'
+                  ? '。记录将归档供投资审核，不会进入现金提升流程。'
                   : ''}
               </div>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
-                <p className="text-xs text-slate-400">Total rows</p>
+                <p className="text-xs text-slate-400">总行数</p>
                 <p className="text-xl font-bold text-slate-100 mt-1">{preview.totalRows}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Stageable</p>
+                <p className="text-xs text-slate-400">{previewUsesInvestmentReview ? '可现金暂存' : '可暂存'}</p>
                 <p className="text-xl font-bold text-emerald-400 mt-1">{preview.validRows}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-400">Errors</p>
+                <p className="text-xs text-slate-400">需审核</p>
+                <p className="text-xl font-bold text-amber-300 mt-1">{preview.reviewRows}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">错误</p>
                 <p className="text-xl font-bold text-red-400 mt-1">{preview.errorRows}</p>
               </div>
             </div>
@@ -630,7 +654,7 @@ export default function ImportPage() {
                     }}
                     className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
                   >
-                    <option value="">Do not map</option>
+                    <option value="">不映射</option>
                     {preview.columns.map(column => (
                       <option key={`${field}-${column}`} value={column}>{column}</option>
                     ))}
@@ -642,19 +666,19 @@ export default function ImportPage() {
 
           <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
             <div className="grid grid-cols-[70px_110px_100px_1fr_160px_180px_120px] gap-3 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
-              <span>Row</span>
-              <span>Date</span>
-              <span>Amount</span>
-              <span>Description</span>
-              <span>Account</span>
-              <span>Ledger account</span>
-              <span>Status</span>
+              <span>行</span>
+              <span>日期</span>
+              <span>金额</span>
+              <span>描述</span>
+              <span>账户</span>
+              <span>Ledger 账户</span>
+              <span>状态</span>
             </div>
             {preview.rows.map(row => (
               <div
                 key={row.rowNumber}
                 className={`grid grid-cols-[70px_110px_100px_1fr_160px_180px_120px] gap-3 px-4 py-2 text-sm border-b border-slate-700 last:border-b-0 ${
-                  row.error ? 'bg-red-950/30' : ''
+                  row.error ? 'bg-red-950/30' : row.review ? 'bg-amber-950/20' : ''
                 }`}
               >
                 <span className="text-slate-500">{row.rowNumber}</span>
@@ -663,8 +687,8 @@ export default function ImportPage() {
                 <span className="text-slate-300 truncate">{row.description}</span>
                 <span className="text-slate-400 truncate">{row.account}</span>
                 <span className="text-slate-400 truncate">{row.category || '-'}</span>
-                <span className={row.error ? 'text-red-300' : 'text-slate-400'}>
-                  {row.error ?? row.status}
+                <span className={row.error ? 'text-red-300' : row.review ? 'text-amber-200' : 'text-slate-400'}>
+                  {row.error ?? row.review ?? row.status}
                 </span>
               </div>
             ))}
@@ -676,7 +700,7 @@ export default function ImportPage() {
               disabled={loading || simpleFinLoading || !mapping.date || !mapping.amount || !mapping.description}
               className="px-5 py-2 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm rounded-md"
             >
-              {loading ? 'Staging...' : 'Stage import'}
+              {loading ? '暂存中...' : stageButtonLabel}
             </button>
           </div>
         </>

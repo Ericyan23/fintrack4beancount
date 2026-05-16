@@ -122,6 +122,9 @@ export interface CsvNormalizationResult {
   errorRows: number
 }
 
+export const INVESTMENT_CASH_PROMOTION_BLOCKER =
+  'Investment activity review/export is required before this parser profile can be promoted'
+
 export const CSV_PARSER_PROFILES: CsvParserProfile[] = [
   {
     id: 'fidelity-brokerage-csv',
@@ -184,12 +187,20 @@ export function getCsvParserProfile(profileId: string | null | undefined): CsvPa
 
 export function detectCsvParserProfile(columns: string[]): CsvParserProfile | null {
   const compactColumns = new Set(columns.map(compactHeader))
+  const hasFidelityActivityColumn =
+    compactColumns.has('settlementdate')
+    || compactColumns.has('cashbalance')
+    || compactColumns.has('symbol')
+    || compactColumns.has('quantity')
+    || compactColumns.has('price')
+    || compactColumns.has('commission')
+    || compactColumns.has('fees')
+    || compactColumns.has('accruedinterest')
   const hasFidelityShape =
     compactColumns.has('rundate')
     && compactColumns.has('action')
     && compactColumns.has('amount')
-    && compactColumns.has('settlementdate')
-    && compactColumns.has('cashbalance')
+    && hasFidelityActivityColumn
   const hasFidelityPositionShape =
     compactColumns.has('asofdate')
     && compactColumns.has('symbol')

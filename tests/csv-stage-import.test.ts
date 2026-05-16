@@ -11,6 +11,7 @@ const beancountRoot = path.join(tempDir, 'beancount')
 
 const { sqlite } = require('../lib/db') as typeof import('../lib/db')
 const { runBalanceAssertionPreflight } = require('../lib/export/balance-assertions') as typeof import('../lib/export/balance-assertions')
+const { updateSourceAccountMapping } = require('../lib/ingest/account-mapping') as typeof import('../lib/ingest/account-mapping')
 const { stageTransactionsCsv } = require('../lib/ingest/csv-import') as typeof import('../lib/ingest/csv-import')
 const { updateInvestmentPositionStatus } = require('../lib/ingest/investments') as typeof import('../lib/ingest/investments')
 const { updateSecurityMapping } = require('../lib/ingest/security-mapping') as typeof import('../lib/ingest/security-mapping')
@@ -423,6 +424,74 @@ test('archives Fidelity brokerage CSV rows and blocks cash promotion until inves
     WHERE id = 'csv:fidelity-brokerage'
   `).get() as { config: string }
   assert.equal(JSON.parse(connection.config).parserProfileId, 'fidelity-brokerage-csv')
+})
+
+test('mapping a Fidelity source account keeps investment rows blocked but clears account validation', () => {
+  const accountId = insertInvestmentAccount()
+  const csv = [
+    'Run Date,Account,Action,Symbol,Description,Type,Price ($),Quantity,Commission ($),Fees ($),Accrued Interest ($),Amount ($),Settlement Date',
+    '05/15/2026,Individual,"YOU BOUGHT FICTCORP COM (FCT)",FCT,FICTCORP COM,Margin,40.00,1,0.65,,,-40.65,05/16/2026',
+  ].join('\n')
+  const result = stageTransactionsCsv(csv, {}, undefined, 'Fidelity Brokerage')
+
+  assert.equal(result.parserProfileId, 'fidelity-brokerage-csv')
+  assert.equal(result.totalRows, 1)
+  assert.equal(result.rawInserted, 1)
+  assert.equal(result.staged, 0)
+  assert.deepEqual(result.errors.map(error => error.error), [
+    'Unable to match account',
+    'Investment activity review/export is required before this parser profile can be promoted',
+  ])
+
+  const sourceAccount = sqlite.prepare(`
+    SELECT id
+    FROM source_accounts
+    LIMIT 1
+  `).get() as { id: string }
+
+  updateSourceAccountMapping({
+    importRunId: result.importRunId,
+    sourceAccountId: sourceAccount.id,
+    accountId,
+  })
+
+  const staged = sqlite.prepare(`
+    SELECT account_id AS accountId,
+           currency,
+           status,
+           validation_errors AS validationErrors
+    FROM staged_transactions
+    LIMIT 1
+  `).get() as {
+    accountId: string
+    currency: string
+    status: string
+    validationErrors: string
+  }
+  assert.equal(staged.accountId, accountId)
+  assert.equal(staged.currency, 'USD')
+  assert.equal(staged.status, 'error')
+  assert.deepEqual(JSON.parse(staged.validationErrors), [
+    'Investment activity review/export is required before this parser profile can be promoted',
+  ])
+
+  const activity = sqlite.prepare(`
+    SELECT account_id AS accountId,
+           currency,
+           status,
+           validation_errors AS validationErrors
+    FROM investment_activities
+    LIMIT 1
+  `).get() as {
+    accountId: string
+    currency: string
+    status: string
+    validationErrors: string
+  }
+  assert.equal(activity.accountId, accountId)
+  assert.equal(activity.currency, 'USD')
+  assert.equal(activity.status, 'blocked')
+  assert.deepEqual(JSON.parse(activity.validationErrors), [])
 })
 
 test('stages Fidelity option activities with security and position effect metadata', () => {

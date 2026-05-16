@@ -68,6 +68,7 @@ describe('CSV transaction preview', () => {
     ])
     assert.equal(preview.totalRows, 3)
     assert.equal(preview.validRows, 3)
+    assert.equal(preview.reviewRows, 0)
     assert.equal(preview.errorRows, 0)
     assert.equal(preview.mapping.date, 'Date')
     assert.equal(preview.mapping.externalId, 'External ID')
@@ -84,8 +85,26 @@ describe('CSV transaction preview', () => {
 
     assert.equal(preview.totalRows, 1)
     assert.equal(preview.validRows, 0)
+    assert.equal(preview.reviewRows, 0)
     assert.equal(preview.errorRows, 1)
     assert.equal(preview.rows[0].error, 'Unable to match account')
+  })
+
+  test('previews Fidelity account history as investment review even when account is unmapped', () => {
+    const csv = [
+      'Run Date,Account,Action,Symbol,Description,Type,Price ($),Quantity,Commission ($),Fees ($),Accrued Interest ($),Amount ($),Settlement Date',
+      '05/15/2026,Individual,"YOU BOUGHT FICTCORP COM (FCT)",FCT,FICTCORP COM,Margin,40.00,1,0.65,,,-40.65,05/16/2026',
+    ].join('\n')
+    const preview = previewTransactionsCsv(csv)
+
+    assert.equal(preview.parserProfile?.id, 'fidelity-brokerage-csv')
+    assert.equal(preview.totalRows, 1)
+    assert.equal(preview.validRows, 0)
+    assert.equal(preview.reviewRows, 1)
+    assert.equal(preview.errorRows, 0)
+    assert.equal(preview.rows[0].account, 'Individual')
+    assert.equal(preview.rows[0].error, undefined)
+    assert.equal(preview.rows[0].review, 'Investment activity review/export required')
   })
 
   test('keeps a SimpleFIN sample payload available for ingestion tests', () => {

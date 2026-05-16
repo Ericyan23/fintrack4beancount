@@ -95,6 +95,9 @@ function normalizeBeancountCommodity(value: string | null): string | null {
 function suggestedCommodity(sourceSymbol: string | null): string | null {
   if (!sourceSymbol) return null
 
+  const normalized = sourceSymbol.trim().toUpperCase()
+  if (/^\d[0-9A-Z]{8}$/.test(normalized)) return `CUSIP_${normalized}`
+
   const cleaned = sourceSymbol
     .trim()
     .toUpperCase()

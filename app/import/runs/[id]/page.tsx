@@ -89,14 +89,14 @@ type RowStatusFilter = 'attention' | 'all' | 'error' | 'staged' | 'ready' | 'mer
 
 const SUMMARY_KEYS: SummaryKey[] = ['raw', 'staged', 'ready', 'merged', 'ignored', 'deleted', 'error', 'canonical']
 const ROW_STATUS_FILTERS: Array<[RowStatusFilter, string]> = [
-  ['attention', 'Needs attention'],
-  ['all', 'All rows'],
-  ['error', 'Errors'],
-  ['staged', 'Staged'],
-  ['ready', 'Ready'],
-  ['merged', 'Merged'],
-  ['ignored', 'Ignored'],
-  ['deleted', 'Deleted'],
+  ['attention', '需处理'],
+  ['all', '全部记录'],
+  ['error', '错误'],
+  ['staged', '已暂存'],
+  ['ready', '就绪'],
+  ['merged', '已合并'],
+  ['ignored', '已忽略'],
+  ['deleted', '已删除'],
 ]
 const ELIGIBLE_STATUSES = new Set(['staged', 'ready'])
 const LOCKED_STATUSES = new Set(['merged', 'canonical', 'ignored', 'deleted'])
@@ -114,6 +114,38 @@ const SUMMARY_SOURCE_KEYS: Record<SummaryKey, string[]> = {
   deleted: ['deleted', 'deletedRows', 'deletedCount'],
   error: ['error', 'errors', 'errorRows', 'errorCount'],
   canonical: ['canonical', 'canonicalRows', 'canonicalCount'],
+}
+
+const SUMMARY_LABELS: Record<SummaryKey, string> = {
+  raw: '原始',
+  staged: '暂存',
+  ready: '就绪',
+  merged: '已合并',
+  ignored: '已忽略',
+  deleted: '已删除',
+  error: '错误',
+  canonical: 'Canonical',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  blocked: '已阻止',
+  canonical: 'Canonical',
+  completed: '已完成',
+  deleted: '已删除',
+  error: '错误',
+  export_ready: '可导出',
+  exported: '已导出',
+  failed: '失败',
+  ignored: '已忽略',
+  mapped: '已映射',
+  merged: '已合并',
+  needs_review: '需审核',
+  ready: '就绪',
+  reviewed: '已审核',
+  running: '运行中',
+  staged: '已暂存',
+  unmapped: '未映射',
+  unknown: '未知',
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -178,7 +210,7 @@ function responseError(res: Response, payload: unknown, label: string): string {
     const message = stringValue(payload.error, payload.message)
     if (message) return message
   }
-  return `${label} failed with status ${res.status}`
+  return `${label}失败，状态码 ${res.status}`
 }
 
 function extractStagedRows(payload: unknown): StagedRow[] {
@@ -283,6 +315,9 @@ function rowLifecycleState(row: StagedRow): string {
 }
 
 function stateLabel(value: string): string {
+  const normalized = value.toLowerCase()
+  if (STATUS_LABELS[normalized]) return STATUS_LABELS[normalized]
+
   return value
     .split('_')
     .filter(Boolean)
@@ -348,12 +383,12 @@ function normalizeRun(payload: unknown, fallbackId: string): RunInfo {
 function formatDateTime(value: unknown): string {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const millis = value > 10_000_000_000 ? value : value * 1000
-    return new Date(millis).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+    return new Date(millis).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
   }
   if (typeof value === 'string' && value.trim()) {
     const parsed = Date.parse(value)
     if (Number.isFinite(parsed)) {
-      return new Date(parsed).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+      return new Date(parsed).toLocaleString('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
     }
     return value.trim()
   }
@@ -520,21 +555,21 @@ function activityOptionLabel(row: InvestmentActivityRow): string {
   const parts = [
     optionType,
     positionEffect && positionEffect !== 'none' ? positionEffect : '',
-    settlementDate ? `settles ${settlementDate}` : '',
+    settlementDate ? `结算 ${settlementDate}` : '',
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(' / ') : '-'
 }
 
 function investmentActivityActionLabel(action: InvestmentActivityAction): string {
-  if (action === 'review') return 'Reviewing...'
-  if (action === 'ignore') return 'Ignoring...'
-  return 'Blocking...'
+  if (action === 'review') return '审核中...'
+  if (action === 'ignore') return '忽略中...'
+  return '阻止中...'
 }
 
 function investmentPositionActionLabel(action: InvestmentPositionAction): string {
-  if (action === 'review') return 'Reviewing...'
-  if (action === 'ignore') return 'Ignoring...'
-  return 'Blocking...'
+  if (action === 'review') return '审核中...'
+  if (action === 'ignore') return '忽略中...'
+  return '阻止中...'
 }
 
 function positionSecurityLabel(row: InvestmentPositionRow): string {
@@ -597,11 +632,11 @@ function securityActivitySummary(row: SecurityMappingRow): string {
   const ignored = numberValue(getFirst(row, ['ignoredCount', 'ignored_count'])) ?? 0
   const blocked = numberValue(getFirst(row, ['blockedCount', 'blocked_count'])) ?? 0
   const needsReview = numberValue(getFirst(row, ['needsReviewCount', 'needs_review_count'])) ?? 0
-  return `${total} total / ${reviewed} reviewed / ${ignored} ignored / ${blocked + needsReview} open`
+  return `${total} 条 / ${reviewed} 已审核 / ${ignored} 已忽略 / ${blocked + needsReview} 待处理`
 }
 
 function securityMappingActionLabel(action: SecurityMappingAction): string {
-  return action === 'clear' ? 'Clearing...' : 'Saving...'
+  return action === 'clear' ? '清除中...' : '保存中...'
 }
 
 function rowReconciliationStatus(row: StagedRow): string {
@@ -682,9 +717,13 @@ function rowIsRestorable(row: StagedRow): boolean {
 }
 
 function rowActionLabel(action: RowAction): string {
-  if (action === 'cancelPending') return 'Cancel pending...'
-  if (action === 'keepPending') return 'Keep pending...'
-  return `${action[0].toUpperCase()}${action.slice(1)}...`
+  if (action === 'cancelPending') return '取消 pending 中...'
+  if (action === 'keepPending') return '保留 pending 中...'
+  if (action === 'save') return '保存中...'
+  if (action === 'ignore') return '忽略中...'
+  if (action === 'delete') return '删除中...'
+  if (action === 'restore') return '恢复中...'
+  return '处理中...'
 }
 
 function collectErrors(value: unknown): string[] {
@@ -697,9 +736,9 @@ function collectErrors(value: unknown): string[] {
 
       const row = stringValue(item.rowNumber, item.row, item.line)
       const stagedTransactionId = stringValue(item.stagedTransactionId, item.staged_transaction_id)
-      const message = stringValue(item.error, item.message, item.reason) || 'Error'
-      if (row) return `Row ${row}: ${message}`
-      return stagedTransactionId ? `Staged ${stagedTransactionId}: ${message}` : message
+      const message = stringValue(item.error, item.message, item.reason) || '错误'
+      if (row) return `第 ${row} 行：${message}`
+      return stagedTransactionId ? `暂存记录 ${stagedTransactionId}：${message}` : message
     })
     .filter(Boolean)
 }
@@ -746,6 +785,7 @@ export default function ImportRunPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [promoting, setPromoting] = useState(false)
   const [replaying, setReplaying] = useState(false)
+  const [savingSuggestedSecurities, setSavingSuggestedSecurities] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<PromoteNotice | null>(null)
   const [replayNotice, setReplayNotice] = useState<ReplayNotice | null>(null)
@@ -759,13 +799,13 @@ export default function ImportRunPage() {
       const payload = await readJson(res)
 
       if (!res.ok) {
-        setAccountsError(responseError(res, payload, 'Accounts'))
+        setAccountsError(responseError(res, payload, '账户加载'))
         return
       }
 
       setAccounts(extractAccounts(payload))
     } catch {
-      setAccountsError('Unable to load accounts')
+      setAccountsError('无法加载账户')
     } finally {
       setAccountsLoading(false)
     }
@@ -773,7 +813,7 @@ export default function ImportRunPage() {
 
   const loadRun = useCallback(async (initial = false) => {
     if (!runId) {
-      setError('Missing import run id')
+      setError('缺少 import run id')
       setLoading(false)
       return
     }
@@ -801,27 +841,27 @@ export default function ImportRunPage() {
       ])
 
       if (!runRes.ok) {
-        setError(responseError(runRes, runPayload, 'Import run summary'))
+        setError(responseError(runRes, runPayload, '导入批次摘要加载'))
         return
       }
       if (!stagedRes.ok) {
-        setError(responseError(stagedRes, stagedPayload, 'Staged rows'))
+        setError(responseError(stagedRes, stagedPayload, '暂存记录加载'))
         return
       }
       if (!sourceAccountsRes.ok) {
-        setError(responseError(sourceAccountsRes, sourceAccountsPayload, 'Source account mapping'))
+        setError(responseError(sourceAccountsRes, sourceAccountsPayload, '来源账户映射加载'))
         return
       }
       if (!investmentActivitiesRes.ok) {
-        setError(responseError(investmentActivitiesRes, investmentActivitiesPayload, 'Investment activities'))
+        setError(responseError(investmentActivitiesRes, investmentActivitiesPayload, '投资活动加载'))
         return
       }
       if (!investmentPositionsRes.ok) {
-        setError(responseError(investmentPositionsRes, investmentPositionsPayload, 'Investment positions'))
+        setError(responseError(investmentPositionsRes, investmentPositionsPayload, '投资持仓加载'))
         return
       }
       if (!securitiesRes.ok) {
-        setError(responseError(securitiesRes, securitiesPayload, 'Security mappings'))
+        setError(responseError(securitiesRes, securitiesPayload, '证券映射加载'))
         return
       }
 
@@ -839,7 +879,7 @@ export default function ImportRunPage() {
       setMappingErrors({})
       setSummary(normalizeSummary([runPayload, stagedPayload], nextRows))
     } catch {
-      setError('Unable to load staged import review data')
+      setError('无法加载暂存导入审核数据')
     } finally {
       if (initial) setLoading(false)
       setRefreshing(false)
@@ -868,7 +908,7 @@ export default function ImportRunPage() {
     setSecurityCommodityDrafts(() => {
       const nextDrafts: Record<string, string> = {}
       securityMappings.forEach((security, index) => {
-        nextDrafts[securityKey(security, index)] = securityCommodity(security)
+        nextDrafts[securityKey(security, index)] = securityCommodity(security) || securitySuggestedCommodity(security)
       })
       return nextDrafts
     })
@@ -950,11 +990,15 @@ export default function ImportRunPage() {
       unmapped: securityMappings.length - mapped,
     }
   }, [securityMappings])
+  const suggestedSecurityMappingCount = useMemo(
+    () => securityMappings.filter(security => !securityCommodity(security) && securitySuggestedCommodity(security)).length,
+    [securityMappings],
+  )
   const errorCount = summary?.error ?? rows.filter(row => rowStatus(row).toLowerCase() === 'error').length
   const promoteBlockReason = useMemo(() => {
-    if (unmappedSourceAccounts.length > 0) return `${unmappedSourceAccounts.length} source account${unmappedSourceAccounts.length === 1 ? '' : 's'} unmapped`
-    if (errorCount > 0) return `${errorCount} row${errorCount === 1 ? '' : 's'} need review`
-    if (eligibleCount === 0) return 'No eligible rows'
+    if (unmappedSourceAccounts.length > 0) return `${unmappedSourceAccounts.length} 个来源账户未映射`
+    if (errorCount > 0) return `${errorCount} 条记录需审核`
+    if (eligibleCount === 0) return '没有可提升记录'
     return null
   }, [eligibleCount, errorCount, unmappedSourceAccounts.length])
 
@@ -993,7 +1037,7 @@ export default function ImportRunPage() {
 
     const id = securityId(security)
     if (!id) {
-      setSecurityErrorState(key, 'Missing security id')
+      setSecurityErrorState(key, '缺少 security id')
       return
     }
 
@@ -1019,15 +1063,90 @@ export default function ImportRunPage() {
       const payload = await readJson(res)
 
       if (!res.ok) {
-        setSecurityErrorState(key, responseError(res, payload, 'Security mapping'))
+        setSecurityErrorState(key, responseError(res, payload, '证券映射更新'))
         return
       }
 
       await loadRun(false)
     } catch {
-      setSecurityErrorState(key, 'Unable to update security mapping')
+      setSecurityErrorState(key, '无法更新证券映射')
     } finally {
       setSecurityActionState(key, null)
+    }
+  }
+
+  async function saveSuggestedSecurityMappings() {
+    if (!runId) return
+
+    const candidates = securityMappings
+      .map((security, index) => ({
+        security,
+        key: securityKey(security, index),
+        id: securityId(security),
+        suggested: securitySuggestedCommodity(security),
+      }))
+      .filter((candidate): candidate is {
+        security: SecurityMappingRow
+        key: string
+        id: string
+        suggested: string
+      } => !securityCommodity(candidate.security) && Boolean(candidate.id) && Boolean(candidate.suggested))
+
+    if (candidates.length === 0) return
+
+    setSavingSuggestedSecurities(true)
+    setError(null)
+    setNotice(null)
+    setReplayNotice(null)
+    setSecurityErrors({})
+    setSecurityActions(prev => {
+      const next = { ...prev }
+      for (const candidate of candidates) next[candidate.key] = 'save'
+      return next
+    })
+
+    try {
+      const results = await Promise.all(candidates.map(async candidate => {
+        const res = await fetch(
+          `/api/import/runs/${encodeURIComponent(runId)}/securities/${encodeURIComponent(candidate.id)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              beancountCommodity: candidate.suggested,
+              actor: 'local',
+              reason: 'security_mapping_save_suggested',
+            }),
+          },
+        )
+        const payload = await readJson(res)
+        return { ...candidate, res, payload }
+      }))
+
+      const failures = results.filter(result => !result.res.ok)
+      if (failures.length > 0) {
+        await loadRun(false)
+        setSecurityErrors(prev => {
+          const next = { ...prev }
+          for (const failure of failures) {
+            next[failure.key] = responseError(failure.res, failure.payload, '证券映射更新')
+          }
+          return next
+        })
+        setError(`${failures.length} 条建议证券映射保存失败`)
+        return
+      }
+
+      await loadRun(false)
+    } catch {
+      setError('无法保存建议证券映射')
+    } finally {
+      setSavingSuggestedSecurities(false)
+      setSecurityActions(prev => {
+        const next = { ...prev }
+        for (const candidate of candidates) delete next[candidate.key]
+        return next
+      })
     }
   }
 
@@ -1059,7 +1178,7 @@ export default function ImportRunPage() {
 
     const id = activityId(activity)
     if (!id) {
-      setInvestmentErrorState(key, 'Missing investment activity id')
+      setInvestmentErrorState(key, '缺少 investment activity id')
       return
     }
 
@@ -1085,13 +1204,13 @@ export default function ImportRunPage() {
       const payload = await readJson(res)
 
       if (!res.ok) {
-        setInvestmentErrorState(key, responseError(res, payload, 'Investment activity'))
+        setInvestmentErrorState(key, responseError(res, payload, '投资活动更新'))
         return
       }
 
       await loadRun(false)
     } catch {
-      setInvestmentErrorState(key, 'Unable to update investment activity')
+      setInvestmentErrorState(key, '无法更新投资活动')
     } finally {
       setInvestmentActionState(key, null)
     }
@@ -1125,7 +1244,7 @@ export default function ImportRunPage() {
 
     const id = positionId(position)
     if (!id) {
-      setPositionErrorState(key, 'Missing investment position id')
+      setPositionErrorState(key, '缺少 investment position id')
       return
     }
 
@@ -1151,13 +1270,13 @@ export default function ImportRunPage() {
       const payload = await readJson(res)
 
       if (!res.ok) {
-        setPositionErrorState(key, responseError(res, payload, 'Investment position'))
+        setPositionErrorState(key, responseError(res, payload, '投资持仓更新'))
         return
       }
 
       await loadRun(false)
     } catch {
-      setPositionErrorState(key, 'Unable to update investment position')
+      setPositionErrorState(key, '无法更新投资持仓')
     } finally {
       setPositionActionState(key, null)
     }
@@ -1166,7 +1285,7 @@ export default function ImportRunPage() {
   async function promoteRun() {
     if (!runId) return
     if (promoteBlockReason) {
-      setError(`Cannot promote yet: ${promoteBlockReason}`)
+      setError(`暂时无法提升：${promoteBlockReason}`)
       return
     }
 
@@ -1184,14 +1303,14 @@ export default function ImportRunPage() {
       const payload = await readJson(res)
 
       if (!res.ok) {
-        setError(responseError(res, payload, 'Promote'))
+        setError(responseError(res, payload, '提升暂存记录'))
         return
       }
 
       setNotice(promoteNotice(payload))
       await loadRun(false)
     } catch {
-      setError('Unable to promote staged rows')
+      setError('无法提升暂存记录')
     } finally {
       setPromoting(false)
     }
@@ -1214,7 +1333,7 @@ export default function ImportRunPage() {
       const payload = await readJson(res)
 
       if (!res.ok) {
-        setError(responseError(res, payload, 'Replay'))
+        setError(responseError(res, payload, '重放导入批次'))
         return
       }
 
@@ -1226,7 +1345,7 @@ export default function ImportRunPage() {
         stagedReplayed: numberValue(replay.stagedReplayed) ?? 0,
       })
     } catch {
-      setError('Unable to replay import run')
+      setError('无法重放导入批次')
     } finally {
       setReplaying(false)
     }
@@ -1281,7 +1400,7 @@ export default function ImportRunPage() {
 
     const stagedRowId = rowId(row)
     if (!stagedRowId) {
-      setRowErrorState(key, 'Missing staged row id')
+      setRowErrorState(key, '缺少 staged row id')
       return
     }
 
@@ -1304,7 +1423,7 @@ export default function ImportRunPage() {
 
       await loadRun(false)
     } catch {
-      setRowErrorState(key, `Unable to ${label.toLowerCase()} staged row`)
+      setRowErrorState(key, `无法${label}暂存记录`)
     } finally {
       setRowActionState(key, null)
     }
@@ -1313,7 +1432,7 @@ export default function ImportRunPage() {
   async function saveRow(row: StagedRow, key: string) {
     const draft = drafts[key] ?? draftFromRow(row)
 
-    await mutateStagedRow(row, key, 'save', 'Save', {
+    await mutateStagedRow(row, key, 'save', '保存', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1330,15 +1449,15 @@ export default function ImportRunPage() {
   }
 
   async function ignoreRow(row: StagedRow, key: string) {
-    await mutateStagedRow(row, key, 'ignore', 'Ignore', { method: 'POST' }, '/ignore')
+    await mutateStagedRow(row, key, 'ignore', '忽略', { method: 'POST' }, '/ignore')
   }
 
   async function deleteRow(row: StagedRow, key: string) {
-    await mutateStagedRow(row, key, 'delete', 'Delete', { method: 'DELETE' })
+    await mutateStagedRow(row, key, 'delete', '删除', { method: 'DELETE' })
   }
 
   async function restoreRow(row: StagedRow, key: string) {
-    await mutateStagedRow(row, key, 'restore', 'Restore', { method: 'POST' }, '/restore')
+    await mutateStagedRow(row, key, 'restore', '恢复', { method: 'POST' }, '/restore')
   }
 
   async function resolvePendingRow(row: StagedRow, key: string, action: 'cancel_pending' | 'keep_pending') {
@@ -1346,7 +1465,7 @@ export default function ImportRunPage() {
       row,
       key,
       action === 'cancel_pending' ? 'cancelPending' : 'keepPending',
-      action === 'cancel_pending' ? 'Cancel pending' : 'Keep pending',
+      action === 'cancel_pending' ? '取消 pending' : '保留 pending',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1382,7 +1501,7 @@ export default function ImportRunPage() {
       if (!res.ok) {
         setMappingErrors(prev => ({
           ...prev,
-          [sourceAccount.id]: responseError(res, payload, 'Source account mapping'),
+          [sourceAccount.id]: responseError(res, payload, '来源账户映射更新'),
         }))
         return
       }
@@ -1391,7 +1510,7 @@ export default function ImportRunPage() {
     } catch {
       setMappingErrors(prev => ({
         ...prev,
-        [sourceAccount.id]: 'Unable to update source account mapping',
+        [sourceAccount.id]: '无法更新来源账户映射',
       }))
     } finally {
       setMappingActions(prev => {
@@ -1406,9 +1525,9 @@ export default function ImportRunPage() {
     <div className="mx-auto max-w-6xl space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-xl font-bold">Staged Import Review</h1>
+          <h1 className="text-xl font-bold">暂存导入审核</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Review staged rows before promoting eligible transactions for Beancount preparation.
+            审核暂存记录，再将符合条件的交易送入 Beancount 准备流程。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1416,14 +1535,14 @@ export default function ImportRunPage() {
             href="/import"
             className="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
           >
-            Back to import
+            返回导入
           </Link>
           <button
             onClick={() => loadRun(false)}
             disabled={loading || refreshing || promoting}
             className="rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-60"
           >
-            {refreshing ? 'Refreshing...' : 'Refresh'}
+            {refreshing ? '刷新中...' : '刷新'}
           </button>
         </div>
       </div>
@@ -1442,15 +1561,15 @@ export default function ImportRunPage() {
         }`}>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span>
-              {notice.promoted} transaction{notice.promoted !== 1 ? 's' : ''} promoted.
+              已提升 {notice.promoted} 条交易。
             </span>
             {notice.skipped > 0 && (
               <span className="text-xs opacity-75">
-                {notice.skipped} already imported or skipped.
+                {notice.skipped} 条已导入或已跳过。
               </span>
             )}
             {notice.errors.length > 0 && (
-              <span>{notice.errors.length} failed — see details below.</span>
+              <span>{notice.errors.length} 条失败，请查看详情。</span>
             )}
           </div>
           {notice.errors.length > 0 && (
@@ -1462,23 +1581,23 @@ export default function ImportRunPage() {
           )}
           {notice.errors.length === 0 && errorCount > 0 && (
             <p className="mt-2 text-xs">
-              {errorCount} row{errorCount !== 1 ? 's' : ''} still have validation errors.{' '}
+              仍有 {errorCount} 条记录存在校验错误。{' '}
               <button
                 onClick={() => setStatusFilter('error')}
                 className="underline hover:no-underline"
               >
-                View errors
+                查看错误
               </button>
             </p>
           )}
           {notice.errors.length === 0 && unmappedSourceAccounts.length > 0 && (
             <p className="mt-2 text-xs">
-              {unmappedSourceAccounts.length} source account{unmappedSourceAccounts.length !== 1 ? 's' : ''} still unmapped — map them above to make more rows eligible.
+              仍有 {unmappedSourceAccounts.length} 个来源账户未映射，请先完成映射。
             </p>
           )}
           {notice.errors.length > 0 && eligibleCount > 0 && (
             <p className="mt-2 text-xs">
-              {eligibleCount} row{eligibleCount !== 1 ? 's' : ''} still eligible — fix errors and promote again.
+              仍有 {eligibleCount} 条记录可提升，修正错误后可再次提升。
             </p>
           )}
         </div>
@@ -1488,13 +1607,13 @@ export default function ImportRunPage() {
         <div className="rounded-md border border-blue-800 bg-blue-900/30 px-3 py-2 text-sm text-blue-100">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span>
-              Replayed {replayNotice.rawReplayed} raw item{replayNotice.rawReplayed !== 1 ? 's' : ''} into a new import run.
+              已将 {replayNotice.rawReplayed} 条原始记录重放到新导入批次。
             </span>
             <span className="text-xs text-blue-200/80">
-              {replayNotice.stagedReplayed} staged row{replayNotice.stagedReplayed !== 1 ? 's' : ''} created.
+              已创建 {replayNotice.stagedReplayed} 条暂存记录。
             </span>
             <Link href={replayNotice.reviewUrl} className="text-xs font-medium underline hover:no-underline">
-              Open replay
+              打开重放批次
             </Link>
           </div>
           <div className="mt-1 font-mono text-xs text-blue-200/80">{replayNotice.importRunId}</div>
@@ -1503,21 +1622,21 @@ export default function ImportRunPage() {
 
       <section className="rounded-xl border border-slate-700 bg-slate-800 p-5">
         {loading ? (
-          <p className="text-sm text-slate-500">Loading import run...</p>
+          <p className="text-sm text-slate-500">正在加载导入批次...</p>
         ) : (
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs uppercase text-slate-500">Run</span>
+                <span className="text-xs uppercase text-slate-500">批次</span>
                 <span className="font-mono text-sm text-slate-300">{runInfo?.id ?? runId}</span>
                 <span className={`rounded-full border px-2 py-0.5 text-xs ${statusClass(runInfo?.status ?? 'unknown')}`}>
-                  {runInfo?.status ?? 'unknown'}
+                  {stateLabel(runInfo?.status ?? 'unknown')}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                {runInfo?.filename && <span>File: {runInfo.filename}</span>}
-                {runInfo?.source && <span>Source: {runInfo.source}</span>}
-                {runInfo?.created && <span>Created: {runInfo.created}</span>}
+                {runInfo?.filename && <span>文件：{runInfo.filename}</span>}
+                {runInfo?.source && <span>来源：{runInfo.source}</span>}
+                {runInfo?.created && <span>创建时间：{runInfo.created}</span>}
               </div>
             </div>
             <div className="flex flex-wrap gap-2 md:justify-end">
@@ -1526,14 +1645,14 @@ export default function ImportRunPage() {
                 disabled={loading || refreshing || promoting || replaying || !runId}
                 className="self-start rounded-md border border-blue-800 bg-blue-950/60 px-4 py-2 text-sm font-medium text-blue-100 hover:bg-blue-900/70 disabled:opacity-60 md:self-auto"
               >
-                {replaying ? 'Replaying...' : 'Replay run'}
+                {replaying ? '重放中...' : '重放批次'}
               </button>
               <button
                 onClick={promoteRun}
                 disabled={loading || refreshing || promoting || replaying || !runId || Boolean(promoteBlockReason)}
                 className="self-start rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-60 md:self-auto"
               >
-                {promoting ? 'Promoting...' : `Promote eligible rows${eligibleCount ? ` (${eligibleCount})` : ''}`}
+                {promoting ? '提升中...' : `提升可用记录${eligibleCount ? ` (${eligibleCount})` : ''}`}
               </button>
             </div>
             {promoteBlockReason && (
@@ -1551,15 +1670,15 @@ export default function ImportRunPage() {
         }`}>
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-slate-100">Source Account Mapping</h2>
+              <h2 className="text-sm font-semibold text-slate-100">来源账户映射</h2>
               <p className="mt-1 text-sm text-slate-400">
                 {unmappedSourceAccounts.length > 0
-                  ? `${unmappedSourceAccounts.length} source account${unmappedSourceAccounts.length === 1 ? '' : 's'} need mapping`
-                  : 'All source accounts are mapped'}
+                  ? `${unmappedSourceAccounts.length} 个来源账户需映射`
+                  : '全部来源账户已映射'}
               </p>
             </div>
             <span className="rounded-full border border-slate-700 bg-slate-900/60 px-2 py-1 text-xs text-slate-300">
-              {sourceAccounts.length} source accounts
+              {sourceAccounts.length} 个来源账户
             </span>
           </div>
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -1577,7 +1696,7 @@ export default function ImportRunPage() {
                         ? 'border-emerald-800 bg-emerald-900/30 text-emerald-200'
                         : 'border-amber-800 bg-amber-900/30 text-amber-200'
                     }`}>
-                      {sourceAccount.fintrackAccountId ? 'Mapped' : 'Unmapped'}
+                      {sourceAccount.fintrackAccountId ? '已映射' : '未映射'}
                     </span>
                   </div>
                   <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
@@ -1587,7 +1706,7 @@ export default function ImportRunPage() {
                       disabled={busy || accountsLoading}
                       className="h-9 w-full rounded border border-slate-600 bg-slate-900/70 px-2 text-sm text-slate-100 focus:border-blue-500 focus:outline-none disabled:opacity-60"
                     >
-                      <option value="">{accountsLoading ? 'Loading accounts...' : 'Unmapped account'}</option>
+                      <option value="">{accountsLoading ? '账户加载中...' : '未映射账户'}</option>
                       {accounts.map(account => (
                         <option key={account.id} value={account.id}>{account.name}</option>
                       ))}
@@ -1613,7 +1732,7 @@ export default function ImportRunPage() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
           {SUMMARY_KEYS.map(key => (
             <div key={key} className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-              <p className="text-xs capitalize text-slate-400">{key}</p>
+              <p className="text-xs text-slate-400">{SUMMARY_LABELS[key]}</p>
               <p className="mt-1 text-2xl font-bold tabular-nums text-slate-100">
                 {summary[key] ?? '-'}
               </p>
@@ -1626,31 +1745,43 @@ export default function ImportRunPage() {
         <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="flex flex-col gap-3 border-b border-slate-700 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-sm font-medium text-slate-300">Security Mapping</h2>
+              <h2 className="text-sm font-medium text-slate-300">证券映射</h2>
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                <span>{securityMappingCounts.total} securities</span>
-                <span>{securityMappingCounts.mapped} mapped</span>
-                <span>{securityMappingCounts.unmapped} unmapped</span>
+                <span>{securityMappingCounts.total} 个证券</span>
+                <span>{securityMappingCounts.mapped} 已映射</span>
+                <span>{securityMappingCounts.unmapped} 未映射</span>
+                {suggestedSecurityMappingCount > 0 && <span>{suggestedSecurityMappingCount} 条建议</span>}
               </div>
             </div>
-            <span className={`rounded-full border px-2 py-1 text-xs ${
-              securityMappingCounts.unmapped > 0
-                ? 'border-amber-800 bg-amber-900/30 text-amber-200'
-                : 'border-emerald-800 bg-emerald-900/30 text-emerald-200'
-            }`}>
-              {securityMappingCounts.unmapped > 0 ? 'Needs mapping' : 'Mapped'}
-            </span>
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              {suggestedSecurityMappingCount > 0 && (
+                <button
+                  onClick={saveSuggestedSecurityMappings}
+                  disabled={savingSuggestedSecurities || refreshing}
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60"
+                >
+                  {savingSuggestedSecurities ? '保存建议中...' : `保存建议 (${suggestedSecurityMappingCount})`}
+                </button>
+              )}
+              <span className={`rounded-full border px-2 py-1 text-xs ${
+                securityMappingCounts.unmapped > 0
+                  ? 'border-amber-800 bg-amber-900/30 text-amber-200'
+                  : 'border-emerald-800 bg-emerald-900/30 text-emerald-200'
+              }`}>
+                {securityMappingCounts.unmapped > 0 ? '需映射' : '已映射'}
+              </span>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <div className="min-w-[1180px]">
               <div className="grid grid-cols-[120px_230px_230px_190px_220px_minmax(220px,1fr)_170px] gap-3 border-b border-slate-700 px-4 py-2 text-xs text-slate-500">
-                <span>Status</span>
-                <span>Source security</span>
-                <span>Instrument</span>
-                <span>Suggested</span>
-                <span>Beancount commodity</span>
-                <span>Activities</span>
-                <span>Actions</span>
+                <span>状态</span>
+                <span>来源证券</span>
+                <span>工具</span>
+                <span>建议</span>
+                <span>Beancount 商品</span>
+                <span>活动</span>
+                <span>操作</span>
               </div>
               {securityMappings.map((security, index) => {
                 const key = securityKey(security, index)
@@ -1690,9 +1821,9 @@ export default function ImportRunPage() {
                         value={draft}
                         onChange={event => updateSecurityCommodityDraft(key, event.target.value)}
                         disabled={Boolean(busyAction)}
-                        placeholder="AAPL"
+                        placeholder={suggested || 'AAPL'}
                         className={COMPACT_FIELD_CLASS}
-                        aria-label="Beancount commodity"
+                        aria-label="Beancount 商品"
                       />
                     </span>
                     <span className="text-slate-400">{securityActivitySummary(security)}</span>
@@ -1703,7 +1834,7 @@ export default function ImportRunPage() {
                           disabled={Boolean(busyAction)}
                           className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60"
                         >
-                          {busyAction === 'save' ? securityMappingActionLabel(busyAction) : 'Save'}
+                          {busyAction === 'save' ? securityMappingActionLabel(busyAction) : '保存'}
                         </button>
                         {securityCommodity(security) && (
                           <button
@@ -1711,7 +1842,7 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
                           >
-                            {busyAction === 'clear' ? securityMappingActionLabel(busyAction) : 'Clear'}
+                            {busyAction === 'clear' ? securityMappingActionLabel(busyAction) : '清除'}
                           </button>
                         )}
                       </span>
@@ -1729,30 +1860,30 @@ export default function ImportRunPage() {
         <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="flex flex-col gap-3 border-b border-slate-700 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-sm font-medium text-slate-300">Investment Positions</h2>
+              <h2 className="text-sm font-medium text-slate-300">投资持仓</h2>
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                <span>{investmentPositionCounts.total} total</span>
-                <span>{investmentPositionCounts.blocked} blocked</span>
-                <span>{investmentPositionCounts.needsReview} needs review</span>
-                <span>{investmentPositionCounts.reviewed} reviewed</span>
-                <span>{investmentPositionCounts.ignored} ignored</span>
+                <span>{investmentPositionCounts.total} 总计</span>
+                <span>{investmentPositionCounts.blocked} 已阻止</span>
+                <span>{investmentPositionCounts.needsReview} 需审核</span>
+                <span>{investmentPositionCounts.reviewed} 已审核</span>
+                <span>{investmentPositionCounts.ignored} 已忽略</span>
               </div>
             </div>
             <span className="rounded-full border border-amber-800 bg-amber-900/30 px-2 py-1 text-xs text-amber-200">
-              Position snapshots
+              持仓快照
             </span>
           </div>
           <div className="overflow-x-auto">
             <div className="min-w-[1320px]">
               <div className="grid grid-cols-[120px_230px_170px_130px_130px_130px_minmax(260px,1fr)_210px] gap-3 border-b border-slate-700 px-4 py-2 text-xs text-slate-500">
-                <span>Status</span>
-                <span>Security</span>
-                <span>Account</span>
-                <span>As of</span>
-                <span>Quantity</span>
-                <span>Value</span>
-                <span>Validation</span>
-                <span>Actions</span>
+                <span>状态</span>
+                <span>证券</span>
+                <span>账户</span>
+                <span>截至</span>
+                <span>数量</span>
+                <span>价值</span>
+                <span>校验</span>
+                <span>操作</span>
               </div>
               {investmentPositions.map((position, index) => {
                 const key = positionKey(position, index)
@@ -1802,7 +1933,7 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60"
                           >
-                            {busyAction === 'review' ? investmentPositionActionLabel(busyAction) : 'Mark reviewed'}
+                            {busyAction === 'review' ? investmentPositionActionLabel(busyAction) : '标记已审核'}
                           </button>
                         )}
                         {status !== 'ignored' && (
@@ -1811,7 +1942,7 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
                           >
-                            {busyAction === 'ignore' ? investmentPositionActionLabel(busyAction) : 'Ignore'}
+                            {busyAction === 'ignore' ? investmentPositionActionLabel(busyAction) : '忽略'}
                           </button>
                         )}
                         {status !== 'blocked' && (
@@ -1820,7 +1951,7 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-amber-800 bg-amber-950/50 px-2 py-1 text-xs text-amber-200 hover:bg-amber-900/70 disabled:opacity-60"
                           >
-                            {busyAction === 'block' ? investmentPositionActionLabel(busyAction) : 'Block'}
+                            {busyAction === 'block' ? investmentPositionActionLabel(busyAction) : '阻止'}
                           </button>
                         )}
                       </span>
@@ -1838,32 +1969,32 @@ export default function ImportRunPage() {
         <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="flex flex-col gap-3 border-b border-slate-700 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-sm font-medium text-slate-300">Investment Activities</h2>
+              <h2 className="text-sm font-medium text-slate-300">投资活动</h2>
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                <span>{investmentActivityCounts.total} total</span>
-                <span>{investmentActivityCounts.blocked} blocked</span>
-                <span>{investmentActivityCounts.needsReview} needs review</span>
-                <span>{investmentActivityCounts.reviewed} reviewed</span>
-                <span>{investmentActivityCounts.ignored} ignored</span>
+                <span>{investmentActivityCounts.total} 总计</span>
+                <span>{investmentActivityCounts.blocked} 已阻止</span>
+                <span>{investmentActivityCounts.needsReview} 需审核</span>
+                <span>{investmentActivityCounts.reviewed} 已审核</span>
+                <span>{investmentActivityCounts.ignored} 已忽略</span>
               </div>
             </div>
             <span className="rounded-full border border-amber-800 bg-amber-900/30 px-2 py-1 text-xs text-amber-200">
-              Fidelity staging
+              Fidelity 暂存
             </span>
           </div>
           <div className="overflow-x-auto">
             <div className="min-w-[1520px]">
               <div className="grid grid-cols-[120px_170px_230px_170px_130px_120px_160px_160px_minmax(260px,1fr)_210px] gap-3 border-b border-slate-700 px-4 py-2 text-xs text-slate-500">
-                <span>Status</span>
-                <span>Activity</span>
-                <span>Security</span>
-                <span>Account</span>
-                <span>Trade date</span>
-                <span>Quantity</span>
-                <span>Price / amount</span>
-                <span>Option</span>
-                <span>Validation</span>
-                <span>Actions</span>
+                <span>状态</span>
+                <span>活动</span>
+                <span>证券</span>
+                <span>账户</span>
+                <span>交易日</span>
+                <span>数量</span>
+                <span>价格 / 金额</span>
+                <span>期权</span>
+                <span>校验</span>
+                <span>操作</span>
               </div>
               {investmentActivities.map((activity, index) => {
                 const key = activityKey(activity, index)
@@ -1880,7 +2011,7 @@ export default function ImportRunPage() {
                 const amount = stringValue(getFirst(activity, ['amount'])) || '-'
                 const commission = stringValue(getFirst(activity, ['commission']))
                 const fees = stringValue(getFirst(activity, ['fees']))
-                const feeText = [commission ? `commission ${commission}` : '', fees ? `fees ${fees}` : '']
+                const feeText = [commission ? `佣金 ${commission}` : '', fees ? `费用 ${fees}` : '']
                   .filter(Boolean)
                   .join(' / ')
 
@@ -1926,7 +2057,7 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60"
                           >
-                            {busyAction === 'review' ? investmentActivityActionLabel(busyAction) : 'Mark reviewed'}
+                            {busyAction === 'review' ? investmentActivityActionLabel(busyAction) : '标记已审核'}
                           </button>
                         )}
                         {status !== 'ignored' && (
@@ -1935,7 +2066,7 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
                           >
-                            {busyAction === 'ignore' ? investmentActivityActionLabel(busyAction) : 'Ignore'}
+                            {busyAction === 'ignore' ? investmentActivityActionLabel(busyAction) : '忽略'}
                           </button>
                         )}
                         {status !== 'blocked' && (
@@ -1944,7 +2075,7 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-amber-800 bg-amber-950/50 px-2 py-1 text-xs text-amber-200 hover:bg-amber-900/70 disabled:opacity-60"
                           >
-                            {busyAction === 'block' ? investmentActivityActionLabel(busyAction) : 'Block'}
+                            {busyAction === 'block' ? investmentActivityActionLabel(busyAction) : '阻止'}
                           </button>
                         )}
                       </span>
@@ -1961,7 +2092,7 @@ export default function ImportRunPage() {
       <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
         <div className="flex flex-col gap-3 border-b border-slate-700 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-sm font-medium text-slate-300">Ledger Prep Rows</h2>
+            <h2 className="text-sm font-medium text-slate-300">Ledger Prep 记录</h2>
             {accountsError && <p className="mt-1 text-xs text-amber-300">{accountsError}</p>}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -1979,37 +2110,37 @@ export default function ImportRunPage() {
               onChange={event => setSourceAccountFilter(event.target.value)}
               className="h-8 rounded border border-slate-600 bg-slate-900/70 px-2 text-xs text-slate-100 focus:border-blue-500 focus:outline-none"
             >
-              <option value="all">All source accounts</option>
+              <option value="all">全部来源账户</option>
               {sourceAccounts.map(sourceAccount => (
                 <option key={sourceAccount.id} value={sourceAccount.id}>
                   {sourceAccountLabel(sourceAccount)}
                 </option>
               ))}
             </select>
-            <span className="text-xs text-slate-500">{displayedRows.length}/{rows.length} rows</span>
+            <span className="text-xs text-slate-500">{displayedRows.length}/{rows.length} 条</span>
           </div>
         </div>
         {loading ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">Loading staged rows...</p>
+          <p className="px-4 py-8 text-center text-sm text-slate-500">正在加载暂存记录...</p>
         ) : rows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">No staged rows returned for this import run.</p>
+          <p className="px-4 py-8 text-center text-sm text-slate-500">此导入批次没有返回暂存记录。</p>
         ) : displayedRows.length === 0 ? (
-          <p className="px-4 py-8 text-center text-sm text-slate-500">No rows match the selected filters.</p>
+          <p className="px-4 py-8 text-center text-sm text-slate-500">没有符合当前筛选的记录。</p>
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[2050px]">
               <div className="grid grid-cols-[100px_220px_130px_130px_minmax(260px,1fr)_180px_220px_190px_90px_minmax(220px,1fr)_190px] gap-3 border-b border-slate-700 px-4 py-2 text-xs text-slate-500">
-                <span>Status</span>
-                <span>Account</span>
-                <span>Posted</span>
-                <span>Amount</span>
-                <span>Description</span>
-                <span>Ledger Account</span>
-                <span>Notes</span>
-                <span>Tags</span>
+                <span>状态</span>
+                <span>账户</span>
+                <span>日期</span>
+                <span>金额</span>
+                <span>描述</span>
+                <span>Ledger 账户</span>
+                <span>备注</span>
+                <span>标签</span>
                 <span>Pending</span>
-                <span>Validation</span>
-                <span>Actions</span>
+                <span>校验</span>
+                <span>操作</span>
               </div>
               {displayedRows.map((row, index) => {
                 const key = rowKey(row, index)
@@ -2042,7 +2173,7 @@ export default function ImportRunPage() {
                         <span className="truncate">{stateLabel(lifecycleState)}</span>
                       </span>
                       {status !== lifecycleState && (
-                        <span className="mt-1 block truncate text-[11px] text-slate-500">{status}</span>
+                        <span className="mt-1 block truncate text-[11px] text-slate-500">{stateLabel(status)}</span>
                       )}
                     </span>
                     <span className="space-y-1">
@@ -2052,7 +2183,7 @@ export default function ImportRunPage() {
                         disabled={disabled}
                         className={COMPACT_FIELD_CLASS}
                       >
-                        <option value="">{accountsLoading ? 'Loading accounts...' : 'Unmatched account'}</option>
+                        <option value="">{accountsLoading ? '账户加载中...' : '未匹配账户'}</option>
                         {draft.accountId && !hasSelectedAccount && (
                           <option value={draft.accountId}>{currentAccountName}</option>
                         )}
@@ -2063,7 +2194,7 @@ export default function ImportRunPage() {
                         ))}
                       </select>
                       {sourceAccount && (
-                        <span className="block truncate text-[11px] text-slate-500">Source: {sourceAccount}</span>
+                        <span className="block truncate text-[11px] text-slate-500">来源：{sourceAccount}</span>
                       )}
                     </span>
                     <span>
@@ -2073,7 +2204,7 @@ export default function ImportRunPage() {
                         onChange={event => updateDraft(key, { posted: event.target.value })}
                         disabled={disabled}
                         className={COMPACT_FIELD_CLASS}
-                        aria-label="Posted date"
+                        aria-label="日期"
                       />
                     </span>
                     <span>
@@ -2082,7 +2213,7 @@ export default function ImportRunPage() {
                         onChange={event => updateDraft(key, { amount: event.target.value })}
                         disabled={disabled}
                         className={`${COMPACT_FIELD_CLASS} tabular-nums`}
-                        aria-label="Amount"
+                        aria-label="金额"
                       />
                     </span>
                     <span>
@@ -2091,7 +2222,7 @@ export default function ImportRunPage() {
                         onChange={event => updateDraft(key, { description: event.target.value })}
                         disabled={disabled}
                         className={COMPACT_FIELD_CLASS}
-                        aria-label="Description"
+                        aria-label="描述"
                       />
                     </span>
                     <span>
@@ -2109,7 +2240,7 @@ export default function ImportRunPage() {
                         onChange={event => updateDraft(key, { notes: event.target.value })}
                         disabled={disabled}
                         className={COMPACT_FIELD_CLASS}
-                        aria-label="Notes"
+                        aria-label="备注"
                       />
                     </span>
                     <span>
@@ -2119,7 +2250,7 @@ export default function ImportRunPage() {
                         disabled={disabled}
                         placeholder="tag1, tag2"
                         className={COMPACT_FIELD_CLASS}
-                        aria-label="Tags"
+                        aria-label="标签"
                       />
                     </span>
                     <span className="flex h-8 items-center">
@@ -2145,10 +2276,10 @@ export default function ImportRunPage() {
                           disabled={Boolean(busyAction)}
                           className="rounded-md border border-emerald-800 bg-emerald-950/50 px-2 py-1 text-xs text-emerald-200 hover:bg-emerald-900/70 disabled:opacity-60"
                         >
-                          {busyAction === 'restore' ? actionLabel : 'Restore'}
+                          {busyAction === 'restore' ? actionLabel : '恢复'}
                         </button>
                       ) : locked ? (
-                        <span className="text-xs text-slate-500">Locked</span>
+                        <span className="text-xs text-slate-500">已锁定</span>
                       ) : expiredPending ? (
                         <span className="flex flex-wrap gap-1.5">
                           <button
@@ -2156,14 +2287,14 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-red-900 bg-red-950/50 px-2 py-1 text-xs text-red-200 hover:bg-red-900/70 disabled:opacity-60"
                           >
-                            {busyAction === 'cancelPending' ? actionLabel : 'Cancel pending'}
+                            {busyAction === 'cancelPending' ? actionLabel : '取消 pending'}
                           </button>
                           <button
                             onClick={() => resolvePendingRow(row, key, 'keep_pending')}
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
                           >
-                            {busyAction === 'keepPending' ? actionLabel : 'Keep pending'}
+                            {busyAction === 'keepPending' ? actionLabel : '保留 pending'}
                           </button>
                         </span>
                       ) : (
@@ -2173,21 +2304,21 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-60"
                           >
-                            {busyAction === 'save' ? actionLabel : 'Save'}
+                            {busyAction === 'save' ? actionLabel : '保存'}
                           </button>
                           <button
                             onClick={() => ignoreRow(row, key)}
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
                           >
-                            {busyAction === 'ignore' ? actionLabel : 'Ignore'}
+                            {busyAction === 'ignore' ? actionLabel : '忽略'}
                           </button>
                           <button
                             onClick={() => deleteRow(row, key)}
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-red-900 bg-red-950/50 px-2 py-1 text-xs text-red-200 hover:bg-red-900/70 disabled:opacity-60"
                           >
-                            {busyAction === 'delete' ? actionLabel : 'Delete'}
+                            {busyAction === 'delete' ? actionLabel : '删除'}
                           </button>
                         </span>
                       )}

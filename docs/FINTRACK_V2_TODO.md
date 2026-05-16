@@ -405,7 +405,7 @@ Goal: add Fidelity/investment ingestion conservatively after cash-transaction
 ingestion is stable.
 
 - [x] Add Fidelity CSV raw import and parser profiles.
-  - Progress: Fidelity brokerage CSV is auto-detected or selectable as a parser profile, raw rows are archived, investment activity metadata is extracted into staging payloads, and rows are blocked from cash promotion until investment review/export are implemented.
+  - Progress: Fidelity brokerage/account-history CSV is auto-detected or selectable as a parser profile, including exports without a Cash Balance column. Raw rows are archived, investment activity metadata is extracted into staging payloads, and rows stay blocked from cash promotion while source-account mapping feeds investment review/export.
 - [x] Add investment staging models as needed:
   - [x] `securities`
   - [x] `investment_activities`
@@ -423,7 +423,7 @@ ingestion is stable.
   - [x] Position or balance assertion
   - Progress: Fidelity activity metadata now records activity type, instrument type, option open/close position effect, option type, expiration, strike, quantity, prices, fees, settlement date, and blocked review status. Fidelity position CSV snapshots now archive raw rows, persist source-item-backed `investment_positions`, surface position review/status APIs, and can export Beancount position balance assertions once mapped and reviewed.
 - [x] Add security mapping UI.
-  - Progress: import run detail now lists securities linked to staged investment activities, suggests Beancount commodity names, supports map/clear actions, and writes audit rows for mapping changes.
+  - Progress: import run detail now lists securities linked to staged investment activities, pre-fills suggested Beancount commodity names, supports one-click saving of suggested mappings plus manual map/clear actions, and writes audit rows for mapping changes.
 - [x] Add investment activity review UI.
   - Progress: import run detail now shows staged investment activities and position snapshots with status, security, validation errors, and reviewed/ignored/blocked status actions.
 - [x] Add Beancount investment renderer:

@@ -3,6 +3,7 @@ import { sqlite } from '@/lib/db'
 import {
   buildCsvInvestmentPositionSourceItemKey,
   buildCsvSourceItemKey,
+  INVESTMENT_CASH_PROMOTION_BLOCKER,
   normalizeCsvTransactions,
   type CsvImportMapping,
   type CsvNormalizedTransaction,
@@ -226,7 +227,7 @@ export function stageTransactionsCsv(
     const rowValidationErrors = rowErrors(row, account)
     const validationErrors = [...rowValidationErrors]
     if (parserProfile?.blocksCashPromotion) {
-      validationErrors.push('Investment activity review/export is required before this parser profile can be promoted')
+      validationErrors.push(INVESTMENT_CASH_PROMOTION_BLOCKER)
     }
     const finalDisposition = sourceItemKey
       ? selectHistoricalFinalDisposition(connection.id, sourceItemKey, run.id)
@@ -293,7 +294,7 @@ export function stageTransactionsCsv(
         amount: row.amount,
         currency: account?.currency ?? sourceAccount?.currency ?? null,
         normalizerVersion,
-        validationErrors: effectiveValidationErrors,
+        validationErrors: finalDisposition ? [] : rowValidationErrors,
         activity: row.investmentActivity,
       })
     }

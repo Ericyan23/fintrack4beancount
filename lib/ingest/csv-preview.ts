@@ -17,6 +17,7 @@ export interface CsvPreviewRow {
   category: string
   status: string
   error?: string
+  review?: string
 }
 
 export interface CsvPreviewResult {
@@ -26,6 +27,7 @@ export interface CsvPreviewResult {
   rows: CsvPreviewRow[]
   totalRows: number
   validRows: number
+  reviewRows: number
   errorRows: number
 }
 
@@ -54,13 +56,17 @@ function resolveAccount(row: CsvNormalizedTransaction, defaultAccountId: string 
   return lookup.byId.get(accountName) ?? lookup.byName.get(accountName.toLowerCase()) ?? null
 }
 
-function previewError(row: CsvNormalizedTransaction, account: AccountRow | null): string | undefined {
-  if (row.posted === null) return 'Invalid date'
-  if (row.amount === null) return 'Invalid amount'
-  if (!row.description) return 'Missing description'
-  if (!account) return 'Unable to match account'
-  if (row.investmentActivity) return 'Investment activity review/export required'
-  return undefined
+function previewDisposition(row: CsvNormalizedTransaction, account: AccountRow | null): {
+  error?: string
+  review?: string
+} {
+  if (row.posted === null) return { error: 'Invalid date' }
+  if (row.amount === null) return { error: 'Invalid amount' }
+  if (!row.description) return { error: 'Missing description' }
+  if (row.investmentActivity) return { review: 'Investment activity review/export required' }
+  if (row.investmentPosition) return { review: 'Investment position review/export required' }
+  if (!account) return { error: 'Unable to match account' }
+  return {}
 }
 
 export function previewTransactionsCsv(
@@ -80,12 +86,14 @@ export function previewTransactionsCsv(
   })
 
   let validRows = 0
+  let reviewRows = 0
   let errorRows = 0
   const rows = normalized.rows.map(row => {
     const account = resolveAccount(row, defaultAccountId, lookup)
-    const error = previewError(row, account)
+    const { error, review } = previewDisposition(row, account)
     const category = row.category ?? defaultLedgerAccount ?? ''
     if (error) errorRows++
+    else if (review) reviewRows++
     else validRows++
 
     return {
@@ -97,6 +105,7 @@ export function previewTransactionsCsv(
       category,
       status: row.status,
       error,
+      review,
     }
   })
 
@@ -107,6 +116,7 @@ export function previewTransactionsCsv(
     rows: rows.slice(0, 50),
     totalRows: normalized.totalRows,
     validRows,
+    reviewRows,
     errorRows,
   }
 }

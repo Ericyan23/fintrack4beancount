@@ -1,3 +1,4 @@
+import { INVESTMENT_CASH_PROMOTION_BLOCKER } from '@/lib/ingest/csv'
 import { sqlite } from '../db'
 
 type SqliteDatabase = import('better-sqlite3').Database
@@ -48,6 +49,11 @@ interface ExistsRow {
   value: number
 }
 
+interface AccountMappingRow {
+  id: string
+  currency: string
+}
+
 interface StagedRequiredRow {
   id: string
   accountId: string | null
@@ -57,6 +63,13 @@ interface StagedRequiredRow {
   posted: number | null
   amount: string | null
   description: string | null
+  validationErrors: string | null
+}
+
+interface InvestmentValidationRow {
+  id: string
+  accountId: string | null
+  validationErrors: string | null
 }
 
 function nowSeconds(): number {
@@ -83,6 +96,18 @@ function accountExists(database: SqliteDatabase, accountId: string): boolean {
   return Boolean(row)
 }
 
+function selectAccountForMapping(database: SqliteDatabase, accountId: string | null): AccountMappingRow | null {
+  if (accountId === null) return null
+
+  const row = database.prepare(`
+    SELECT id, currency
+    FROM accounts
+    WHERE id = ?
+  `).get(accountId) as AccountMappingRow | undefined
+
+  return row ?? null
+}
+
 function requireImportRun(database: SqliteDatabase, importRunId: string): void {
   if (!importRunExists(database, importRunId)) throw new ImportRunNotFoundError()
 }
@@ -107,6 +132,34 @@ function missingRequiredFields(row: StagedRequiredRow): string[] {
 
 function requiredValidationErrors(row: StagedRequiredRow): string[] {
   return missingRequiredFields(row).map(field => `Missing required field: ${field}`)
+}
+
+function parseValidationErrors(value: string | null): string[] {
+  if (!value) return []
+
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((error): error is string => typeof error === 'string')
+  } catch {
+    return []
+  }
+}
+
+function uniqueErrors(errors: string[]): string[] {
+  return [...new Set(errors)]
+}
+
+function preservedStagedValidationErrors(value: string | null): string[] {
+  return parseValidationErrors(value).filter(error => error === INVESTMENT_CASH_PROMOTION_BLOCKER)
+}
+
+function withoutAccountValidationErrors(value: string | null): string[] {
+  return parseValidationErrors(value).filter(error =>
+    error !== 'Unable to match account'
+    && error !== 'Missing account'
+    && error !== 'Missing required field: account_id',
+  )
 }
 
 function sourceAccountQuery(filterBySourceAccount: boolean): string {
@@ -180,7 +233,8 @@ function recalculateStagedValidation(
       source_item_key AS sourceItemKey,
       posted,
       amount,
-      description
+      description,
+      validation_errors AS validationErrors
     FROM staged_transactions
     WHERE source_account_id = ?
       AND status NOT IN ('ignored', 'deleted', 'merged')
@@ -196,8 +250,73 @@ function recalculateStagedValidation(
   `)
 
   for (const row of rows) {
-    const errors = requiredValidationErrors(row)
+    const errors = uniqueErrors([
+      ...preservedStagedValidationErrors(row.validationErrors),
+      ...requiredValidationErrors(row),
+    ])
     update.run(errors.length > 0 ? 'error' : 'ready', JSON.stringify(errors), timestamp, row.id)
+  }
+}
+
+function recalculateInvestmentActivityValidation(
+  database: SqliteDatabase,
+  sourceAccountId: string,
+  timestamp: number,
+): void {
+  const rows = database.prepare(`
+    SELECT id,
+           account_id AS accountId,
+           validation_errors AS validationErrors
+    FROM investment_activities
+    WHERE source_account_id = ?
+      AND status != 'ignored'
+    ORDER BY created_at ASC, id ASC
+  `).all(sourceAccountId) as InvestmentValidationRow[]
+
+  const update = database.prepare(`
+    UPDATE investment_activities
+    SET validation_errors = ?,
+        updated_at = ?
+    WHERE id = ?
+  `)
+
+  for (const row of rows) {
+    const errors = uniqueErrors([
+      ...withoutAccountValidationErrors(row.validationErrors),
+      ...(present(row.accountId) ? [] : ['Missing required field: account_id']),
+    ])
+    update.run(JSON.stringify(errors), timestamp, row.id)
+  }
+}
+
+function recalculateInvestmentPositionValidation(
+  database: SqliteDatabase,
+  sourceAccountId: string,
+  timestamp: number,
+): void {
+  const rows = database.prepare(`
+    SELECT id,
+           account_id AS accountId,
+           validation_errors AS validationErrors
+    FROM investment_positions
+    WHERE source_account_id = ?
+      AND status != 'ignored'
+    ORDER BY created_at ASC, id ASC
+  `).all(sourceAccountId) as InvestmentValidationRow[]
+
+  const update = database.prepare(`
+    UPDATE investment_positions
+    SET validation_errors = ?,
+        updated_at = ?
+    WHERE id = ?
+  `)
+
+  for (const row of rows) {
+    const errors = uniqueErrors([
+      ...withoutAccountValidationErrors(row.validationErrors),
+      ...(present(row.accountId) ? [] : ['Missing required field: account_id']),
+    ])
+    update.run(JSON.stringify(errors), timestamp, row.id)
   }
 }
 
@@ -223,6 +342,7 @@ export function updateSourceAccountMapping(
   if (input.accountId !== null && !accountExists(database, input.accountId)) {
     throw new AccountNotFoundError()
   }
+  const account = selectAccountForMapping(database, input.accountId)
 
   const timestamp = nowSeconds()
 
@@ -237,12 +357,32 @@ export function updateSourceAccountMapping(
     database.prepare(`
       UPDATE staged_transactions
       SET account_id = ?,
+          currency = CASE WHEN ? IS NULL THEN currency ELSE ? END,
           updated_at = ?
       WHERE source_account_id = ?
         AND status NOT IN ('ignored', 'deleted', 'merged')
+    `).run(input.accountId, account?.currency ?? null, account?.currency ?? null, timestamp, input.sourceAccountId)
+
+    database.prepare(`
+      UPDATE investment_activities
+      SET account_id = ?,
+          currency = CASE WHEN ? IS NULL THEN currency ELSE COALESCE(currency, ?) END,
+          updated_at = ?
+      WHERE source_account_id = ?
+        AND status != 'ignored'
+    `).run(input.accountId, account?.currency ?? null, account?.currency ?? null, timestamp, input.sourceAccountId)
+
+    database.prepare(`
+      UPDATE investment_positions
+      SET account_id = ?,
+          updated_at = ?
+      WHERE source_account_id = ?
+        AND status != 'ignored'
     `).run(input.accountId, timestamp, input.sourceAccountId)
 
     recalculateStagedValidation(database, input.sourceAccountId, timestamp)
+    recalculateInvestmentActivityValidation(database, input.sourceAccountId, timestamp)
+    recalculateInvestmentPositionValidation(database, input.sourceAccountId, timestamp)
 
     const updated = selectImportRunSourceAccount(database, input.importRunId, input.sourceAccountId)
     if (!updated) throw new SourceAccountNotFoundInRunError()

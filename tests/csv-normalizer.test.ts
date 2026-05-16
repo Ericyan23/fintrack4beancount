@@ -163,6 +163,24 @@ describe('Fidelity brokerage CSV', () => {
     assert.equal(result.mapping.amount, 'Amount ($)')
   })
 
+  test('auto-detects Fidelity account history without a cash balance column', () => {
+    const csv = [
+      'Run Date,Account,Action,Symbol,Description,Type,Price ($),Quantity,Commission ($),Fees ($),Accrued Interest ($),Amount ($),Settlement Date',
+      '05/15/2026,Individual,"YOU BOUGHT FICTCORP COM (FCT)",FCT,FICTCORP COM,Margin,40.00,1,0.65,,,-40.65,05/16/2026',
+    ].join('\n')
+    const result = normalizeCsvTransactions(csv)
+
+    assert.equal(result.parserProfile?.id, 'fidelity-brokerage-csv')
+    assert.equal(result.mapping.account, 'Account')
+    assert.equal(result.mapping.date, 'Run Date')
+    assert.equal(result.mapping.description, 'Action')
+    assert.equal(result.mapping.amount, 'Amount ($)')
+    assert.equal(result.totalRows, 1)
+    assert.equal(result.rows[0].accountName, 'Individual')
+    assert.equal(result.rows[0].investmentActivity?.activityType, 'buy')
+    assert.equal(result.rows[0].investmentActivity?.symbol, 'FCT')
+  })
+
   test('parses all 5 transaction rows and skips footer disclaimer rows', () => {
     const csv = readFixture('csv', 'fidelity-brokerage.csv')
     const result = normalizeCsvTransactions(csv)

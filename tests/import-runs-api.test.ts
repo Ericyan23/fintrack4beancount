@@ -380,6 +380,117 @@ function seedInvestmentActivity(runId: string): string {
   return activityId
 }
 
+function seedTreasuryBillActivity(runId: string): string {
+  sqlite.prepare(`
+    INSERT INTO securities (
+      id,
+      source_connection_id,
+      source_symbol,
+      name,
+      instrument_type,
+      underlying_symbol,
+      contract_symbol,
+      option_type,
+      expiration_date,
+      strike_price,
+      beancount_commodity,
+      raw_payload,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'security-api-tbill',
+    'connection-api-csv',
+    '912797SX6',
+    'UNITED STATES TREAS BILLS ZERO CPN',
+    'cash',
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    JSON.stringify({ fixture: true }),
+    1777680000,
+    1777680000,
+  )
+
+  const activityId = 'investment-activity-api-tbill'
+  sqlite.prepare(`
+    INSERT INTO investment_activities (
+      id,
+      import_run_id,
+      raw_item_id,
+      staged_transaction_id,
+      source_connection_id,
+      source_account_id,
+      account_id,
+      security_id,
+      external_id,
+      source_item_key,
+      trade_date,
+      settlement_date,
+      activity_type,
+      instrument_type,
+      position_effect,
+      option_type,
+      quantity,
+      price,
+      amount,
+      currency,
+      commission,
+      fees,
+      accrued_interest,
+      cash_balance,
+      action,
+      description,
+      status,
+      validation_errors,
+      normalized_payload,
+      normalizer_version,
+      created_at,
+      updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    activityId,
+    runId,
+    'raw-ready',
+    'staged-ready',
+    'connection-api-csv',
+    'source-account-api-checking',
+    'acct-api-checking',
+    'security-api-tbill',
+    'external-tbill',
+    'key-tbill',
+    1777680000,
+    '2026-05-02',
+    'buy',
+    'cash',
+    'none',
+    null,
+    '1',
+    '99.50',
+    '-99.50',
+    'USD',
+    null,
+    null,
+    null,
+    null,
+    'YOU BOUGHT UNITED STATES TREAS BILLS',
+    'UNITED STATES TREAS BILLS ZERO CPN',
+    'blocked',
+    JSON.stringify([]),
+    JSON.stringify({ fixture: true }),
+    'fidelity-brokerage-csv-v1',
+    1777680000,
+    1777680000,
+  )
+
+  return activityId
+}
+
 function seedInvestmentPosition(runId: string): string {
   sqlite.prepare(`
     INSERT OR IGNORE INTO securities (
@@ -964,6 +1075,28 @@ test('GET /api/import/runs/:id/securities returns securities needing Beancount m
   assert.equal(security.needsReviewCount, 0)
   assert.equal(security.reviewedCount, 0)
   assert.equal(security.ignoredCount, 0)
+})
+
+test('GET /api/import/runs/:id/securities suggests stable CUSIP commodities', async () => {
+  const { runId } = seedImportRun()
+  seedTreasuryBillActivity(runId)
+  const response = await securitiesRoute.GET(
+    request(`/api/import/runs/${runId}/securities`),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    securities: Array<{
+      id: string
+      sourceSymbol: string
+      suggestedCommodity: string
+    }>
+  }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.securities.length, 1)
+  assert.equal(payload.securities[0].id, 'security-api-tbill')
+  assert.equal(payload.securities[0].sourceSymbol, '912797SX6')
+  assert.equal(payload.securities[0].suggestedCommodity, 'CUSIP_912797SX6')
 })
 
 test('GET /api/import/runs/:id/securities returns 404 JSON for a missing run', async () => {

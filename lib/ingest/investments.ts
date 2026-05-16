@@ -439,10 +439,23 @@ export function recordInvestmentActivity(input: RecordInvestmentActivityInput): 
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'blocked', ?, ?, ?, ?, ?)
     ON CONFLICT(source_connection_id, source_item_key) DO UPDATE SET
+      source_account_id = excluded.source_account_id,
       staged_transaction_id = excluded.staged_transaction_id,
       raw_item_id = excluded.raw_item_id,
       import_run_id = excluded.import_run_id,
+      account_id = excluded.account_id,
       security_id = COALESCE(excluded.security_id, investment_activities.security_id),
+      external_id = excluded.external_id,
+      trade_date = excluded.trade_date,
+      settlement_date = excluded.settlement_date,
+      quantity = excluded.quantity,
+      price = excluded.price,
+      amount = excluded.amount,
+      currency = excluded.currency,
+      commission = excluded.commission,
+      fees = excluded.fees,
+      accrued_interest = excluded.accrued_interest,
+      cash_balance = excluded.cash_balance,
       validation_errors = excluded.validation_errors,
       normalized_payload = excluded.normalized_payload,
       normalizer_version = excluded.normalizer_version,
