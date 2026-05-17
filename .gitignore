@@ -55,6 +55,7 @@ scratch/
 fixtures/simplefin/*.json
 !fixtures/simplefin/sample-payload.json
 !fixtures/simplefin/multi-account-pending.json
+!fixtures/simplefin/pending-to-posted-settlement.json
 scripts/sanitize-simplefin-fixture.mjs
 
 # Legacy V1/local experiment surfaces. Keep these out of V2 commits unless

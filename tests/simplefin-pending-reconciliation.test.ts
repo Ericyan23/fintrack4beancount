@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { NextRequest } from 'next/server'
+import { readJsonFixture } from './helpers/fixtures'
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-simplefin-pending-reconciliation-'))
 process.env.DB_PATH = path.join(tempDir, 'fintrack.db')
@@ -188,14 +189,8 @@ after(() => {
 
 test('stages posted SimpleFIN rows as pending-to-posted matches instead of new canonical rows', () => {
   const pendingId = insertPendingCanonical()
-  const result = stageSimpleFinPayload(payloadWithTransactions([{
-    id: 'posted-final-001',
-    posted: unixDate('2026-05-03'),
-    'transacted-at': unixDate('2026-05-01'),
-    amount: '-42.10',
-    description: 'Gas Station',
-    pending: false,
-  }]), {
+  const settlementPayload = readJsonFixture<SimpleFinPayload>('simplefin', 'pending-to-posted-settlement.json')
+  const result = stageSimpleFinPayload(settlementPayload, {
     sourceConnectionId: CONNECTION_ID,
     sourceConnectionName: 'Pending Reconciliation',
   })

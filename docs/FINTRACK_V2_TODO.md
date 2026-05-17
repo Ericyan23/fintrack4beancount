@@ -167,7 +167,7 @@ Beancount preparation system for SimpleFIN and generic CSV.
   - [x] SimpleFIN sample payload.
   - [x] Generic bank CSV.
   - [x] Duplicate import.
-  - [ ] Pending-to-posted settlement.
+  - [x] Pending-to-posted settlement.
   - [x] Ignored/deleted re-import behavior.
   - [x] Split transaction Beancount render.
   - [x] Beancount preflight/render snapshot.

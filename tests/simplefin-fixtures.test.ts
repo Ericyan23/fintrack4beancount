@@ -5,6 +5,7 @@ import { readJsonFixture } from './helpers/fixtures'
 const PUBLIC_SIMPLEFIN_FIXTURES = [
   'sample-payload.json',
   'multi-account-pending.json',
+  'pending-to-posted-settlement.json',
 ]
 
 interface SimpleFinFixtureTransaction {
@@ -51,6 +52,20 @@ test('multi-account SimpleFIN fixture stays fake and covers posted and pending s
     assert.match(account.org?.domain ?? '', /^example(bank|card)\.test$/)
     assert.equal(account.currency, 'USD')
   }
+})
+
+test('pending-to-posted fixture covers a posted settlement shape', () => {
+  const payload = readJsonFixture<SimpleFinFixturePayload>('simplefin', 'pending-to-posted-settlement.json')
+  const allTransactions = payload.accounts.flatMap(account => account.transactions ?? [])
+
+  assert.deepEqual(payload.accounts.map(account => account.id), ['simplefin-checking-001'])
+  assert.equal(allTransactions.length, 1)
+  assert.equal(allTransactions[0].pending, false)
+  assert.equal(allTransactions[0].posted, 1777766400)
+  assert.equal(allTransactions[0]['transacted-at'], 1777593600)
+  assert.equal(allTransactions[0].amount, '-42.10')
+  assert.equal(allTransactions[0].description, 'Gas Station')
+  assert.match(payload.accounts[0].org?.domain ?? '', /^examplebank\.test$/)
 })
 
 for (const fixtureName of PUBLIC_SIMPLEFIN_FIXTURES) {
