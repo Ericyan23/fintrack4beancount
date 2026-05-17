@@ -170,7 +170,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
         if (splitsResult.status !== 'fulfilled') {
           setSplits([])
           setHasPersistedSplits(false)
-          setSplitError('Unable to load split postings.')
+          setSplitError('无法加载拆分分录。')
           return
         }
 
@@ -183,7 +183,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
         } else {
           setSplits([])
           setHasPersistedSplits(false)
-          setSplitError(apiErrorMessage(splitsData, 'Unable to load split postings.'))
+          setSplitError(apiErrorMessage(splitsData, '无法加载拆分分录。'))
         }
       } catch {
         if (!cancelled) {
@@ -280,7 +280,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
       const data = await readJson(res)
 
       if (!res.ok) {
-        setSplitError(apiErrorMessage(data, 'Unable to save split postings.'))
+        setSplitError(apiErrorMessage(data, '无法保存拆分分录。'))
         return
       }
 
@@ -290,7 +290,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
       }
       setHasPersistedSplits(true)
     } catch {
-      setSplitError('Unable to save split postings.')
+      setSplitError('无法保存拆分分录。')
     } finally {
       setSplitSaving(false)
     }
@@ -309,24 +309,24 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
       const data = await readJson(res)
 
       if (!res.ok) {
-        setSplitError(apiErrorMessage(data, 'Unable to clear split postings.'))
+        setSplitError(apiErrorMessage(data, '无法清除拆分分录。'))
         return
       }
 
       setSplits([])
       setHasPersistedSplits(false)
     } catch {
-      setSplitError('Unable to clear split postings.')
+      setSplitError('无法清除拆分分录。')
     } finally {
       setSplitClearing(false)
     }
   }, [txn, hasPersistedSplits])
 
   if (loading) {
-    return <div className="text-center py-12 text-slate-500">Loading...</div>
+    return <div className="text-center py-12 text-slate-500">加载中...</div>
   }
   if (!txn) {
-    return <div className="text-center py-12 text-slate-500">Transaction not found</div>
+    return <div className="text-center py-12 text-slate-500">未找到交易</div>
   }
 
   const amount = parseFloat(txn.amount)
@@ -340,7 +340,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
         onClick={() => router.back()}
         className="text-sm text-slate-400 hover:text-slate-300"
       >
-        ← Back
+        ← 返回
       </button>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
@@ -352,41 +352,41 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
           {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)}
         </p>
         <div className="mt-3 space-y-1 text-sm text-slate-400">
-          <p>Date: {new Date(txn.posted * 1000).toLocaleDateString('en-US')}</p>
+          <p>日期：{new Date(txn.posted * 1000).toLocaleDateString('zh-CN')}</p>
           {txn.transactedAt && (
-            <p>Transaction time: {new Date(txn.transactedAt * 1000).toLocaleDateString('en-US')}</p>
+            <p>交易时间：{new Date(txn.transactedAt * 1000).toLocaleDateString('zh-CN')}</p>
           )}
-          <p>Account: {account?.name ?? txn.accountId}</p>
-          {txn.status === 'pending' && <p className="text-amber-400">⚠ Pending</p>}
-          {txn.status === 'cancelled' && <p className="text-slate-500">✕ Cancelled</p>}
-          <p>Source: {txn.source}</p>
-          {txn.updatedBy && <p>Last edited by: {txn.updatedBy}</p>}
+          <p>账户：{account?.name ?? txn.accountId}</p>
+          {txn.status === 'pending' && <p className="text-amber-400">⚠ 待处理</p>}
+          {txn.status === 'cancelled' && <p className="text-slate-500">✕ 已取消</p>}
+          <p>来源：{txn.source}</p>
+          {txn.updatedBy && <p>最后编辑人：{txn.updatedBy}</p>}
         </div>
       </div>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
-        <h2 className="text-sm font-medium text-slate-300">Edit details</h2>
+        <h2 className="text-sm font-medium text-slate-300">编辑详情</h2>
 
         <div>
-          <label className="text-xs text-slate-400 block mb-1">Ledger account</label>
+          <label className="text-xs text-slate-400 block mb-1">Ledger 账户</label>
           {suggestedLedgerAccount && !currentLedgerAccount && (
-            <p className="text-xs text-blue-400 mb-1">AI suggestion: {suggestedLedgerAccount}</p>
+            <p className="text-xs text-blue-400 mb-1">AI 建议：{suggestedLedgerAccount}</p>
           )}
           <CategorySelect
             value={ledgerAccount}
             onChange={setLedgerAccount}
-            placeholder="-- Unassigned --"
+            placeholder="-- 未分配 --"
             className="w-full py-2"
           />
         </div>
 
         <div>
-          <label className="text-xs text-slate-400 block mb-1">Notes</label>
+          <label className="text-xs text-slate-400 block mb-1">备注</label>
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
             rows={3}
-            placeholder="Add notes..."
+            placeholder="添加备注..."
             className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500 resize-none"
           />
         </div>
@@ -396,16 +396,16 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
           disabled={saving}
           className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium rounded-md"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? '保存中...' : '保存'}
         </button>
       </div>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-sm font-medium text-slate-300">Split postings</h2>
+            <h2 className="text-sm font-medium text-slate-300">拆分分录</h2>
             <p className="mt-1 text-xs text-slate-500">
-              Ledger postings attached to this parent transaction; no new source transactions are created.
+              这些 Ledger 分录绑定到当前父交易，不会创建新的来源交易。
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -416,7 +416,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                 disabled={splitSaving || splitClearing}
                 className="rounded-md border border-red-900/70 px-2 py-1 text-xs text-red-300 hover:bg-red-950/40 disabled:opacity-50"
               >
-                {splitClearing ? 'Clearing...' : 'Clear splits'}
+                {splitClearing ? '清除中...' : '清除拆分'}
               </button>
             )}
             {splits.length === 0 && (
@@ -426,7 +426,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                 disabled={splitLoading}
                 className="rounded-md border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700 disabled:opacity-50"
               >
-                Seed split
+                生成拆分
               </button>
             )}
             <button
@@ -435,7 +435,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
               disabled={splitLoading}
               className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-100 hover:bg-slate-600 disabled:opacity-50"
             >
-              Add posting
+              添加分录
             </button>
           </div>
         </div>
@@ -448,11 +448,11 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
 
         {splitLoading ? (
           <div className="rounded-md border border-slate-700 bg-slate-900/30 px-3 py-3 text-xs text-slate-500">
-            Loading split postings...
+            正在加载拆分分录...
           </div>
         ) : splits.length === 0 ? (
           <div className="rounded-md border border-dashed border-slate-700 px-3 py-4 text-xs text-slate-500">
-            No split postings saved for this transaction.
+            此交易尚未保存拆分分录。
           </div>
         ) : (
           <div className="space-y-3">
@@ -462,19 +462,19 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                 className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-3"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-medium text-slate-400">Posting {index + 1}</span>
+                  <span className="text-xs font-medium text-slate-400">分录 {index + 1}</span>
                   <button
                     type="button"
                     onClick={() => removeSplitRow(index)}
                     className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-700 hover:text-slate-200"
                   >
-                    Remove
+                    移除
                   </button>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
                   <div>
-                    <label className="mb-1 block text-xs text-slate-500">Amount</label>
+                    <label className="mb-1 block text-xs text-slate-500">金额</label>
                     <input
                       value={split.amount}
                       onChange={e => updateSplit(index, 'amount', e.target.value)}
@@ -485,11 +485,11 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
                   </div>
 
                   <div className="min-w-0">
-                    <label className="mb-1 block text-xs text-slate-500">Ledger account</label>
+                    <label className="mb-1 block text-xs text-slate-500">Ledger 账户</label>
                     <CategorySelect
                       value={split.ledgerAccount}
                       onChange={value => updateSplit(index, 'ledgerAccount', value)}
-                      placeholder="Ledger account"
+                      placeholder="Ledger 账户"
                       searchable
                       className="py-2"
                     />
@@ -498,21 +498,21 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-xs text-slate-500">Memo</label>
+                    <label className="mb-1 block text-xs text-slate-500">摘要</label>
                     <input
                       value={split.memo}
                       onChange={e => updateSplit(index, 'memo', e.target.value)}
-                      placeholder="Optional memo"
+                      placeholder="可选摘要"
                       className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-2 text-sm text-slate-100 placeholder-slate-500"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-1 block text-xs text-slate-500">Notes</label>
+                    <label className="mb-1 block text-xs text-slate-500">备注</label>
                     <input
                       value={split.notes}
                       onChange={e => updateSplit(index, 'notes', e.target.value)}
-                      placeholder="Optional notes"
+                      placeholder="可选备注"
                       className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-2 text-sm text-slate-100 placeholder-slate-500"
                     />
                   </div>
@@ -526,7 +526,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
               disabled={splitSaving || splitClearing || splits.length === 0}
               className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
             >
-              {splitSaving ? 'Saving postings...' : 'Save split postings'}
+              {splitSaving ? '保存分录中...' : '保存拆分分录'}
             </button>
           </div>
         )}

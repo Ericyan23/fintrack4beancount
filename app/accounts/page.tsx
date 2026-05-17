@@ -10,14 +10,14 @@ import Link from 'next/link'
 
 function formatTimeAgo(ts: number): string {
   const diff = Date.now() / 1000 - ts
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`
-  return `${Math.floor(diff / 86400)} days ago`
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
+  return `${Math.floor(diff / 86400)} 天前`
 }
 
 function formatDateTime(ts: number): string {
-  return new Date(ts * 1000).toLocaleString('en-US', {
+  return new Date(ts * 1000).toLocaleString('zh-CN', {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
@@ -60,14 +60,14 @@ export default function AccountsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold">Account Mapping</h1>
+          <h1 className="text-xl font-bold">账户映射</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Map imported institution accounts to Beancount accounts before export.
+            导出前将导入的机构账户映射到 Beancount 账户。
           </p>
         </div>
         {lastSync && (
           <span className="text-xs text-slate-400">
-            Last sync: {formatTimeAgo(lastSync.syncedAt)}
+            上次同步：{formatTimeAgo(lastSync.syncedAt)}
           </span>
         )}
       </div>
@@ -75,11 +75,11 @@ export default function AccountsPage() {
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-emerald-950 border border-emerald-800 rounded-xl p-4">
-          <p className="text-xs text-emerald-400">Imported assets</p>
+          <p className="text-xs text-emerald-400">已导入资产</p>
           <p className="text-2xl font-bold text-emerald-300 mt-1">{formatCurrency(totalAssets)}</p>
         </div>
         <div className="bg-red-950 border border-red-800 rounded-xl p-4">
-          <p className="text-xs text-red-400">Imported liabilities</p>
+          <p className="text-xs text-red-400">已导入负债</p>
           <p className="text-2xl font-bold text-red-300 mt-1">{formatCurrency(totalLiabilities)}</p>
         </div>
       </div>
@@ -88,7 +88,7 @@ export default function AccountsPage() {
       {assets.length > 0 && (
         <div>
           <h2 className="text-sm font-medium text-emerald-400 mb-3 flex items-center gap-2">
-            <span>● Asset source accounts</span>
+            <span>● 资产来源账户</span>
             <span className="text-slate-500">{formatCurrency(totalAssets)}</span>
           </h2>
           <div className="space-y-4">
@@ -112,7 +112,7 @@ export default function AccountsPage() {
       {liabilities.length > 0 && (
         <div>
           <h2 className="text-sm font-medium text-red-400 mb-3 flex items-center gap-2">
-            <span>● Liability source accounts</span>
+            <span>● 负债来源账户</span>
             <span className="text-slate-500">{formatCurrency(totalLiabilities)}</span>
           </h2>
           <div className="space-y-4">
@@ -134,22 +134,22 @@ export default function AccountsPage() {
 
       {allAccounts.length === 0 && (
         <div className="bg-slate-800 rounded-xl p-8 text-center text-slate-500 border border-slate-700">
-          No source account data yet. Configure SimpleFIN and sync before mapping.
+          还没有来源账户数据。请先配置 SimpleFIN 并同步，然后再做映射。
         </div>
       )}
 
       {allAccounts.length > 0 && (
         <div>
-          <h2 className="text-sm font-medium text-slate-400 mb-3">Beancount account mapping</h2>
+          <h2 className="text-sm font-medium text-slate-400 mb-3">Beancount 账户映射</h2>
           <AccountMappingTable accounts={allAccounts} />
         </div>
       )}
 
       {/* Sync log */}
       <div>
-        <h2 className="text-sm font-medium text-slate-400 mb-3">Ingestion sync log</h2>
+        <h2 className="text-sm font-medium text-slate-400 mb-3">导入同步日志</h2>
         {syncHistory.length === 0 ? (
-          <p className="text-slate-500 text-sm">No sync records yet</p>
+          <p className="text-slate-500 text-sm">暂无同步记录</p>
         ) : (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             {syncHistory.map((log, i) => (
@@ -161,9 +161,9 @@ export default function AccountsPage() {
               >
                 <span className="text-slate-400">{formatDateTime(log.syncedAt)}</span>
                 {log.error ? (
-                  <span className="text-red-400 text-xs">Error: {log.error}</span>
+                  <span className="text-red-400 text-xs">错误：{log.error}</span>
                 ) : (
-                  <span className="text-emerald-400">+{log.newCount} new transactions</span>
+                  <span className="text-emerald-400">+{log.newCount} 条新交易</span>
                 )}
               </div>
             ))}

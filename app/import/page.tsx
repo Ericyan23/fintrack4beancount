@@ -116,7 +116,7 @@ const FIELD_LABELS: Array<[ImportField, string, boolean]> = [
 
 const PARSER_PROFILE_OPTIONS = [
   { id: '', name: '自动识别' },
-  { id: 'fidelity-brokerage-csv', name: 'Fidelity Brokerage CSV' },
+  { id: 'fidelity-brokerage-csv', name: 'Fidelity 经纪账户 CSV' },
 ]
 
 function timeAgo(ts: number | null): string {
@@ -149,6 +149,17 @@ function runStatusClass(status: string): string {
   return 'border-slate-700 bg-slate-800 text-slate-400'
 }
 
+function parserProfileDisplayName(nameOrId: string | null | undefined): string {
+  if (!nameOrId) return '投资'
+  if (nameOrId === 'fidelity-brokerage-csv' || nameOrId === 'Fidelity Brokerage CSV') {
+    return 'Fidelity 经纪账户 CSV'
+  }
+  if (nameOrId === 'fidelity-positions-csv' || nameOrId === 'Fidelity Positions CSV') {
+    return 'Fidelity 持仓 CSV'
+  }
+  return nameOrId
+}
+
 export default function ImportPage() {
   const router = useRouter()
   const [accounts, setAccounts] = useState<AccountInfo[]>([])
@@ -175,7 +186,7 @@ export default function ImportPage() {
   const stageResultSummary = result
     ? [
         result.parserProfileId
-          ? `已归档 ${result.rawInserted} 条原始记录供 ${result.parserProfileName ?? 'investment'} 审核`
+          ? `已归档 ${result.rawInserted} 条原始记录供 ${parserProfileDisplayName(result.parserProfileName)} 审核`
           : `已暂存 ${result.staged} 条，归档 ${result.rawInserted} 条原始记录`,
         `跳过 ${result.duplicates} 条重复记录`,
         `${result.errors.length} 条校验提示`,
@@ -233,7 +244,7 @@ export default function ImportPage() {
 
     const name = profileName.trim()
     if (!name) {
-      setProfileError('请输入 profile 名称')
+      setProfileError('请输入配置名称')
       return
     }
 
@@ -254,7 +265,7 @@ export default function ImportPage() {
       const payload = (await res.json().catch(() => ({}))) as { profile?: ImportProfile; error?: string; validationErrors?: string[] }
 
       if (!res.ok || !payload.profile) {
-        setProfileError(payload.validationErrors?.join(', ') || payload.error || '保存 profile 失败')
+        setProfileError(payload.validationErrors?.join(', ') || payload.error || '保存配置失败')
         return
       }
 
@@ -263,9 +274,9 @@ export default function ImportPage() {
         return [payload.profile!, ...next]
       })
       applyProfile(payload.profile)
-      setProfileMessage('Profile 已保存')
+      setProfileMessage('配置已保存')
     } catch {
-      setProfileError('保存 profile 失败')
+      setProfileError('保存配置失败')
     }
   }
 
@@ -438,7 +449,7 @@ export default function ImportPage() {
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-500">SimpleFIN</p>
             <h2 className="mt-1 text-base font-semibold text-slate-100">暂存最新导入</h2>
-            <p className="mt-1 text-sm text-slate-400">将最新交易送入 Ledger Prep。</p>
+            <p className="mt-1 text-sm text-slate-400">将最新交易送入 Ledger 准备。</p>
           </div>
           <button
             onClick={stageSimpleFin}
@@ -453,15 +464,15 @@ export default function ImportPage() {
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-wide text-slate-500">CSV profiles</p>
-            <h2 className="mt-1 text-base font-semibold text-slate-100">映射 profile</h2>
+            <p className="text-xs uppercase tracking-wide text-slate-500">CSV 配置</p>
+            <h2 className="mt-1 text-base font-semibold text-slate-100">映射配置</h2>
           </div>
           <button
             onClick={saveProfile}
             disabled={!profileName.trim()}
             className="self-start rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-slate-100 hover:bg-slate-600 disabled:opacity-50 md:self-auto"
           >
-            保存 profile
+            保存配置
           </button>
         </div>
 
@@ -478,7 +489,7 @@ export default function ImportPage() {
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">已保存 profile</span>
+            <span className="text-xs text-slate-400 block mb-1">已保存配置</span>
             <select
               value={selectedProfileId}
               onChange={event => {
@@ -496,7 +507,7 @@ export default function ImportPage() {
               }}
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
             >
-              <option value="">新建 profile</option>
+              <option value="">新建配置</option>
               {profiles.map(profile => (
                 <option key={profile.id} value={profile.id}>{profile.name}</option>
               ))}
@@ -504,18 +515,18 @@ export default function ImportPage() {
           </label>
 
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">Profile 名称</span>
+            <span className="text-xs text-slate-400 block mb-1">配置名称</span>
             <input
               type="text"
               value={profileName}
               onChange={event => setProfileName(event.target.value)}
-              placeholder="例如 Chase checking CSV"
+              placeholder="例如 Chase 支票账户 CSV"
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
             />
           </label>
 
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">Parser profile</span>
+            <span className="text-xs text-slate-400 block mb-1">解析配置</span>
             <select
               value={parserProfileId}
               onChange={event => {
@@ -531,7 +542,7 @@ export default function ImportPage() {
           </label>
 
           <label className="block">
-            <span className="text-xs text-slate-400 block mb-1">默认 Ledger account 提示</span>
+            <span className="text-xs text-slate-400 block mb-1">默认 Ledger 账户提示</span>
             <input
               type="text"
               value={defaultLedgerAccount}
@@ -575,7 +586,7 @@ export default function ImportPage() {
               type="text"
               value={csvConnectionName}
               onChange={e => setCsvConnectionName(e.target.value)}
-              placeholder="例如 Chase Checking"
+              placeholder="例如 Chase 支票账户"
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
             />
           </label>
@@ -614,7 +625,7 @@ export default function ImportPage() {
           <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
             {preview.parserProfile && (
               <div className="rounded-md border border-amber-900/70 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
-                解析 profile：{preview.parserProfile.name}
+                解析配置：{parserProfileDisplayName(preview.parserProfile.name)}
                 {preview.parserProfile.blocksCashPromotion
                   ? '。记录将归档供投资审核，不会进入现金提升流程。'
                   : ''}

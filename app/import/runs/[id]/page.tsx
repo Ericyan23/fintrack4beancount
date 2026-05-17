@@ -124,12 +124,12 @@ const SUMMARY_LABELS: Record<SummaryKey, string> = {
   ignored: '已忽略',
   deleted: '已删除',
   error: '错误',
-  canonical: 'Canonical',
+  canonical: '正式',
 }
 
 const STATUS_LABELS: Record<string, string> = {
   blocked: '已阻止',
-  canonical: 'Canonical',
+  canonical: '正式',
   completed: '已完成',
   deleted: '已删除',
   error: '错误',
@@ -527,11 +527,84 @@ function positionKey(row: InvestmentPositionRow, index: number): string {
   return positionId(row) || `investment-position-${index}`
 }
 
+function investmentActivityTypeLabel(value: string): string {
+  switch (value) {
+    case 'buy':
+      return '买入'
+    case 'sell':
+      return '卖出'
+    case 'dividend':
+      return '股息'
+    case 'reinvest_dividend':
+      return '股息再投资'
+    case 'interest':
+      return '利息'
+    case 'fee':
+      return '费用'
+    case 'cash_transfer':
+      return '现金转账'
+    case 'other':
+      return '其他'
+    default:
+      return value || '其他'
+  }
+}
+
+function investmentInstrumentTypeLabel(value: string): string {
+  switch (value) {
+    case 'equity':
+      return '股票'
+    case 'option':
+      return '期权'
+    case 'cash':
+      return '现金'
+    case 'fund':
+      return '基金'
+    case 'unknown':
+      return '未知'
+    default:
+      return value || '未知'
+  }
+}
+
+function investmentPositionEffectLabel(value: string): string {
+  switch (value) {
+    case 'open':
+      return '开仓'
+    case 'close':
+      return '平仓'
+    case 'unknown':
+      return '未知'
+    case 'none':
+    case '':
+      return ''
+    default:
+      return value
+  }
+}
+
+function investmentOptionTypeLabel(value: string): string {
+  switch (value) {
+    case 'call':
+      return '看涨'
+    case 'put':
+      return '看跌'
+    case '':
+      return ''
+    default:
+      return value
+  }
+}
+
 function activityLabel(row: InvestmentActivityRow): string {
   const activityType = stringValue(getFirst(row, ['activityType', 'activity_type'])) || 'other'
   const instrumentType = stringValue(getFirst(row, ['instrumentType', 'instrument_type'])) || 'unknown'
   const positionEffect = stringValue(getFirst(row, ['positionEffect', 'position_effect']))
-  return [activityType, instrumentType, positionEffect === 'none' ? '' : positionEffect]
+  return [
+    investmentActivityTypeLabel(activityType),
+    investmentInstrumentTypeLabel(instrumentType),
+    positionEffect === 'none' ? '' : investmentPositionEffectLabel(positionEffect),
+  ]
     .filter(Boolean)
     .join(' / ')
 }
@@ -553,8 +626,8 @@ function activityOptionLabel(row: InvestmentActivityRow): string {
   const positionEffect = stringValue(getFirst(row, ['positionEffect', 'position_effect']))
   const settlementDate = stringValue(getFirst(row, ['settlementDate', 'settlement_date']))
   const parts = [
-    optionType,
-    positionEffect && positionEffect !== 'none' ? positionEffect : '',
+    investmentOptionTypeLabel(optionType),
+    positionEffect && positionEffect !== 'none' ? investmentPositionEffectLabel(positionEffect) : '',
     settlementDate ? `结算 ${settlementDate}` : '',
   ].filter(Boolean)
   return parts.length > 0 ? parts.join(' / ') : '-'
@@ -618,8 +691,8 @@ function securityInstrumentLabel(row: SecurityMappingRow): string {
   const expirationDate = stringValue(getFirst(row, ['expirationDate', 'expiration_date']))
   const strikePrice = stringValue(getFirst(row, ['strikePrice', 'strike_price']))
   const parts = [
-    instrumentType,
-    optionType,
+    investmentInstrumentTypeLabel(instrumentType),
+    investmentOptionTypeLabel(optionType),
     expirationDate,
     strikePrice ? `$${strikePrice}` : '',
   ].filter(Boolean)
@@ -717,8 +790,8 @@ function rowIsRestorable(row: StagedRow): boolean {
 }
 
 function rowActionLabel(action: RowAction): string {
-  if (action === 'cancelPending') return '取消 pending 中...'
-  if (action === 'keepPending') return '保留 pending 中...'
+  if (action === 'cancelPending') return '取消待处理中...'
+  if (action === 'keepPending') return '保留待处理中...'
   if (action === 'save') return '保存中...'
   if (action === 'ignore') return '忽略中...'
   if (action === 'delete') return '删除中...'
@@ -1465,7 +1538,7 @@ export default function ImportRunPage() {
       row,
       key,
       action === 'cancel_pending' ? 'cancelPending' : 'keepPending',
-      action === 'cancel_pending' ? '取消 pending' : '保留 pending',
+      action === 'cancel_pending' ? '取消待处理' : '保留待处理',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2092,7 +2165,7 @@ export default function ImportRunPage() {
       <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
         <div className="flex flex-col gap-3 border-b border-slate-700 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-sm font-medium text-slate-300">Ledger Prep 记录</h2>
+            <h2 className="text-sm font-medium text-slate-300">Ledger 准备记录</h2>
             {accountsError && <p className="mt-1 text-xs text-amber-300">{accountsError}</p>}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -2138,7 +2211,7 @@ export default function ImportRunPage() {
                 <span>Ledger 账户</span>
                 <span>备注</span>
                 <span>标签</span>
-                <span>Pending</span>
+                <span>待处理</span>
                 <span>校验</span>
                 <span>操作</span>
               </div>
@@ -2231,7 +2304,7 @@ export default function ImportRunPage() {
                         onChange={event => updateDraft(key, { category: event.target.value })}
                         disabled={disabled}
                         className={COMPACT_FIELD_CLASS}
-                        aria-label="Ledger account"
+                        aria-label="Ledger 账户"
                       />
                     </span>
                     <span>
@@ -2248,7 +2321,7 @@ export default function ImportRunPage() {
                         value={draft.tags}
                         onChange={event => updateDraft(key, { tags: event.target.value })}
                         disabled={disabled}
-                        placeholder="tag1, tag2"
+                        placeholder="标签1, 标签2"
                         className={COMPACT_FIELD_CLASS}
                         aria-label="标签"
                       />
@@ -2260,7 +2333,7 @@ export default function ImportRunPage() {
                         onChange={event => updateDraft(key, { pending: event.target.checked })}
                         disabled={disabled}
                         className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-                        aria-label="Pending"
+                        aria-label="待处理"
                       />
                     </span>
                     <span className={validationErrors === '-' ? 'text-slate-500' : 'text-red-200'}>
@@ -2287,14 +2360,14 @@ export default function ImportRunPage() {
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-red-900 bg-red-950/50 px-2 py-1 text-xs text-red-200 hover:bg-red-900/70 disabled:opacity-60"
                           >
-                            {busyAction === 'cancelPending' ? actionLabel : '取消 pending'}
+                            {busyAction === 'cancelPending' ? actionLabel : '取消待处理'}
                           </button>
                           <button
                             onClick={() => resolvePendingRow(row, key, 'keep_pending')}
                             disabled={Boolean(busyAction)}
                             className="rounded-md border border-slate-600 bg-slate-700 px-2 py-1 text-xs text-slate-200 hover:bg-slate-600 disabled:opacity-60"
                           >
-                            {busyAction === 'keepPending' ? actionLabel : '保留 pending'}
+                            {busyAction === 'keepPending' ? actionLabel : '保留待处理'}
                           </button>
                         </span>
                       ) : (

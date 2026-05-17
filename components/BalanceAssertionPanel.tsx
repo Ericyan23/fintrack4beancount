@@ -132,13 +132,13 @@ function renderBalanceDirective(assertion: BalanceAssertion): string {
 function statusLabel(status: BalanceAssertionStatus): string {
   switch (status) {
     case 'draft':
-      return 'Draft'
+      return '草稿'
     case 'staged':
-      return 'Staged'
+      return '已暂存'
     case 'merged':
-      return 'Merged'
+      return '已合并'
     case 'rejected':
-      return 'Rejected'
+      return '已拒绝'
   }
 }
 
@@ -168,12 +168,12 @@ function IssueList({ title, issues }: { title: string; issues: BalanceAssertionI
         <div key={`${issue.code}-${issue.balanceAssertionId ?? index}`} className="rounded-lg border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-slate-950 px-1.5 py-0.5 font-mono text-slate-300">{issue.code}</span>
-            <span className="uppercase text-amber-300">{issue.severity}</span>
+            <span className="uppercase text-amber-300">{issue.severity === 'blocker' ? '阻塞' : '需审核'}</span>
           </div>
           <p className="mt-2 text-slate-200">{issue.message}</p>
           <div className="mt-2 grid gap-1 text-slate-500 md:grid-cols-2">
-            {issue.balanceAssertionId && <p className="truncate">assertion: <span className="font-mono">{issue.balanceAssertionId}</span></p>}
-            {issue.account && <p className="truncate">account: <span className="font-mono">{issue.account}</span></p>}
+            {issue.balanceAssertionId && <p className="truncate">断言：<span className="font-mono">{issue.balanceAssertionId}</span></p>}
+            {issue.account && <p className="truncate">账户：<span className="font-mono">{issue.account}</span></p>}
             {issue.sourceId && <p className="truncate">source_id: <span className="font-mono">{issue.sourceId}</span></p>}
           </div>
         </div>
@@ -227,13 +227,13 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
       const data = (await res.json().catch(() => ({}))) as Partial<BalanceAssertionPreflightResult> & { error?: string }
       if (!res.ok || typeof data.ok !== 'boolean') {
         setPreflight(null)
-        setPreflightError(data.error ?? 'Balance assertion preflight failed')
+        setPreflightError(data.error ?? '余额断言预检失败')
         return
       }
       setPreflight(data as BalanceAssertionPreflightResult)
     } catch {
       setPreflight(null)
-      setPreflightError('Balance assertion preflight request failed')
+      setPreflightError('余额断言预检请求失败')
     } finally {
       setPreflightLoading(false)
     }
@@ -246,13 +246,13 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
       const res = await fetch(`/api/beancount/balance-assertions?period=${encodeURIComponent(period)}`)
       const data = (await res.json().catch(() => ({}))) as Partial<BalanceAssertionsResponse>
       if (!res.ok || !Array.isArray(data.balanceAssertions)) {
-        setError(data.error ?? 'Unable to read balance assertions')
+        setError(data.error ?? '无法读取余额断言')
         setAssertions([])
         return
       }
       setAssertions(data.balanceAssertions)
     } catch {
-      setError('Unable to read balance assertions')
+      setError('无法读取余额断言')
       setAssertions([])
     } finally {
       setLoading(false)
@@ -326,13 +326,13 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
       })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        setError(data.error ?? 'Failed to save balance assertion')
+        setError(data.error ?? '保存余额断言失败')
         return
       }
       setForm(prev => ({ ...prev, amount: '', note: '' }))
       await Promise.all([loadAssertions(), loadPreflight()])
     } catch {
-      setError('Failed to save balance assertion')
+      setError('保存余额断言失败')
     } finally {
       setSaving(false)
     }
@@ -347,12 +347,12 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
       })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        setError(data.error ?? 'Failed to delete balance assertion')
+        setError(data.error ?? '删除余额断言失败')
         return
       }
       await Promise.all([loadAssertions(), loadPreflight()])
     } catch {
-      setError('Failed to delete balance assertion')
+      setError('删除余额断言失败')
     } finally {
       setDeletingId(null)
     }
@@ -369,12 +369,12 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
       })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
-        setError(data.error ?? 'Failed to update balance assertion status')
+        setError(data.error ?? '更新余额断言状态失败')
         return
       }
       await Promise.all([loadAssertions(), loadPreflight()])
     } catch {
-      setError('Failed to update balance assertion status')
+      setError('更新余额断言状态失败')
     } finally {
       setUpdatingStatusId(null)
     }
@@ -390,16 +390,16 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
       if (!res.ok) {
         try {
           const data = JSON.parse(text) as { error?: string }
-          setDraftError(data.error ?? 'Failed to generate balance assertion draft')
+          setDraftError(data.error ?? '生成余额断言草稿失败')
         } catch {
-          setDraftError(text || 'Failed to generate balance assertion draft')
+          setDraftError(text || '生成余额断言草稿失败')
         }
         setDraftText(null)
         return
       }
       setDraftText(text)
     } catch {
-      setDraftError('Balance assertion draft request failed')
+      setDraftError('余额断言草稿请求失败')
       setDraftText(null)
     } finally {
       setDraftLoading(false)
@@ -417,11 +417,11 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
     <section className="rounded-xl border border-slate-700 bg-slate-800 p-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-slate-200">Balance Assertions</h2>
-          <p className="mt-1 text-xs text-slate-500">Draft only · {period}</p>
+          <h2 className="text-sm font-semibold text-slate-200">余额断言</h2>
+          <p className="mt-1 text-xs text-slate-500">仅草稿 · {period}</p>
         </div>
         <span className="rounded-full bg-slate-900 px-2 py-0.5 text-xs tabular-nums text-slate-400">
-          {loading ? 'Loading' : assertions.length}
+          {loading ? '加载中' : assertions.length}
         </span>
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
@@ -438,7 +438,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
           onChange={event => selectFintrackAccount(event.target.value)}
           className="min-w-0 rounded border border-slate-600 bg-slate-900 px-2 py-2 text-sm text-slate-100"
         >
-          <option value="">FinTrack account</option>
+          <option value="">FinTrack 账户</option>
           {accountOptions.map(account => (
             <option key={account.id} value={account.id}>{account.name}</option>
           ))}
@@ -476,7 +476,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
         <input
           value={form.note}
           onChange={event => updateForm({ note: event.target.value })}
-          placeholder="Note"
+          placeholder="备注"
           className="min-w-0 rounded border border-slate-600 bg-slate-900 px-2 py-2 text-sm text-slate-100 placeholder-slate-600"
         />
         <button
@@ -484,7 +484,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
           disabled={saving}
           className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
         >
-          {saving ? 'Saving' : 'Add'}
+          {saving ? '保存中' : '添加'}
         </button>
       </form>
 
@@ -498,19 +498,19 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-xs font-semibold text-slate-300">Draft</h3>
-              {preflightLoading && <span className="text-xs text-slate-500">Checking</span>}
+              <h3 className="text-xs font-semibold text-slate-300">草稿</h3>
+              {preflightLoading && <span className="text-xs text-slate-500">检查中</span>}
               {preflight && (
                 <span className={`rounded-full px-2 py-0.5 text-xs ${
                   preflight.ok ? 'bg-emerald-950 text-emerald-300' : 'bg-red-950 text-red-300'
                 }`}>
-                  {preflight.ok ? 'ready' : `${preflight.summary.blockers} blockers`}
+                  {preflight.ok ? '就绪' : `${preflight.summary.blockers} 个阻塞项`}
                 </span>
               )}
             </div>
             {preflight && (
               <p className="mt-1 break-all font-mono text-[11px] text-slate-500">
-                staging: {preflight.proposedStaging}
+                暂存目录：{preflight.proposedStaging}
               </p>
             )}
           </div>
@@ -521,7 +521,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
               disabled={preflightLoading}
               className="min-h-10 rounded border border-slate-600 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:opacity-50"
             >
-              {preflightLoading ? 'Refreshing' : 'Refresh'}
+              {preflightLoading ? '刷新中' : '刷新'}
             </button>
             <button
               type="button"
@@ -529,7 +529,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
               disabled={!preflight?.ok || preflight.summary.exportableAssertions === 0 || draftLoading}
               className="min-h-10 rounded bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {draftLoading ? 'Generating' : 'Preview'}
+              {draftLoading ? '生成中' : '预览'}
             </button>
             <a
               href={preflight?.ok && preflight.summary.exportableAssertions > 0 ? draftHref : undefined}
@@ -543,7 +543,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                   : 'cursor-not-allowed bg-slate-700 text-slate-500'
               }`}
             >
-              Download
+              下载
             </a>
             <button
               type="button"
@@ -551,7 +551,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
               disabled={!draftText}
               className="min-h-10 rounded border border-slate-600 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? '已复制' : '复制'}
             </button>
           </div>
         </div>
@@ -559,25 +559,25 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
         {preflight && (
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-7">
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
-              scanned <span className="text-slate-200">{preflight.summary.assertionsScanned}</span>
+              已扫描 <span className="text-slate-200">{preflight.summary.assertionsScanned}</span>
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
-              exportable <span className="text-emerald-300">{preflight.summary.exportableAssertions}</span>
+              可导出 <span className="text-emerald-300">{preflight.summary.exportableAssertions}</span>
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
-              positions <span className="text-blue-300">{preflight.summary.exportablePositionAssertions ?? 0}</span>
+              持仓 <span className="text-blue-300">{preflight.summary.exportablePositionAssertions ?? 0}</span>
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
-              blockers <span className="text-red-300">{preflight.summary.blockers}</span>
+              阻塞项 <span className="text-red-300">{preflight.summary.blockers}</span>
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
-              duplicates <span className="text-amber-300">{preflight.summary.duplicateCandidates}</span>
+              重复候选 <span className="text-amber-300">{preflight.summary.duplicateCandidates}</span>
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
-              exported <span className="text-blue-300">{preflight.summary.previouslyExported ?? 0}</span>
+              已导出 <span className="text-blue-300">{preflight.summary.previouslyExported ?? 0}</span>
             </div>
             <div className="rounded bg-slate-950/60 px-2 py-2 text-slate-500">
-              ledger balances <span className="text-slate-200">{preflight.ledger.balances}</span>
+              Ledger 余额 <span className="text-slate-200">{preflight.ledger.balances}</span>
             </div>
           </div>
         )}
@@ -594,8 +594,8 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
         )}
         {preflight && (
           <>
-            <IssueList title="Blockers" issues={preflight.blockers} />
-            <IssueList title="Duplicate Candidates" issues={preflight.duplicateCandidates} />
+            <IssueList title="阻塞项" issues={preflight.blockers} />
+            <IssueList title="重复候选" issues={preflight.duplicateCandidates} />
           </>
         )}
         {draftText && (
@@ -612,7 +612,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
 
       <div className="mt-4 overflow-hidden rounded-lg border border-slate-700">
         {assertions.length === 0 ? (
-          <div className="bg-slate-900/40 px-3 py-4 text-sm text-slate-500">No draft balance assertions</div>
+          <div className="bg-slate-900/40 px-3 py-4 text-sm text-slate-500">没有草稿余额断言</div>
         ) : (
           <div className="divide-y divide-slate-700">
             {assertions.map(assertion => (
@@ -626,7 +626,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                 <div className="min-w-0">
                   <p className="truncate font-mono text-slate-200">{assertion.beancountAccount}</p>
                   <p className="mt-1 truncate text-slate-500">
-                    {assertion.fintrackAccountName ?? 'No FinTrack account'}
+                    {assertion.fintrackAccountName ?? '无 FinTrack 账户'}
                   </p>
                   {assertion.note && <p className="mt-1 truncate text-slate-500">{assertion.note}</p>}
                 </div>
@@ -646,7 +646,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-amber-700 px-2 py-1.5 text-xs text-amber-200 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Mark staged
+                        标记已暂存
                       </button>
                       <button
                         type="button"
@@ -654,7 +654,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Reject
+                        拒绝
                       </button>
                     </>
                   )}
@@ -666,7 +666,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-emerald-700 px-2 py-1.5 text-xs text-emerald-200 hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Mark merged
+                        标记已合并
                       </button>
                       <button
                         type="button"
@@ -674,7 +674,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Move back to draft
+                        移回草稿
                       </button>
                       <button
                         type="button"
@@ -682,7 +682,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                         disabled={updatingStatusId === assertion.id}
                         className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Reject
+                        拒绝
                       </button>
                     </>
                   )}
@@ -693,7 +693,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                       disabled={updatingStatusId === assertion.id}
                       className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Move back to staged
+                      移回暂存
                     </button>
                   )}
                   {assertion.status === 'rejected' && (
@@ -703,7 +703,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                       disabled={updatingStatusId === assertion.id}
                       className="min-h-10 rounded border border-blue-700 px-2 py-1.5 text-xs text-blue-200 hover:bg-blue-950/40 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Restore draft
+                      恢复草稿
                     </button>
                   )}
                   <button
@@ -712,7 +712,7 @@ export default function BalanceAssertionPanel({ period, excludeExported = false 
                     disabled={deletingId === assertion.id || assertion.status !== 'draft'}
                     className="min-h-10 rounded border border-slate-600 px-2 py-1.5 text-xs text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {deletingId === assertion.id ? 'Deleting' : 'Delete'}
+                    {deletingId === assertion.id ? '删除中' : '删除'}
                   </button>
                 </div>
               </div>

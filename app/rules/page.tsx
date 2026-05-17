@@ -190,18 +190,18 @@ export default function RulesPage() {
     for (const rule of [...rules].sort((a, b) => b.priority - a.priority)) {
       try {
         if (new RegExp(rule.pattern, 'i').test(testInput)) {
-          setTestResult(`Matched rule #${rule.id} -> ${rule.category}`)
+          setTestResult(`匹配规则 #${rule.id} -> ${rule.category}`)
           return
         }
       } catch {
         // skip invalid
       }
     }
-    setTestResult('No matching rule (no ledger account)')
+    setTestResult('没有匹配规则（没有 Ledger 账户）')
   }
 
   function reviewStatusLabel(categoryName: string): string {
-    return REVIEW_LEDGER_ACCOUNTS.has(categoryName) ? 'Needs review' : 'Auto-reviewed'
+    return REVIEW_LEDGER_ACCOUNTS.has(categoryName) ? '需审核' : '自动已审核'
   }
 
   function reviewStatusClass(categoryName: string): string {
@@ -213,7 +213,7 @@ export default function RulesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-3">
-        <h1 className="text-xl font-bold shrink-0">Ledger Account Rules</h1>
+        <h1 className="text-xl font-bold shrink-0">Ledger 账户规则</h1>
         <div className="flex flex-col items-end gap-1.5">
           <div className="flex gap-2">
             <button
@@ -221,33 +221,33 @@ export default function RulesPage() {
               disabled={applying || rules.length === 0}
               className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm rounded-md whitespace-nowrap"
             >
-              {applying ? 'Applying...' : '▶ Apply rules'}
+              {applying ? '应用中...' : '▶ 应用规则'}
             </button>
             <button
               onClick={runAIClassify}
               disabled={classifying}
               className="px-3 py-1.5 bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-white text-sm rounded-md whitespace-nowrap"
             >
-              {classifying ? 'AI analyzing...' : '✦ Batch AI suggestions'}
+              {classifying ? 'AI 分析中...' : '✦ 批量 AI 建议'}
             </button>
           </div>
           {applyResult && (
             <span className="text-xs text-green-400 text-right">
-              Rules: assigned {applyResult.applied}, {applyResult.remaining} remaining
+              规则：已分配 {applyResult.applied} 条，剩余 {applyResult.remaining} 条
             </span>
           )}
           {classifyProgress && (
             <div className="w-full max-w-xs space-y-1">
               <div className="flex justify-between text-xs text-slate-400">
                 <span>
-                  AI analyzing {classifyProgress.current}/{classifyProgress.total}
-                  {classifyProgress.grouped ? ' groups' : ''}
+                  AI 分析 {classifyProgress.current}/{classifyProgress.total}
+                  {classifyProgress.grouped ? ' 个分组' : ''}
                 </span>
-                <span>Suggested {classifyProgress.suggested}</span>
+                <span>已建议 {classifyProgress.suggested}</span>
               </div>
               {classifyProgress.grouped && classifyProgress.transactionTotal !== undefined && (
                 <p className="text-[11px] text-slate-500 text-right">
-                  Processing {classifyProgress.transactionTotal} grouped transactions
+                  正在处理 {classifyProgress.transactionTotal} 条分组交易
                 </p>
               )}
               <div className="w-full bg-slate-700 rounded-full h-1.5">
@@ -264,7 +264,7 @@ export default function RulesPage() {
                 ? `✕ ${classifyResult.error}`
                 : classifyResult.info
                 ? `ℹ ${classifyResult.info}`
-                : `AI: ✦ suggested ${classifyResult.suggested}, ${classifyResult.remaining} without ledger account remaining`}
+                : `AI：✦ 已建议 ${classifyResult.suggested} 条，剩余 ${classifyResult.remaining} 条没有 Ledger 账户`}
             </span>
           )}
         </div>
@@ -272,14 +272,14 @@ export default function RulesPage() {
 
       {/* New rule form */}
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
-        <h2 className="text-sm font-medium text-slate-300 mb-4">New rule</h2>
+        <h2 className="text-sm font-medium text-slate-300 mb-4">新规则</h2>
         <form onSubmit={createRule} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-slate-400 block mb-1">Regex pattern</label>
+              <label className="text-xs text-slate-400 block mb-1">正则模式</label>
               <input
                 type="text"
-                placeholder="e.g. WHOLE.*FOODS"
+                placeholder="例如：WHOLE.*FOODS"
                 value={pattern}
                 onChange={e => setPattern(e.target.value)}
                 required
@@ -287,7 +287,7 @@ export default function RulesPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">Ledger account</label>
+              <label className="text-xs text-slate-400 block mb-1">Ledger 账户</label>
               <CategorySelect
                 value={category}
                 onChange={setCategory}
@@ -295,7 +295,7 @@ export default function RulesPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">Priority (higher runs first)</label>
+              <label className="text-xs text-slate-400 block mb-1">优先级（越高越先执行）</label>
               <input
                 type="number"
                 value={priority}
@@ -309,18 +309,18 @@ export default function RulesPage() {
             type="submit"
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-md"
           >
-            + New rule
+            + 新规则
           </button>
         </form>
       </div>
 
       {/* Rule tester */}
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
-        <h2 className="text-sm font-medium text-slate-300 mb-3">Rule tester</h2>
+        <h2 className="text-sm font-medium text-slate-300 mb-3">规则测试</h2>
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Enter a transaction description to test rules..."
+            placeholder="输入交易描述来测试规则..."
             value={testInput}
             onChange={e => setTestInput(e.target.value)}
             className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
@@ -329,11 +329,11 @@ export default function RulesPage() {
             onClick={testRule}
             className="px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white text-sm rounded-md"
           >
-            Test
+            测试
           </button>
         </div>
         {testResult && (
-          <p className={`mt-2 text-sm ${testResult.includes('Matched') ? 'text-green-400' : 'text-amber-400'}`}>
+          <p className={`mt-2 text-sm ${testResult.includes('匹配') ? 'text-green-400' : 'text-amber-400'}`}>
             {testResult}
           </p>
         )}
@@ -345,30 +345,30 @@ export default function RulesPage() {
           onClick={() => setShowCatManager(v => !v)}
           className="w-full flex items-center justify-between text-sm font-medium text-slate-400 hover:text-slate-200 py-1"
         >
-          <span>Ledger account management ({catStats.length})</span>
-          <span>{showCatManager ? '▲ Collapse' : '▼ Expand'}</span>
+          <span>Ledger 账户管理（{catStats.length}）</span>
+          <span>{showCatManager ? '▲ 收起' : '▼ 展开'}</span>
         </button>
         {showCatManager && <div className="mt-3"><CategoryManager initialStats={catStats} /></div>}
       </div>
 
       {/* Rules list */}
       <div>
-        <h2 className="text-sm font-medium text-slate-400 mb-3">Existing rules ({rules.length})</h2>
+        <h2 className="text-sm font-medium text-slate-400 mb-3">现有规则（{rules.length}）</h2>
         {loading ? (
-          <p className="text-slate-500 text-sm">Loading...</p>
+          <p className="text-slate-500 text-sm">加载中...</p>
         ) : rules.length === 0 ? (
           <div className="bg-slate-800 rounded-xl p-6 text-center text-slate-500 border border-slate-700">
-            No rules yet. Create one to start automatic assignment.
+            暂无规则。创建一个规则即可开始自动分配。
           </div>
         ) : (
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div className="hidden md:grid grid-cols-[70px_1fr_1fr_120px_60px_120px] gap-4 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
-              <span>Priority</span>
-              <span>Pattern (regex)</span>
-              <span>Ledger account</span>
-              <span>Result</span>
+              <span>优先级</span>
+              <span>模式（正则）</span>
+              <span>Ledger 账户</span>
+              <span>结果</span>
               <span>ID</span>
-              <span>Actions</span>
+              <span>操作</span>
             </div>
             {rules.map((rule, i) => (
               <div
@@ -405,13 +405,13 @@ export default function RulesPage() {
                         onClick={() => saveRule(rule.id!)}
                         className="text-emerald-300 hover:text-emerald-200 text-xs"
                       >
-                        Save
+                        保存
                       </button>
                       <button
                         onClick={cancelEdit}
                         className="text-slate-400 hover:text-slate-300 text-xs"
                       >
-                        Cancel
+                        取消
                       </button>
                     </div>
                   </>
@@ -429,13 +429,13 @@ export default function RulesPage() {
                         onClick={() => startEdit(rule)}
                         className="text-blue-300 hover:text-blue-200 text-xs"
                       >
-                        Edit
+                        编辑
                       </button>
                       <button
                         onClick={() => deleteRule(rule.id!)}
                         className="text-red-400 hover:text-red-300 text-xs"
                       >
-                        Delete
+                        删除
                       </button>
                     </div>
                   </>

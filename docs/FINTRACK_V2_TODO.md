@@ -145,6 +145,7 @@ Freeze these APIs:
    - Review -> Ledger Prep.
    - Accounts -> Account Mapping.
    - Transfers -> Transfer Review.
+   - Progress: primary v2 navigation and import, review, export, account, transaction, transfer, rules, settings, and diagnostics surfaces now use Chinese labels while preserving Beancount/API identifiers.
 2. Hide Reports and standalone Categories from primary navigation.
 3. Rebuild Home into readiness/status view without schema changes.
 4. Move account mapping to the top of Accounts; collapse balance cards into diagnostics.

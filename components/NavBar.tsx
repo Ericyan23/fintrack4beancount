@@ -5,15 +5,15 @@ import { usePathname } from 'next/navigation'
 import LanguageSwitcher from './LanguageSwitcher'
 
 const tabs = [
-  { href: '/', label: 'Command Center', icon: '🏠' },
-  { href: '/import', label: 'Import', icon: '↓' },
-  { href: '/review', label: 'Ledger Prep', icon: '✓' },
-  { href: '/transactions', label: 'Transactions', icon: '💳' },
-  { href: '/transfers', label: 'Transfer Review', icon: '↔' },
-  { href: '/beancount', label: 'Export Center', icon: 'B' },
-  { href: '/accounts', label: 'Account Mapping', icon: '🏦' },
-  { href: '/rules', label: 'Rules', icon: '📋' },
-  { href: '/settings', label: 'Settings', icon: '⚙️' },
+  { href: '/', label: '控制中心', icon: '🏠' },
+  { href: '/import', label: '导入', icon: '↓' },
+  { href: '/review', label: 'Ledger 准备', icon: '✓' },
+  { href: '/transactions', label: '交易', icon: '💳' },
+  { href: '/transfers', label: '转账审核', icon: '↔' },
+  { href: '/beancount', label: '导出中心', icon: 'B' },
+  { href: '/accounts', label: '账户映射', icon: '🏦' },
+  { href: '/rules', label: '规则', icon: '📋' },
+  { href: '/settings', label: '设置', icon: '⚙️' },
 ]
 
 export default function NavBar() {

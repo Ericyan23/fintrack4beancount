@@ -105,17 +105,24 @@ function countCanonical(): { total: number; categorized: number; pending: number
 function timeAgo(ts: number | null): string {
   if (!ts) return '—'
   const diff = Date.now() / 1000 - ts
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
+  return `${Math.floor(diff / 86400)} 天前`
 }
 
 function sourceLabel(kind: string | null, name: string | null): string {
   if (name) return name
   if (kind === 'simplefin') return 'SimpleFIN'
   if (kind === 'csv') return 'CSV'
-  return kind ?? 'Unknown'
+  return kind ?? '未知来源'
+}
+
+function runStatusLabel(status: string): string {
+  if (status === 'completed') return '已完成'
+  if (status === 'running') return '运行中'
+  if (status === 'error') return '错误'
+  return status || '未知'
 }
 
 function runStatusClass(status: string): string {
@@ -178,27 +185,27 @@ function RunRow({ run }: { run: RunRow }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-slate-200 truncate">{label}</span>
           <span className={`rounded-full border px-2 py-0.5 text-[11px] ${runStatusClass(run.status)}`}>
-            {run.status}
+            {runStatusLabel(run.status)}
           </span>
           {run.error && (
             <span className="text-[11px] text-red-300 truncate max-w-[200px]">{run.error}</span>
           )}
         </div>
         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
-          <span>{run.itemCount} items</span>
+          <span>{run.itemCount} 条</span>
           {run.eligibleCount > 0 && (
-            <span className="text-amber-300">{run.eligibleCount} eligible to promote</span>
+            <span className="text-amber-300">{run.eligibleCount} 条可提升</span>
           )}
           {run.errorCount > 0 && (
-            <span className="text-red-400">{run.errorCount} staging errors</span>
+            <span className="text-red-400">{run.errorCount} 条暂存错误</span>
           )}
-          {run.mergedCount > 0 && <span>{run.mergedCount} merged</span>}
+          {run.mergedCount > 0 && <span>{run.mergedCount} 条已合并</span>}
         </div>
       </div>
       <div className="shrink-0 text-right">
         <p className="text-xs text-slate-500">{timeAgo(run.startedAt)}</p>
         {hasWork && (
-          <p className="mt-1 text-[11px] font-medium text-amber-300">Review</p>
+          <p className="mt-1 text-[11px] font-medium text-amber-300">审核</p>
         )}
       </div>
     </Link>
@@ -222,78 +229,78 @@ export default function CommandCenter() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Command Center</h1>
+        <h1 className="text-xl font-bold">控制中心</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Beancount preparation pipeline status.
+          Beancount 准备流程状态。
         </p>
       </div>
 
       {/* ── 3 pipeline cards ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <PipelineCard
-          title="Import"
+          title="导入"
           metric={String(recentRuns.length > 0 ? recentRuns.length : '—')}
           metricClass={activeRuns.length > 0 ? 'text-amber-300' : 'text-slate-100'}
           sub={
             recentRuns.length > 0
-              ? `Last: ${timeAgo(recentRuns[0]?.startedAt ?? null)}${activeRuns.length > 0 ? ` · ${activeRuns.length} run${activeRuns.length !== 1 ? 's' : ''} need review` : ''}`
-              : 'No import runs yet'
+              ? `最近：${timeAgo(recentRuns[0]?.startedAt ?? null)}${activeRuns.length > 0 ? ` · ${activeRuns.length} 个批次需审核` : ''}`
+              : '暂无导入批次'
           }
           href="/import"
-          cta="Open Import"
+          cta="打开导入"
           warn={activeRuns.length > 0}
         />
         <PipelineCard
-          title="Ledger Prep"
+          title="Ledger 准备"
           metric={reviewCount > 0 ? String(reviewCount) : stagedEligible > 0 ? String(stagedEligible) : '✓'}
           metricClass={reviewCount > 0 ? 'text-amber-300' : stagedEligible > 0 ? 'text-blue-300' : 'text-emerald-300'}
           sub={
             reviewCount > 0
-              ? `${reviewCount} transaction${reviewCount !== 1 ? 's' : ''} need ledger account${stagedEligible > 0 ? ` · ${stagedEligible} staged rows ready to promote` : ''}`
+              ? `${reviewCount} 条交易需要 Ledger 账户${stagedEligible > 0 ? ` · ${stagedEligible} 条暂存记录可提升` : ''}`
               : stagedEligible > 0
-                ? `${stagedEligible} staged rows ready to promote`
-                : 'No review items'
+                ? `${stagedEligible} 条暂存记录可提升`
+                : '没有待审核项目'
           }
           href="/review"
-          cta="Open Ledger Prep"
+          cta="打开 Ledger 准备"
           warn={reviewCount > 0}
         />
         <PipelineCard
-          title="Canonical Transactions"
+          title="正式交易"
           metric={String(canonical.total)}
           metricClass="text-slate-100"
-          sub={`${canonical.categorized} assigned · ${canonical.pending} pending · ${reviewCount} need prep`}
+          sub={`${canonical.categorized} 条已分配 · ${canonical.pending} 条待处理 · ${reviewCount} 条需准备`}
           href="/beancount"
-          cta="Open Export Center"
+          cta="打开导出中心"
         />
       </div>
 
       {/* ── Blockers ─────────────────────────────────────────────────────── */}
       {hasBlockers && (
         <section className="rounded-xl border border-amber-800 bg-amber-950/20 p-4">
-          <h2 className="text-sm font-semibold text-amber-200">Active blockers</h2>
+          <h2 className="text-sm font-semibold text-amber-200">当前阻塞项</h2>
           <ul className="mt-3 space-y-2 text-sm">
             {unmapped > 0 && (
               <li className="flex items-center justify-between gap-3">
                 <span className="text-slate-300">
-                  {unmapped} source account{unmapped !== 1 ? 's' : ''} not mapped to a Fintrack account
+                  {unmapped} 个来源账户尚未映射到 FinTrack 账户
                 </span>
                 <Link href="/accounts" className="shrink-0 text-xs text-blue-400 hover:text-blue-300">
-                  Account Mapping →
+                  账户映射 →
                 </Link>
               </li>
             )}
             {stagedErrors > 0 && (
               <li className="flex items-center justify-between gap-3">
                 <span className="text-slate-300">
-                  {stagedErrors} staged row{stagedErrors !== 1 ? 's' : ''} have validation errors
+                  {stagedErrors} 条暂存记录存在校验错误
                 </span>
                 {activeRuns[0] && (
                   <Link
                     href={`/import/runs/${encodeURIComponent(activeRuns[0].id)}`}
                     className="shrink-0 text-xs text-blue-400 hover:text-blue-300"
                   >
-                    Review run →
+                    审核批次 →
                   </Link>
                 )}
               </li>
@@ -306,7 +313,7 @@ export default function CommandCenter() {
       {activeRuns.length > 0 && (
         <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="border-b border-slate-700 px-4 py-3">
-            <h2 className="text-sm font-medium text-slate-300">Import runs needing attention</h2>
+            <h2 className="text-sm font-medium text-slate-300">需要处理的导入批次</h2>
           </div>
           <div className="divide-y divide-slate-700">
             {activeRuns.map(run => (
@@ -319,18 +326,18 @@ export default function CommandCenter() {
       {/* ── Recent import history ─────────────────────────────────────────── */}
       <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
         <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
-          <h2 className="text-sm font-medium text-slate-300">Recent import history</h2>
+          <h2 className="text-sm font-medium text-slate-300">最近导入历史</h2>
           <Link href="/import" className="text-xs text-blue-400 hover:text-blue-300">
-            New import →
+            新导入 →
           </Link>
         </div>
         {recentRuns.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-slate-500">
-            No import runs yet.{' '}
+            还没有导入批次。{' '}
             <Link href="/import" className="text-blue-400 hover:text-blue-300">
-              Start an import
+              开始导入
             </Link>{' '}
-            to begin Beancount preparation.
+            以开始 Beancount 准备流程。
           </div>
         ) : (
           <div className="divide-y divide-slate-700">
@@ -340,7 +347,7 @@ export default function CommandCenter() {
                 <RunRow key={run.id} run={run} />
               ))}
             {recentRuns.filter(r => r.eligibleCount === 0 && r.errorCount === 0).length === 0 && (
-              <p className="px-4 py-4 text-sm text-slate-500">All recent runs need attention — see above.</p>
+              <p className="px-4 py-4 text-sm text-slate-500">最近批次都需要处理，请查看上方。</p>
             )}
           </div>
         )}

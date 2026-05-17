@@ -49,9 +49,9 @@ function optionListId(id: string): string {
 }
 
 function statusText(account: BeancountAccountView): string {
-  if (account.status === 'open') return `open since ${account.openDate}`
-  if (account.status === 'not_yet_open') return `opens ${account.openDate}`
-  return account.closeDate ? `closed ${account.closeDate}` : 'closed'
+  if (account.status === 'open') return `已开放，自 ${account.openDate}`
+  if (account.status === 'not_yet_open') return `${account.openDate} 后开放`
+  return account.closeDate ? `已关闭 ${account.closeDate}` : '已关闭'
 }
 
 export default function AccountMappingTable({ accounts }: Props) {
@@ -82,7 +82,7 @@ export default function AccountMappingTable({ accounts }: Props) {
         if (!res.ok || !Array.isArray(data.accounts)) {
           setLedgerStatus({
             loading: false,
-            error: data.error ?? 'Unable to read Beancount accounts',
+            error: data.error ?? '无法读取 Beancount 账户',
             revision: null,
             openCount: 0,
           })
@@ -100,7 +100,7 @@ export default function AccountMappingTable({ accounts }: Props) {
         if (!cancelled) {
           setLedgerStatus({
             loading: false,
-            error: 'Unable to read Beancount accounts',
+            error: '无法读取 Beancount 账户',
             revision: null,
             openCount: 0,
           })
@@ -160,20 +160,20 @@ export default function AccountMappingTable({ accounts }: Props) {
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-700 bg-slate-800">
       <div className="grid min-w-[900px] grid-cols-[minmax(180px,1.4fr)_minmax(130px,0.8fr)_minmax(130px,0.7fr)_minmax(280px,1.2fr)_90px] gap-3 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
-        <span>Account</span>
-        <span>Institution</span>
-        <span>Type</span>
+        <span>账户</span>
+        <span>机构</span>
+        <span>类型</span>
         <span>
-          Beancount Account
-          {ledgerStatus.loading && <span className="ml-2 text-slate-600">loading</span>}
+          Beancount 账户
+          {ledgerStatus.loading && <span className="ml-2 text-slate-600">加载中</span>}
           {!ledgerStatus.loading && !ledgerStatus.error && (
             <span className="ml-2 text-slate-600">
-              {ledgerStatus.openCount} open{ledgerStatus.revision ? ` · ${ledgerStatus.revision}` : ''}
+              {ledgerStatus.openCount} 个开放{ledgerStatus.revision ? ` · ${ledgerStatus.revision}` : ''}
             </span>
           )}
           {ledgerStatus.error && <span className="ml-2 text-amber-400">{ledgerStatus.error}</span>}
         </span>
-        <span className="text-right">Save</span>
+        <span className="text-right">保存</span>
       </div>
 
       {rows.map(account => {
@@ -213,7 +213,7 @@ export default function AccountMappingTable({ accounts }: Props) {
               onChange={e => updateRow(account.id, { accountTypeOverride: e.target.value || null })}
               className="min-w-0 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-100"
             >
-              <option value="">Auto: {accountTypeLabel(effectiveAccountType(account))}</option>
+              <option value="">自动：{accountTypeLabel(effectiveAccountType(account))}</option>
               {ACCOUNT_TYPES.map(type => (
                 <option key={type} value={type}>{accountTypeLabel(type)}</option>
               ))}
@@ -246,7 +246,7 @@ export default function AccountMappingTable({ accounts }: Props) {
                 </p>
               )}
               {missingLedgerAccount && (
-                <p className="mt-1 truncate text-[11px] text-amber-300">Not found in ledger</p>
+                <p className="mt-1 truncate text-[11px] text-amber-300">账本中未找到</p>
               )}
             </div>
 
@@ -255,7 +255,7 @@ export default function AccountMappingTable({ accounts }: Props) {
               disabled={state === 'saving'}
               className="rounded bg-blue-700 px-3 py-1.5 text-xs text-white hover:bg-blue-600 disabled:opacity-50"
             >
-              {state === 'saving' ? 'Saving' : state === 'saved' ? 'Saved' : state === 'error' ? 'Failed' : 'Save'}
+              {state === 'saving' ? '保存中' : state === 'saved' ? '已保存' : state === 'error' ? '失败' : '保存'}
             </button>
           </div>
         )

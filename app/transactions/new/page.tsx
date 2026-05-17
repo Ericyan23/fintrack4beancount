@@ -74,7 +74,7 @@ export default function NewTransactionPage() {
         setAccounts(nextAccounts)
         setAccountId(current => current || nextAccounts[0]?.id || '')
       } catch {
-        if (!cancelled) setError('Unable to load accounts.')
+        if (!cancelled) setError('无法加载账户。')
       } finally {
         if (!cancelled) setAccountsLoading(false)
       }
@@ -115,13 +115,13 @@ export default function NewTransactionPage() {
       const data = await readJson(response)
 
       if (!response.ok || !data.transaction?.id) {
-        setError(data.validationErrors?.join(', ') || data.error || 'Unable to create transaction.')
+        setError(data.validationErrors?.join(', ') || data.error || '无法创建交易。')
         return
       }
 
       router.push(`/transactions/${encodeURIComponent(data.transaction.id)}`)
     } catch {
-      setError('Unable to create transaction.')
+      setError('无法创建交易。')
     } finally {
       setSaving(false)
     }
@@ -135,19 +135,19 @@ export default function NewTransactionPage() {
           onClick={() => router.back()}
           className="text-sm text-slate-400 hover:text-slate-300"
         >
-          Back
+          返回
         </button>
         <a
           href="/transactions"
           className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-500 hover:text-white"
         >
-          Prep queue
+          准备队列
         </a>
       </div>
 
       <form onSubmit={submit} className="rounded-xl border border-slate-700 bg-slate-800 p-5 space-y-5">
         <div>
-          <h1 className="text-lg font-semibold text-slate-100">New manual transaction</h1>
+          <h1 className="text-lg font-semibold text-slate-100">新建手动交易</h1>
           {selectedAccount?.beancountAccount && (
             <p className="mt-1 text-xs text-slate-500">{selectedAccount.beancountAccount}</p>
           )}
@@ -161,7 +161,7 @@ export default function NewTransactionPage() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Account</label>
+            <label className="mb-1 block text-xs text-slate-400">账户</label>
             <select
               value={accountId}
               onChange={event => setAccountId(event.target.value)}
@@ -169,7 +169,7 @@ export default function NewTransactionPage() {
               required
               className="w-full rounded border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-slate-100"
             >
-              <option value="">Select account</option>
+              <option value="">选择账户</option>
               {accounts.map(account => (
                 <option key={account.id} value={account.id}>
                   {account.name}
@@ -179,7 +179,7 @@ export default function NewTransactionPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Date</label>
+            <label className="mb-1 block text-xs text-slate-400">日期</label>
             <input
               type="date"
               value={postedDate}
@@ -192,7 +192,7 @@ export default function NewTransactionPage() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-[10rem_minmax(0,1fr)]">
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Amount</label>
+            <label className="mb-1 block text-xs text-slate-400">金额</label>
             <input
               value={amount}
               onChange={event => setAmount(event.target.value)}
@@ -204,7 +204,7 @@ export default function NewTransactionPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-slate-400">Description</label>
+            <label className="mb-1 block text-xs text-slate-400">描述</label>
             <input
               value={description}
               onChange={event => setDescription(event.target.value)}
@@ -215,18 +215,18 @@ export default function NewTransactionPage() {
         </div>
 
         <div>
-          <label className="mb-1 block text-xs text-slate-400">Ledger account</label>
+          <label className="mb-1 block text-xs text-slate-400">Ledger 账户</label>
           <CategorySelect
             value={ledgerAccount}
             onChange={setLedgerAccount}
-            placeholder="-- Needs review --"
+            placeholder="-- 需审核 --"
             searchable
             className="w-full py-2"
           />
         </div>
 
         <div>
-          <label className="mb-1 block text-xs text-slate-400">Notes</label>
+          <label className="mb-1 block text-xs text-slate-400">备注</label>
           <textarea
             value={notes}
             onChange={event => setNotes(event.target.value)}
@@ -236,11 +236,11 @@ export default function NewTransactionPage() {
         </div>
 
         <div>
-          <label className="mb-1 block text-xs text-slate-400">Tags</label>
+          <label className="mb-1 block text-xs text-slate-400">标签</label>
           <input
             value={tags}
             onChange={event => setTags(event.target.value)}
-            placeholder="receipt, tax"
+            placeholder="收据, 税务"
             className="w-full rounded border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
           />
         </div>
@@ -251,14 +251,14 @@ export default function NewTransactionPage() {
             onClick={() => router.back()}
             className="rounded-md border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700"
           >
-            Cancel
+            取消
           </button>
           <button
             type="submit"
             disabled={saving || accountsLoading}
             className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
           >
-            {saving ? 'Creating...' : 'Create transaction'}
+            {saving ? '创建中...' : '创建交易'}
           </button>
         </div>
       </form>
