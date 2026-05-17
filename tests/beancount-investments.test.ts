@@ -3,6 +3,7 @@ import { after, beforeEach, test } from 'node:test'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import type { InvestmentActivityType, InvestmentOptionType, InvestmentPositionEffect } from '../lib/ingest/types'
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-beancount-investments-'))
 const dbPath = path.join(tempDir, 'fintrack.db')
@@ -112,10 +113,10 @@ function insertSecurity(input: {
 function insertInvestmentActivity(input: {
   id: string
   securityId?: string | null
-  activityType: 'buy' | 'sell' | 'dividend' | 'interest' | 'reinvest_dividend'
+  activityType: InvestmentActivityType
   instrumentType?: string
-  positionEffect?: 'open' | 'close' | 'none' | 'unknown'
-  optionType?: 'call' | 'put' | null
+  positionEffect?: InvestmentPositionEffect
+  optionType?: InvestmentOptionType
   quantity?: string | null
   price?: string | null
   amount: string
@@ -301,6 +302,68 @@ test('preflight blocks sell-to-close option activity without explicit lot, cost 
     () => renderBeancountDraft(result, { generatedAt: new Date('2026-05-15T12:00:00.000Z') }),
     /Cannot render Beancount draft while preflight has blockers/,
   )
+})
+
+test('preflight blocks buy-to-close option activity without explicit lot, cost basis, or override', () => {
+  insertSecurity({
+    id: 'security-buy-close-call',
+    sourceSymbol: '-FCT250620C50',
+    commodity: 'FCT250620C50',
+  })
+  insertInvestmentActivity({
+    id: 'investment-buy-close-call',
+    securityId: 'security-buy-close-call',
+    activityType: 'buy',
+    positionEffect: 'close',
+    optionType: 'call',
+    quantity: '1',
+    price: '0.50',
+    amount: '-50.65',
+    commission: '0.65',
+    action: 'YOU BOUGHT CLOSING TRANSACTION CALL',
+  })
+
+  const result = runBeancountPreflight({ period: '2026-04', beancountRoot })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.summary.exportableInvestmentActivities, 0)
+  assert.equal(result.exportableIntents.length, 0)
+  assert.equal(result.blockers.length, 1)
+  assert.equal(result.blockers[0].code, 'investment_pnl_requires_lot_review')
+  assert.equal(result.blockers[0].severity, 'blocker')
+  assert.equal(result.blockers[0].investmentActivityId, 'investment-buy-close-call')
+})
+
+test('preflight blocks transfer-in-kind style investment rows as unsupported', () => {
+  insertSecurity({
+    id: 'security-transfer-kind',
+    sourceSymbol: 'FCT',
+    commodity: 'FCT',
+    instrumentType: 'equity',
+  })
+  insertInvestmentActivity({
+    id: 'investment-transfer-kind',
+    securityId: 'security-transfer-kind',
+    activityType: 'other',
+    instrumentType: 'equity',
+    positionEffect: 'none',
+    optionType: null,
+    quantity: '10',
+    price: null,
+    amount: '0.00',
+    action: 'TRANSFER OF ASSETS IN KIND',
+  })
+
+  const result = runBeancountPreflight({ period: '2026-04', beancountRoot })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.summary.exportableInvestmentActivities, 0)
+  assert.equal(result.exportableIntents.length, 0)
+  assert.equal(result.blockers.length, 1)
+  assert.equal(result.blockers[0].code, 'unsupported_investment_activity_type')
+  assert.equal(result.blockers[0].severity, 'blocker')
+  assert.equal(result.blockers[0].investmentActivityId, 'investment-transfer-kind')
+  assert.match(result.blockers[0].message, /not exportable yet/)
 })
 
 test('dividend activity renders cash and dividend income postings', () => {

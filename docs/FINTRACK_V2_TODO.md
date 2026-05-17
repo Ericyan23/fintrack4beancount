@@ -434,10 +434,11 @@ ingestion is stable.
   - [x] dividend and interest income
   - [x] balance/position assertions
   - Progress: reviewed buy investment activities with mapped securities now enter preflight as LedgerIntent records and render security, cash, and fee postings. Reviewed sell/close rows are Beancount preflight blockers until explicit lot, cost basis, or manual override support exists. Reviewed dividend and interest rows now render cash/income postings, simple reinvested dividend rows render security cost plus dividend income when quantity, amount, and security mapping are explicit, and reviewed persisted investment positions render as Beancount balance assertions only with source connection, source account, source item key, and raw payload provenance.
-- [ ] Be conservative with complex lots, DRIP, transfer-in-kind, and cost basis:
+- [x] Be conservative with complex lots, DRIP, transfer-in-kind, and cost basis:
   - [x] block export when uncertain.
   - [x] require review.
   - [x] preserve raw rows for manual ledger work.
+  - Progress: preflight blocks sell/close rows, buy-to-close rows, and transfer-in-kind style unsupported rows before Beancount handoff; reinvested dividends require reviewed status and still surface review guidance before export.
 
 ## Long-Term Optional
 
