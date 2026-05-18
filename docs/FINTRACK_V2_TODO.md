@@ -445,6 +445,7 @@ ingestion is stable.
 - [ ] Restore reports only as secondary diagnostics if they help the prep workflow.
 - [ ] Add external Beancount worker integration for promotion-time validation.
   - Progress: added a reusable promotion validation service that runs Beancount preflight, renders the draft, and invokes the configured external checker without changing the default promote behavior yet.
+  - Progress: added an explicit promote validation API and import-run UI preflight action that dry-runs promotion inside a rollback transaction, returns a sanitized validation summary, and leaves the default promote endpoint unchanged.
 - [ ] Add Git PR/export target only after download and handoff are stable.
 - [ ] Add AI categorization improvements after manual/rule workflows are reliable.
 

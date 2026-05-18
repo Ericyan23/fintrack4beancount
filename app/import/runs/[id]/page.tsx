@@ -56,6 +56,34 @@ interface PromoteNotice {
   errors: string[]
 }
 
+interface PromotionValidationNotice {
+  ok: boolean
+  period: string
+  promotion: {
+    promoted: number
+    skipped: number
+    errors: string[]
+  }
+  validation: {
+    ok: boolean
+    stage: string
+    summary: {
+      exportableTransactions: number
+      mergedTransfers: number
+      blockers: number
+      reviewItems: number
+      previouslyExported: number
+      exportableInvestmentActivities: number
+    }
+    blockers: string[]
+    checker: {
+      status: string
+      mode: string
+      message: string
+    } | null
+  } | null
+}
+
 interface ReplayNotice {
   importRunId: string
   reviewUrl: string
@@ -140,12 +168,15 @@ const STATUS_LABELS: Record<string, string> = {
   mapped: '已映射',
   merged: '已合并',
   needs_review: '需审核',
+  passed: '通过',
   ready: '就绪',
   reviewed: '已审核',
   running: '运行中',
   staged: '已暂存',
+  skipped: '已跳过',
   unmapped: '未映射',
   unknown: '未知',
+  unavailable: '不可用',
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -825,6 +856,68 @@ function promoteNotice(payload: unknown): PromoteNotice {
   }
 }
 
+function validationBlockers(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map(item => {
+      if (typeof item === 'string') return item
+      if (!isRecord(item)) return ''
+
+      const code = stringValue(item.code)
+      const message = stringValue(item.message)
+      if (code && message) return `${code}: ${message}`
+      return message || code
+    })
+    .filter(Boolean)
+}
+
+function promotionValidationNotice(payload: unknown): PromotionValidationNotice {
+  const record = isRecord(payload) ? payload : {}
+  const promotion = getFirstRecord(record, ['promotion']) ?? {}
+  const validation = getFirstRecord(record, ['validation'])
+  const summary = validation ? getFirstRecord(validation, ['summary']) ?? {} : {}
+  const checker = validation ? getFirstRecord(validation, ['checker']) : null
+
+  return {
+    ok: booleanValue(record.ok),
+    period: stringValue(record.period),
+    promotion: {
+      promoted: numberValue(getFirst(promotion, ['promoted'])) ?? 0,
+      skipped: numberValue(getFirst(promotion, ['skipped'])) ?? 0,
+      errors: collectErrors(getFirst(promotion, ['errors'])),
+    },
+    validation: validation
+      ? {
+        ok: booleanValue(validation.ok),
+        stage: stringValue(validation.stage),
+        summary: {
+          exportableTransactions: numberValue(getFirst(summary, ['exportableTransactions'])) ?? 0,
+          mergedTransfers: numberValue(getFirst(summary, ['mergedTransfers'])) ?? 0,
+          blockers: numberValue(getFirst(summary, ['blockers'])) ?? 0,
+          reviewItems: numberValue(getFirst(summary, ['reviewItems'])) ?? 0,
+          previouslyExported: numberValue(getFirst(summary, ['previouslyExported'])) ?? 0,
+          exportableInvestmentActivities: numberValue(getFirst(summary, ['exportableInvestmentActivities'])) ?? 0,
+        },
+        blockers: validationBlockers(getFirst(validation, ['blockers'])),
+        checker: checker
+          ? {
+            status: stringValue(checker.status),
+            mode: stringValue(checker.mode),
+            message: stringValue(checker.message),
+          }
+          : null,
+      }
+      : null,
+  }
+}
+
+function validationStageLabel(stage: string): string {
+  if (stage === 'preflight') return '预检规则'
+  if (stage === 'external') return '外部 Beancount'
+  return stage || '未知'
+}
+
 export default function ImportRunPage() {
   const params = useParams<Record<string, string | string[]>>()
   const idParam = params.id
@@ -857,10 +950,13 @@ export default function ImportRunPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [promoting, setPromoting] = useState(false)
+  const [validatingPromotion, setValidatingPromotion] = useState(false)
   const [replaying, setReplaying] = useState(false)
   const [savingSuggestedSecurities, setSavingSuggestedSecurities] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<PromoteNotice | null>(null)
+  const [validationNotice, setValidationNotice] = useState<PromotionValidationNotice | null>(null)
+  const [validationPeriod, setValidationPeriod] = useState('')
   const [replayNotice, setReplayNotice] = useState<ReplayNotice | null>(null)
 
   const loadAccounts = useCallback(async () => {
@@ -993,6 +1089,15 @@ export default function ImportRunPage() {
     }
     return rows.filter(row => ELIGIBLE_STATUSES.has(rowStatus(row).toLowerCase())).length
   }, [rows, summary])
+  const inferredValidationPeriod = useMemo(() => {
+    const eligibleRow = rows.find(row => ELIGIBLE_STATUSES.has(rowStatus(row).toLowerCase()))
+    const posted = eligibleRow ? dateInputValue(getFirst(eligibleRow, ['posted', 'postedAt', 'posted_at', 'date'])) : ''
+    return posted ? posted.slice(0, 7) : new Date().toISOString().slice(0, 7)
+  }, [rows])
+
+  useEffect(() => {
+    setValidationPeriod(current => current || inferredValidationPeriod)
+  }, [inferredValidationPeriod])
 
   const unmappedSourceAccounts = useMemo(
     () => sourceAccounts.filter(sourceAccount => !sourceAccount.fintrackAccountId),
@@ -1118,6 +1223,7 @@ export default function ImportRunPage() {
     setSecurityErrorState(key, null)
     setError(null)
     setNotice(null)
+    setValidationNotice(null)
     setReplayNotice(null)
 
     try {
@@ -1170,6 +1276,7 @@ export default function ImportRunPage() {
     setSavingSuggestedSecurities(true)
     setError(null)
     setNotice(null)
+    setValidationNotice(null)
     setReplayNotice(null)
     setSecurityErrors({})
     setSecurityActions(prev => {
@@ -1259,6 +1366,7 @@ export default function ImportRunPage() {
     setInvestmentErrorState(key, null)
     setError(null)
     setNotice(null)
+    setValidationNotice(null)
     setReplayNotice(null)
 
     try {
@@ -1325,6 +1433,7 @@ export default function ImportRunPage() {
     setPositionErrorState(key, null)
     setError(null)
     setNotice(null)
+    setValidationNotice(null)
     setReplayNotice(null)
 
     try {
@@ -1365,6 +1474,7 @@ export default function ImportRunPage() {
     setPromoting(true)
     setError(null)
     setNotice(null)
+    setValidationNotice(null)
     setReplayNotice(null)
 
     try {
@@ -1389,12 +1499,43 @@ export default function ImportRunPage() {
     }
   }
 
+  async function validatePromotionRun() {
+    if (!runId) return
+
+    setValidatingPromotion(true)
+    setError(null)
+    setNotice(null)
+    setValidationNotice(null)
+    setReplayNotice(null)
+
+    try {
+      const res = await fetch(`/api/import/runs/${encodeURIComponent(runId)}/promote/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ period: validationPeriod || undefined }),
+      })
+      const payload = await readJson(res)
+
+      if (!res.ok) {
+        setError(responseError(res, payload, 'Beancount 预检'))
+        return
+      }
+
+      setValidationNotice(promotionValidationNotice(payload))
+    } catch {
+      setError('无法运行 Beancount 预检')
+    } finally {
+      setValidatingPromotion(false)
+    }
+  }
+
   async function replayRun() {
     if (!runId) return
 
     setReplaying(true)
     setError(null)
     setNotice(null)
+    setValidationNotice(null)
     setReplayNotice(null)
 
     try {
@@ -1481,6 +1622,7 @@ export default function ImportRunPage() {
     setRowErrorState(key, null)
     setError(null)
     setNotice(null)
+    setValidationNotice(null)
 
     try {
       const res = await fetch(
@@ -1559,6 +1701,7 @@ export default function ImportRunPage() {
     })
     setError(null)
     setNotice(null)
+    setValidationNotice(null)
 
     try {
       const res = await fetch(
@@ -1676,6 +1819,60 @@ export default function ImportRunPage() {
         </div>
       )}
 
+      {validationNotice && (
+        <div className={`rounded-md border px-3 py-2 text-sm ${
+          validationNotice.ok
+            ? 'border-emerald-800 bg-emerald-900/30 text-emerald-200'
+            : 'border-amber-800 bg-amber-900/30 text-amber-200'
+        }`}>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span>
+              {validationNotice.ok ? 'Beancount 预检通过' : 'Beancount 预检未通过'}。
+            </span>
+            <span className="text-xs opacity-80">月份 {validationNotice.period || validationPeriod}</span>
+            <span className="text-xs opacity-80">
+              dry-run 提升 {validationNotice.promotion.promoted} 条，跳过 {validationNotice.promotion.skipped} 条
+            </span>
+          </div>
+          {validationNotice.validation && (
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs opacity-90">
+              <span>阶段：{validationStageLabel(validationNotice.validation.stage)}</span>
+              <span>可导出交易：{validationNotice.validation.summary.exportableTransactions}</span>
+              <span>合并转账：{validationNotice.validation.summary.mergedTransfers}</span>
+              <span>投资活动：{validationNotice.validation.summary.exportableInvestmentActivities}</span>
+              <span>blocker：{validationNotice.validation.summary.blockers}</span>
+              <span>review：{validationNotice.validation.summary.reviewItems}</span>
+              {validationNotice.validation.summary.previouslyExported > 0 && (
+                <span>已导出跳过：{validationNotice.validation.summary.previouslyExported}</span>
+              )}
+              {validationNotice.validation.checker && (
+                <span>
+                  checker：{stateLabel(validationNotice.validation.checker.status)}
+                  （{validationNotice.validation.checker.mode}）
+                </span>
+              )}
+            </div>
+          )}
+          {validationNotice.validation?.checker?.message && (
+            <p className="mt-2 text-xs opacity-90">{validationNotice.validation.checker.message}</p>
+          )}
+          {validationNotice.promotion.errors.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+              {validationNotice.promotion.errors.slice(0, 5).map((message, index) => (
+                <li key={`promotion-validation-error-${index}`}>{message}</li>
+              ))}
+            </ul>
+          )}
+          {validationNotice.validation && validationNotice.validation.blockers.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+              {validationNotice.validation.blockers.slice(0, 5).map((message, index) => (
+                <li key={`promotion-validation-blocker-${index}`}>{message}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {replayNotice && (
         <div className="rounded-md border border-blue-800 bg-blue-900/30 px-3 py-2 text-sm text-blue-100">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -1713,16 +1910,33 @@ export default function ImportRunPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2 md:justify-end">
+              <label className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-900/50 px-3 py-1.5 text-xs text-slate-300">
+                <span>预检月份</span>
+                <input
+                  type="month"
+                  value={validationPeriod}
+                  onChange={event => setValidationPeriod(event.target.value)}
+                  disabled={loading || refreshing || promoting || validatingPromotion || replaying}
+                  className="w-32 bg-transparent text-slate-100 outline-none disabled:opacity-60"
+                />
+              </label>
+              <button
+                onClick={validatePromotionRun}
+                disabled={loading || refreshing || promoting || validatingPromotion || replaying || !runId}
+                className="self-start rounded-md border border-amber-700 bg-amber-950/50 px-4 py-2 text-sm font-medium text-amber-100 hover:bg-amber-900/60 disabled:opacity-60 md:self-auto"
+              >
+                {validatingPromotion ? '预检中...' : 'Beancount 预检'}
+              </button>
               <button
                 onClick={replayRun}
-                disabled={loading || refreshing || promoting || replaying || !runId}
+                disabled={loading || refreshing || promoting || validatingPromotion || replaying || !runId}
                 className="self-start rounded-md border border-blue-800 bg-blue-950/60 px-4 py-2 text-sm font-medium text-blue-100 hover:bg-blue-900/70 disabled:opacity-60 md:self-auto"
               >
                 {replaying ? '重放中...' : '重放批次'}
               </button>
               <button
                 onClick={promoteRun}
-                disabled={loading || refreshing || promoting || replaying || !runId || Boolean(promoteBlockReason)}
+                disabled={loading || refreshing || promoting || validatingPromotion || replaying || !runId || Boolean(promoteBlockReason)}
                 className="self-start rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-60 md:self-auto"
               >
                 {promoting ? '提升中...' : `提升可用记录${eligibleCount ? ` (${eligibleCount})` : ''}`}

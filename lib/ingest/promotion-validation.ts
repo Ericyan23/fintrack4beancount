@@ -1,4 +1,5 @@
 import { renderBeancountDraft } from '@/lib/export/beancount'
+import { sqlite } from '@/lib/db'
 import {
   runBeancountPreflight,
   type BeancountPreflightResult,
@@ -10,6 +11,10 @@ import {
   type BeancountValidationMode,
   type BeancountValidationSummary,
 } from '@/lib/export/beancount-validation'
+import {
+  promoteStagedTransactions,
+  type PromoteStagedTransactionsResult,
+} from '@/lib/ingest/promote'
 
 export type PromotionBeancountValidationStage = 'preflight' | 'external'
 
@@ -50,6 +55,24 @@ export interface ValidatePromotionBeancountExportOptions {
   keepTempFile?: boolean
 }
 
+export interface ValidatePromotedBeancountPreviewOptions extends ValidatePromotionBeancountExportOptions {
+  importRunId: string
+  stagedTransactionIds?: string[]
+}
+
+export interface PromotedBeancountPreviewResult {
+  ok: boolean
+  promotion: PromoteStagedTransactionsResult
+  validation: PromotionBeancountValidationResult | null
+}
+
+class PromotionPreviewRollback extends Error {
+  constructor() {
+    super('rollback promotion validation preview')
+    this.name = 'PromotionPreviewRollback'
+  }
+}
+
 function summarizePreflight(preflight: BeancountPreflightResult): PromotionBeancountValidationSummary {
   return {
     ok: preflight.ok,
@@ -67,6 +90,13 @@ function summarizePreflight(preflight: BeancountPreflightResult): PromotionBeanc
     investmentActivitiesScanned: preflight.summary.investmentActivitiesScanned ?? 0,
     exportableInvestmentActivities: preflight.summary.exportableInvestmentActivities ?? 0,
   }
+}
+
+function previewResultOk(
+  promotion: PromoteStagedTransactionsResult,
+  validation: PromotionBeancountValidationResult | null,
+): boolean {
+  return promotion.errors.length === 0 && validation !== null && validation.ok
 }
 
 export function validatePromotionBeancountExport(
@@ -107,4 +137,38 @@ export function validatePromotionBeancountExport(
     blockers: [],
     validation: summarizeBeancountValidation(validation),
   }
+}
+
+export function validatePromotedBeancountPreview(
+  options: ValidatePromotedBeancountPreviewOptions,
+): PromotedBeancountPreviewResult {
+  let preview: PromotedBeancountPreviewResult | null = null
+
+  try {
+    sqlite.transaction(() => {
+      const promotion = promoteStagedTransactions({
+        importRunId: options.importRunId,
+        stagedTransactionIds: options.stagedTransactionIds,
+      })
+      const validation = promotion.errors.length > 0
+        ? null
+        : validatePromotionBeancountExport(options)
+
+      preview = {
+        ok: previewResultOk(promotion, validation),
+        promotion,
+        validation,
+      }
+
+      throw new PromotionPreviewRollback()
+    })()
+  } catch (error) {
+    if (!(error instanceof PromotionPreviewRollback)) throw error
+  }
+
+  if (!preview) {
+    throw new Error('Promotion validation preview did not produce a result')
+  }
+
+  return preview
 }

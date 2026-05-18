@@ -6,6 +6,10 @@ import path from 'node:path'
 import type { NextRequest } from 'next/server'
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fintrack-import-runs-api-'))
+const beancountRoot = path.join(tempDir, 'beancount')
+const originalBeancountRoot = process.env.BEANCOUNT_ROOT
+const originalBeancountValidation = process.env.FINTRACK_BEANCOUNT_VALIDATION
+const originalBeancountValidator = process.env.FINTRACK_BEANCOUNT_VALIDATOR
 process.env.DB_PATH = path.join(tempDir, 'fintrack.db')
 
 const { sqlite } = require('../lib/db') as typeof import('../lib/db')
@@ -19,6 +23,7 @@ const investmentPositionsRoute = require('../app/api/import/runs/[id]/investment
 const investmentPositionRoute = require('../app/api/import/runs/[id]/investment-positions/[positionId]/route') as typeof import('../app/api/import/runs/[id]/investment-positions/[positionId]/route')
 const securitiesRoute = require('../app/api/import/runs/[id]/securities/route') as typeof import('../app/api/import/runs/[id]/securities/route')
 const securityRoute = require('../app/api/import/runs/[id]/securities/[securityId]/route') as typeof import('../app/api/import/runs/[id]/securities/[securityId]/route')
+const promoteValidateRoute = require('../app/api/import/runs/[id]/promote/validate/route') as PromoteRoute
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -67,6 +72,8 @@ function securityParams(id: string, securityId: string): SecurityRouteContext {
 function resetDb(): void {
   sqlite.exec(`
     DELETE FROM audit_log;
+    DELETE FROM export_runs;
+    DELETE FROM balance_assertions;
     DELETE FROM investment_positions;
     DELETE FROM investment_activities;
     DELETE FROM securities;
@@ -82,6 +89,34 @@ function resetDb(): void {
     DELETE FROM sources;
     DELETE FROM accounts;
   `)
+}
+
+function resetBeancountEnv(): void {
+  if (originalBeancountRoot === undefined) delete process.env.BEANCOUNT_ROOT
+  else process.env.BEANCOUNT_ROOT = originalBeancountRoot
+  if (originalBeancountValidation === undefined) delete process.env.FINTRACK_BEANCOUNT_VALIDATION
+  else process.env.FINTRACK_BEANCOUNT_VALIDATION = originalBeancountValidation
+  if (originalBeancountValidator === undefined) delete process.env.FINTRACK_BEANCOUNT_VALIDATOR
+  else process.env.FINTRACK_BEANCOUNT_VALIDATOR = originalBeancountValidator
+}
+
+function writePromotionLedger(openAccounts: string[] = [
+  'Assets:US:Banks:APIChecking',
+  'Expenses:Food',
+  'Expenses:Food:Coffee',
+  'Expenses:Food:Groceries',
+]): void {
+  fs.rmSync(beancountRoot, { recursive: true, force: true })
+  fs.mkdirSync(beancountRoot, { recursive: true })
+  fs.writeFileSync(
+    path.join(beancountRoot, 'main.bean'),
+    [
+      'option "title" "Import Runs API Test"',
+      ...openAccounts.map(account => `2026-01-01 open ${account} USD`),
+      '',
+    ].join('\n'),
+  )
+  process.env.BEANCOUNT_ROOT = beancountRoot
 }
 
 function seedAccount(): void {
@@ -579,10 +614,13 @@ function seedInvestmentPosition(runId: string): string {
 }
 
 beforeEach(() => {
+  resetBeancountEnv()
+  fs.rmSync(beancountRoot, { recursive: true, force: true })
   resetDb()
 })
 
 after(() => {
+  resetBeancountEnv()
   sqlite.close()
   ;(globalThis as { __sqlite?: unknown }).__sqlite = undefined
   fs.rmSync(tempDir, { recursive: true, force: true })
@@ -1300,6 +1338,165 @@ test('POST /api/import/runs/:id/promote delegates to promoteStagedTransactions',
   assert.equal(typeof payload.promoted, 'number')
   assert.equal(typeof payload.skipped, 'number')
   assert.ok(Array.isArray(payload.errors))
+})
+
+test('POST /api/import/runs/:id/promote/validate returns 404 JSON for a missing run', { skip: skipPromoteTests }, async () => {
+  const response = await promoteValidateRoute.POST(
+    request('/api/import/runs/missing-run/promote/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ validationMode: 'disabled' }),
+    }),
+    params('missing-run'),
+  )
+  const payload = await response.json() as { error?: string }
+
+  assert.equal(response.status, 404)
+  assert.equal(payload.error, 'Import run not found')
+})
+
+test('POST /api/import/runs/:id/promote/validate rejects non-completed runs', { skip: skipPromoteTests }, async () => {
+  const { runId } = seedImportRun()
+  sqlite.prepare(`
+    UPDATE import_runs
+    SET status = 'running'
+    WHERE id = ?
+  `).run(runId)
+
+  const response = await promoteValidateRoute.POST(
+    request(`/api/import/runs/${runId}/promote/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ validationMode: 'disabled' }),
+    }),
+    params(runId),
+  )
+  const payload = await response.json() as { error?: string }
+
+  assert.equal(response.status, 409)
+  assert.equal(payload.error, 'Import run must be completed before validate: running')
+})
+
+test('POST /api/import/runs/:id/promote/validate previews promotion and rolls back writes', { skip: skipPromoteTests }, async () => {
+  writePromotionLedger()
+  const { runId } = seedImportRun()
+  const response = await promoteValidateRoute.POST(
+    request(`/api/import/runs/${runId}/promote/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ validationMode: 'disabled' }),
+    }),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    ok: boolean
+    period: string
+    promotion: { promoted: number; skipped: number; errors: unknown[] }
+    validation: {
+      ok: boolean
+      stage: string
+      summary: { exportableTransactions: number; blockers: number }
+      checker: { status: string; mode: string }
+    }
+  }
+  const transactionCount = sqlite.prepare(`
+    SELECT COUNT(*) AS value
+    FROM transactions
+  `).get() as { value: number }
+  const mergedStagedCount = sqlite.prepare(`
+    SELECT COUNT(*) AS value
+    FROM staged_transactions
+    WHERE status = 'merged'
+      AND id IN ('staged-pending', 'staged-ready')
+  `).get() as { value: number }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.ok, true)
+  assert.equal(payload.period, '2026-05')
+  assert.equal(payload.promotion.promoted, 2)
+  assert.equal(payload.promotion.skipped, 2)
+  assert.deepEqual(payload.promotion.errors, [])
+  assert.equal(payload.validation.ok, true)
+  assert.equal(payload.validation.stage, 'external')
+  assert.equal(payload.validation.summary.exportableTransactions, 3)
+  assert.equal(payload.validation.summary.blockers, 0)
+  assert.equal(payload.validation.checker.status, 'skipped')
+  assert.equal(payload.validation.checker.mode, 'disabled')
+  assert.equal(transactionCount.value, 1)
+  assert.equal(mergedStagedCount.value, 0)
+})
+
+test('POST /api/import/runs/:id/promote/validate returns sanitized preflight blockers without invoking checker', { skip: skipPromoteTests }, async () => {
+  writePromotionLedger(['Assets:US:Banks:APIChecking'])
+  const { runId } = seedImportRun()
+  const response = await promoteValidateRoute.POST(
+    request(`/api/import/runs/${runId}/promote/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ validationMode: 'required' }),
+    }),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    ok: boolean
+    validation: {
+      ok: boolean
+      stage: string
+      summary: { blockers: number }
+      blockers: Array<{ code: string; message: string }>
+      checker: unknown
+    }
+  }
+  const serialized = JSON.stringify(payload)
+  const transactionCount = sqlite.prepare(`
+    SELECT COUNT(*) AS value
+    FROM transactions
+  `).get() as { value: number }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.ok, false)
+  assert.equal(payload.validation.ok, false)
+  assert.equal(payload.validation.stage, 'preflight')
+  assert.equal(payload.validation.summary.blockers > 0, true)
+  assert.equal(payload.validation.blockers.some(issue => issue.code === 'category_not_open'), true)
+  assert.equal(payload.validation.checker, null)
+  assert.equal(serialized.includes(beancountRoot), false)
+  assert.equal(serialized.includes('source_id'), false)
+  assert.equal(transactionCount.value, 1)
+})
+
+test('POST /api/import/runs/:id/promote/validate reports required checker failures without leaking paths', { skip: skipPromoteTests }, async () => {
+  writePromotionLedger()
+  process.env.FINTRACK_BEANCOUNT_VALIDATION = 'required'
+  process.env.FINTRACK_BEANCOUNT_VALIDATOR = path.join(tempDir, 'missing-bean-check')
+  const { runId } = seedImportRun()
+  const response = await promoteValidateRoute.POST(
+    request(`/api/import/runs/${runId}/promote/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    ok: boolean
+    validation: {
+      ok: boolean
+      stage: string
+      checker: { status: string; mode: string; message: string | null }
+    }
+  }
+  const serialized = JSON.stringify(payload)
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.ok, false)
+  assert.equal(payload.validation.ok, false)
+  assert.equal(payload.validation.stage, 'external')
+  assert.equal(payload.validation.checker.status, 'failed')
+  assert.equal(payload.validation.checker.mode, 'required')
+  assert.equal(payload.validation.checker.message, '[path] was not found')
+  assert.equal(serialized.includes(beancountRoot), false)
+  assert.equal(serialized.includes(tempDir), false)
 })
 
 test('POST /api/import/runs/:id/replay creates a new staged review run from raw archive', async () => {
