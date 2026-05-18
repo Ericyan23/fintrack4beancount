@@ -1168,6 +1168,11 @@ export default function ImportRunPage() {
       unmapped: securityMappings.length - mapped,
     }
   }, [securityMappings])
+  const hasInvestmentWorkflow = (
+    investmentActivityCounts.total > 0
+    || investmentPositionCounts.total > 0
+    || securityMappingCounts.total > 0
+  )
   const suggestedSecurityMappingCount = useMemo(
     () => securityMappings.filter(security => !securityCommodity(security) && securitySuggestedCommodity(security)).length,
     [securityMappings],
@@ -1176,9 +1181,13 @@ export default function ImportRunPage() {
   const promoteBlockReason = useMemo(() => {
     if (unmappedSourceAccounts.length > 0) return `${unmappedSourceAccounts.length} 个来源账户未映射`
     if (errorCount > 0) return `${errorCount} 条记录需审核`
-    if (eligibleCount === 0) return '没有可提升记录'
+    if (eligibleCount === 0) {
+      return hasInvestmentWorkflow
+        ? '投资记录不走现金提升；完成投资审核后运行 Beancount 导出预检'
+        : '没有可提升记录'
+    }
     return null
-  }, [eligibleCount, errorCount, unmappedSourceAccounts.length])
+  }, [eligibleCount, errorCount, hasInvestmentWorkflow, unmappedSourceAccounts.length])
 
   function updateSecurityCommodityDraft(key: string, value: string) {
     setSecurityCommodityDrafts(prev => ({
@@ -1517,13 +1526,13 @@ export default function ImportRunPage() {
       const payload = await readJson(res)
 
       if (!res.ok) {
-        setError(responseError(res, payload, 'Beancount 预检'))
+        setError(responseError(res, payload, 'Beancount 导出预检'))
         return
       }
 
       setValidationNotice(promotionValidationNotice(payload))
     } catch {
-      setError('无法运行 Beancount 预检')
+      setError('无法运行 Beancount 导出预检')
     } finally {
       setValidatingPromotion(false)
     }
@@ -1743,7 +1752,9 @@ export default function ImportRunPage() {
         <div>
           <h1 className="text-xl font-bold">暂存导入审核</h1>
           <p className="mt-1 text-sm text-slate-500">
-            审核暂存记录，再将符合条件的交易送入 Beancount 准备流程。
+            {hasInvestmentWorkflow
+              ? '投资活动进入投资审核和 Beancount 导出预检；只有现金交易需要提升。'
+              : '审核暂存记录，再将符合条件的现金交易送入 Beancount 准备流程。'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1827,11 +1838,11 @@ export default function ImportRunPage() {
         }`}>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span>
-              {validationNotice.ok ? 'Beancount 预检通过' : 'Beancount 预检未通过'}。
+              {validationNotice.ok ? 'Beancount 导出预检通过' : 'Beancount 导出预检未通过'}。
             </span>
             <span className="text-xs opacity-80">月份 {validationNotice.period || validationPeriod}</span>
             <span className="text-xs opacity-80">
-              dry-run 提升 {validationNotice.promotion.promoted} 条，跳过 {validationNotice.promotion.skipped} 条
+              模拟现金提升 {validationNotice.promotion.promoted} 条，跳过 {validationNotice.promotion.skipped} 条
             </span>
           </div>
           {validationNotice.validation && (
@@ -1925,7 +1936,7 @@ export default function ImportRunPage() {
                 disabled={loading || refreshing || promoting || validatingPromotion || replaying || !runId}
                 className="self-start rounded-md border border-amber-700 bg-amber-950/50 px-4 py-2 text-sm font-medium text-amber-100 hover:bg-amber-900/60 disabled:opacity-60 md:self-auto"
               >
-                {validatingPromotion ? '预检中...' : 'Beancount 预检'}
+                {validatingPromotion ? '预检中...' : 'Beancount 导出预检'}
               </button>
               <button
                 onClick={replayRun}
@@ -1939,7 +1950,7 @@ export default function ImportRunPage() {
                 disabled={loading || refreshing || promoting || validatingPromotion || replaying || !runId || Boolean(promoteBlockReason)}
                 className="self-start rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-60 md:self-auto"
               >
-                {promoting ? '提升中...' : `提升可用记录${eligibleCount ? ` (${eligibleCount})` : ''}`}
+                {promoting ? '提升中...' : `提升现金交易${eligibleCount ? ` (${eligibleCount})` : ''}`}
               </button>
             </div>
             {promoteBlockReason && (
