@@ -10,6 +10,8 @@ services:
       - DB_PATH=/app/data/fintrack.db
       - BEANCOUNT_ROOT=/beancount
       - FINTRACK_HANDOFF_ROOT=/handoff
+      - FINTRACK_BEANCOUNT_VALIDATOR=${FINTRACK_BEANCOUNT_VALIDATOR:-bean-check}
+      - FINTRACK_BEANCOUNT_VALIDATION=${FINTRACK_BEANCOUNT_VALIDATION:-optional}
       - SYNC_HOUR=${SYNC_HOUR:-3}
       - TZ=${TZ:-UTC}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}

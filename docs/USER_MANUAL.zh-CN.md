@@ -1,10 +1,10 @@
 # FinTrack 用户手册
 
-本手册说明 FinTrack 部署完成后的日常使用方式。
+本手册说明当前 FinTrack V2 的日常使用方式。当前界面以中文为主，下面的页面名称与应用内导航保持一致。
 
-FinTrack 是一个私有的个人财务应用。它不是银行、券商、税务工具，也不是权威会计系统。把导入数据用于财务决策之前，请始终人工复核。
+FinTrack 是私有的 Beancount 导入、暂存、复核和交接工具。它不是银行、券商、税务工具、权威会计系统、投资业绩系统，也不是 Fava 替代品。把导入数据用于财务决策前，请始终人工复核。
 
-## 1. 首次登录
+## 1. 登录和隐私边界
 
 在浏览器中打开应用：
 
@@ -12,245 +12,229 @@ FinTrack 是一个私有的个人财务应用。它不是银行、券商、税�
 http://<your-server>:3000
 ```
 
-如果设置了 `FINTRACK_PASSWORD`，浏览器会提示输入 Basic Auth 凭据。
-
-默认用户名：
+如果设置了 `FINTRACK_PASSWORD`，浏览器会提示输入 Basic Auth 凭据。默认用户名是：
 
 ```text
 fintrack
 ```
 
-密码使用你在 Docker compose 环境变量中配置的值。
-
 如果应用打开时没有密码提示，请先停止容器，并在网络环境中使用前设置 `FINTRACK_PASSWORD`。
+
+不要把真实账号、真实交易、SimpleFIN access URL、Basic Auth URL、CSV、SQLite 数据库、ledger 或 handoff 文件写入 issue、commit、文档或聊天记录。示例请使用 `<simplefin-access-url>`、`<account-name>`、`<YYYY-MM>` 这类占位符。
 
 ## 2. 初始设置
 
-打开 Settings 页面。
+打开 `设置`。
 
 配置：
 
-- SimpleFIN access URL，如果你需要自动同步。
+- SimpleFIN access URL，如果需要自动同步。
 - 每日同步时间。
-- 可选的 Gemini API key，用于 AI 分类。
-- 可选的 Claude API key，作为备用分类器。
+- 可选 Gemini API key，用于 AI Ledger 账户建议。
+- 可选 Claude API key，作为备用分类器。
+- 如果使用 Beancount 导出或交接，通过环境变量配置 Beancount 和 handoff 路径。
 
-Settings 页面会把已配置的密钥保存到本地 SQLite 数据库中。请保护并备份该数据库。
+设置页会把已配置的密钥保存到本地 SQLite 数据库中。请保护并备份该数据库。
 
-## 3. 同步交易
+## 3. V2 主流程
 
-在顶部导航栏点击 Sync。
+FinTrack 应作为 Beancount 前置准备管线使用：
+
+```text
+来源数据
+  -> 原始导入归档
+  -> 暂存审核
+  -> 来源账户映射
+  -> 现金提升或投资审核
+  -> Ledger 准备
+  -> Beancount 预检
+  -> 草稿下载或 handoff 交接
+```
+
+主要导航：
+
+| 页面 | 用途 |
+| --- | --- |
+| `控制中心` | 导入状态、复核数量、导出阻塞项和准备度汇总。 |
+| `导入` | SimpleFIN 和 CSV 的导入入口。 |
+| `Ledger 准备` | 处理现金交易的 Ledger 账户缺口和审核标记。 |
+| `转账审核` | 确认推断出的转账配对，并映射外部账户侧。 |
+| `导出中心` | Beancount 预检、草稿下载、交接写入和 worker 审批状态。 |
+| `账户映射` | 映射来源账户、FinTrack 账户和 Beancount 账户。 |
+| `Ledger 账户规则` | 确定性规则和可选 AI Ledger 账户建议。 |
+
+Reports、net worth、分类管理等旧页面可能仍作为兼容或诊断视图存在，但不是 V2 主流程。
+
+## 4. 从 SimpleFIN 导入
+
+需要自动导入账户和现金交易时，使用 SimpleFIN 同步。
 
 FinTrack 会：
 
 1. 从 SimpleFIN 获取账户和交易。
-2. Upsert 账户。
-3. Upsert 交易。
-4. 更新余额。
-5. 创建净资产快照。
-6. 让新交易进入待复核状态。
+2. 把来源事实保存到本地数据库。
+3. 根据同步路径创建暂存或标准现金记录。
+4. 保留复核状态和 pending-to-posted reconciliation 信息。
+5. 让新增或不完整记录进入待复核状态。
 
-如果同步失败：
+如果同步失败，检查：
 
-- 确认 SimpleFIN access URL 有效。
-- 确认应用可以访问网络。
-- 检查 SimpleFIN bridge 会话是否需要刷新。
-- 查看容器日志。
+- SimpleFIN access URL 是否有效。
+- 容器是否能访问网络。
+- Bridge session 是否过期。
+- SimpleFIN 是否共享了预期账户。
+- 容器日志和导入历史。
 
-## 4. Home 仪表盘
+## 5. 导入 CSV
 
-Home 页面汇总：
+打开 `导入`，选择 CSV 文件，选择或创建 profile，并映射列。
 
-- 账户余额
-- 净资产
-- 支出趋势
-- 最近交易
-- 复核进度
+对于普通银行或现金 CSV：
 
-同步之后，可以把它作为快速健康检查入口。
+- 映射日期、金额、描述、账户等必需字段，以及可选 Ledger 账户提示。
+- 预览文件。
+- 暂存导入。
+- 打开导入批次进入 `暂存导入审核`。
+- 修复必需字段错误和来源账户映射。
+- 只把有效的现金交易提升到 Ledger 准备流程。
 
-## 5. Accounts 账户页
+提升不是直接写入。FinTrack 会检查必需字段、来源账户映射，并在请求或要求时运行 promotion-time Beancount validation。
 
-Accounts 页面显示已同步的金融账户。
+## 6. Fidelity Brokerage CSV 导入
 
-常见操作：
+Fidelity Brokerage CSV 作为投资导入处理，不作为普通现金导入处理。
 
-- 复核账户名称。
-- 检查当前余额。
-- 查看最近同步状态。
-- 确认账户是否仍然活跃，或是否已经过期。
+对于这类文件，FinTrack 会：
 
-如果账户信息看起来不正确，优先在数据源修正，然后重新同步。
+- 将原始行归档，便于审计和 replay。
+- 创建导入批次审核数据。
+- 在可用时提取来源账户、证券、持仓和投资活动。
+- 要求先完成来源账户映射。
+- 允许把证券映射到 Beancount commodity。
+- 让已审核的投资活动参与 Beancount 导出预检。
 
-## 6. Transactions 交易页
+Fidelity Brokerage 行不会进入现金提升流程。不要把买入、卖出、股息、再投资、持仓或券商现金移动提升为普通银行交易。正确流程是完成投资审核，然后在导入批次或 `导出中心` 运行 Beancount 导出预检。
 
-Transactions 页面是主要的账目复核界面。
+## 7. 导入批次审核
 
-你可以：
+从 `导入` 或 `控制中心` 打开导入批次。
 
-- 按日期范围筛选。
-- 按账户筛选。
-- 按分类筛选。
-- 搜索交易描述。
-- 打开交易详情页。
-- 修改分类。
-- 标记交易已复核。
-- 取消不应导出的交易。
+常见区域：
 
-推荐流程：
+- `来源账户映射`：把导入的机构账户或来源账户映射到 FinTrack 账户。
+- `证券映射`：把导入 symbol 或 CUSIP 映射到 Beancount commodity。
+- `投资持仓`：复核导入的持仓快照。
+- `投资活动`：复核买入、卖出、股息、再投资、转账和费用。
+- `Ledger 准备记录`：复核可以成为现金交易的暂存行。
 
-1. 同步。
-2. 复核最新交易。
-3. 给所有未分类交易补上分类。
-4. 确认转账。
-5. 检查报表。
+批次页可能显示 validation blockers。提升或导出预检前应先修复。投资导入显示“投资记录不走现金提升”是预期行为。
 
-## 7. Review Queue 复核队列
+## 8. 账户映射
 
-Review 页面聚焦仍需处理的交易。
+账户映射有两层：
 
-交易进入 Review 的常见原因：
+- 导入批次内的来源账户到 FinTrack 账户映射。
+- `账户映射` 页面中的 FinTrack 账户到 Beancount 账户映射。
 
-- 缺少分类。
-- 被分配到了 review 分类。
-- 交易仍为 pending。
-- 可能是转账。
-- 分类置信度较低。
+资产账户应映射到合适的 `Assets:...` Beancount 账户，负债账户应映射到 `Liabilities:...` 账户。FinTrack 会读取只读挂载的 Beancount checkout，并在账户已关闭或交易日期尚未 open 时提示。
 
-只有当你明确知道交易归属后，才应该让它离开 Review。
+账户映射不完整会阻止提升或 Beancount 导出。
 
-## 8. Categories 分类
+## 9. Ledger 准备
 
-分类用于报表和导出。
+打开 `Ledger 准备` 处理仍需复核的现金交易。
 
-FinTrack 支持：
+常见原因：
 
-- 支出分类
-- 收入分类
-- 权益分类
-- 转账分类
-- 可选的 Beancount 账户名称
+- 缺少 Ledger 账户。
+- 使用了审核用 Ledger 账户标记。
+- Pending 或状态未解决。
+- AI 建议置信度低。
+- 导入行仍有 validation errors。
 
-示例：
+优先手动选择 Ledger 账户。对重复描述创建确定性规则。AI 建议可以加快处理，但只是建议，导出前仍应确认。
 
-```text
-Expenses:Food:Groceries
-Expenses:Food:Restaurants
-Income:Salary
-Transfer:Internal
-Transfer:CreditCardPayment
-```
+## 10. 规则和 AI 建议
 
-如果 Beancount 以只读方式挂载，FinTrack 可以读取已打开的 Beancount accounts，并在分类选择器中显示它们。
+打开 `Ledger 账户规则`。
 
-## 9. Rules 规则
-
-规则会根据文本模式给交易分类。
-
-适合给稳定、重复出现的交易描述创建规则，例如：
-
-- 工资
-- 利息
-- 信用卡还款
-- 常见订阅
-- 杂货
-- 水电等账单
-
-除非有意这么做，否则不要创建只匹配单笔交易的过度具体规则。
-
-规则优先级决定多条规则同时匹配时哪条胜出。数字越大，优先级越高。
+规则根据稳定文本模式给交易分配 Ledger 账户。适合工资、利息、订阅、水电账单和其他重复描述。
 
 推荐流程：
 
-1. 先手动给交易分类。
-2. 只有当类似交易会重复出现时，才创建规则。
+1. 先手动给已知交易分配 Ledger 账户。
+2. 只有类似描述会重复出现时才创建规则。
 3. 应用规则。
 4. 导出前复核结果。
 
-## 10. AI Classification AI 分类
+AI 分类是可选功能。配置后，FinTrack 可以使用 Gemini 或 Claude 推荐 Ledger 账户。AI 输出不是权威结果，不能替代人工复核。
 
-AI 分类是可选功能。
+## 11. 转账审核
 
-配置后，FinTrack 可以使用 Gemini 或 Claude 推荐分类。Gemini 可用时会优先尝试，Claude 配置后作为备用。
+导出前打开 `转账审核`。
 
-AI 输出应该人工复核。不要把它当成权威结果。
+FinTrack 可以推断以下转账：
 
-推荐用法：
+- 银行账户之间转账。
+- 信用卡还款。
+- 钱包转账。
+- 投资转账。
 
-- 用 AI 加快复核。
-- 重要分类保持人工确认。
-- 确认重复模式后，为 recurring transactions 添加确定性规则。
+请确认真实配对，并在其中一侧不在 FinTrack 内时映射外部账户。错误的转账匹配可能导致重复支出或余额错误。
 
-## 11. Transfers 转账
+## 12. Beancount 导出预检
 
-Transfers 页面帮助识别账户之间的资金移动。
+打开 `导出中心`，选择月份并刷新预检。
 
-常见转账类型：
+预检可能报告：
 
-- 银行账户之间转账
-- 信用卡还款
-- 钱包转账
-- 投资转账
+- 缺少 Ledger 账户或仍使用审核账户。
+- 未匹配转账。
+- 可能重复的已有 posting。
+- 账户在交易日期未 open。
+- Balance assertion 问题。
+- 投资活动阻塞项。
+- 缺少来源账户或证券映射。
+- 草稿无法安全渲染。
 
-当转账两边都存在并成功匹配时，更安全。
+下载草稿或写入 handoff 前必须修复 blockers。正确修复通常在 FinTrack 中完成：映射账户、选择 Ledger 账户、解决转账、忽略真正重复项，或完成投资审核。
 
-如果其中一边在 FinTrack 之外，并且你的 Beancount 工作流支持，可以选择合适的外部资产或负债账户。
+## 13. Promotion-Time Beancount Validation
 
-示例：
+现金交易从暂存导入审核提升前，可以先用 Beancount 检查。
 
-```text
-Transfer:Internal
-Transfer:CreditCardPayment
-Transfer:Wallet
-Assets:Wallet:Example
-```
+导入批次页提供显式 `Beancount 导出预检` 操作。提升操作也遵守 required validation gate：
 
-Beancount handoff 之前请仔细复核转账。错误的转账匹配可能导致重复支出或余额错误。
+- `optional` 模式下，FinTrack 会在请求时或 validator 可用时运行 validation，并显示结果。
+- `required` 模式下，必须通过 Beancount 预检和外部 validation，否则 promotion 会被阻止。
+- `disabled` 模式下，跳过外部 validator，但必需字段和预检 blockers 仍然有效。
 
-## 12. Reports 报表
+该 gate 用于防止严格模式下无效的暂存现金记录进入 Ledger 准备流程。
 
-Reports 页面汇总财务活动。
+## 14. 外部 Beancount Validation 设置
 
-常见视图：
-
-- 按分类查看支出
-- 按分类查看收入
-- 净资产变化
-- 账户级活动
-
-报表的准确性取决于已复核的交易。如果报表看起来不对，请回到 Transactions 和 Review 检查。
-
-## 13. 导入和导出
-
-Import 页面可以预览交易文件，并先进入 staging review，确认后再 promote。
-
-应用也提供导出功能：
-
-- Transactions
-- Accounts
-- Net worth
-- Backups
-- Beancount drafts
-
-请把导出文件视为敏感财务数据。
-
-## 14. Beancount Handoff 概览
-
-FinTrack 可以把已复核的月度活动交接给单独的 Beancount 工作流。
-
-重要边界是：
+相关环境变量：
 
 ```text
-FinTrack writes handoff files.
-Beancount worker validates and promotes them.
-Fava reads only a checked Beancount artifact.
+FINTRACK_BEANCOUNT_VALIDATOR=bean-check
+FINTRACK_BEANCOUNT_VALIDATION=optional
 ```
 
-FinTrack 不应该直接写入 `main.bean` 或 `book/`。它会把 handoff package 写入共享目录。Beancount worker 读取该 package，运行校验，等待 FinTrack 中的批准决定，然后把已复核分录提升到 Beancount ledger。
+Validation 模式：
 
-### 必需挂载
+| 模式 | 行为 |
+| --- | --- |
+| `optional` | 默认。能运行就运行；validator 缺失时记录结果但不阻止。 |
+| `required` | Validator 必须存在、能运行且通过。缺失或失败都会阻止 promotion/export。 |
+| `disabled` | 跳过外部 validator。FinTrack preflight 仍会运行。 |
 
-Docker 中，FinTrack 的典型挂载如下：
+生产环境如果要求未通过 Beancount validation 就不能提升或交接，应使用 `required`。
+
+## 15. Beancount Handoff
+
+FinTrack 可以为单独的 Beancount worker 写入 handoff package。
+
+FinTrack 典型挂载：
 
 ```text
 /app/data     read-write  FinTrack SQLite database
@@ -258,139 +242,38 @@ Docker 中，FinTrack 的典型挂载如下：
 /handoff      read-write  Shared handoff directory
 ```
 
-FinTrack 容器内的环境变量：
+FinTrack 写入：
 
 ```text
-DB_PATH=/app/data/fintrack.db
-BEANCOUNT_ROOT=/beancount
-FINTRACK_HANDOFF_ROOT=/handoff
-```
-
-Beancount worker 必须挂载同一个 handoff 目录：
-
-```text
-/handoff      read-write  Same shared handoff directory
-```
-
-Beancount worker 还需要对自己的 Beancount checkout 有写权限，因为它负责把内容提升到 `book/`，并可选更新 `main.bean` include。
-
-Fava 不应该挂载 `/handoff`、FinTrack data、raw files 或可写的 Beancount repo checkout。Fava 应该只读取已校验的 artifact。
-
-FinTrack Docker image 以 UID/GID `1001` 运行。宿主机 data 和 handoff 目录必须对该用户可写，或通过等效 NAS ACL 授权。挂载到 FinTrack 的 Beancount checkout 应该是只读的。
-
-### Handoff 目录结构
-
-对于期间 `2026-05`，FinTrack 会写入：
-
-```text
-/handoff/2026-05/fintrack/
+FINTRACK_HANDOFF_ROOT/YYYY-MM/fintrack/
   manifest.json
-  2026-05.bean
-  2026-05-transactions.bean
-  2026-05-balances.bean
+  YYYY-MM.bean
+  YYYY-MM-transactions.bean
+  YYYY-MM-balances.bean
 ```
 
-Beancount worker 后续可能写入：
+Worker 后续可能写入 `status.json`。用户批准或拒绝时，FinTrack 写入 `decision.json`。
 
-```text
-/handoff/2026-05/fintrack/status.json
-```
-
-FinTrack 会写入批准决定：
-
-```text
-/handoff/2026-05/fintrack/decision.json
-```
-
-### 状态流
-
-预期流程：
+状态流：
 
 ```text
 No handoff
   -> FinTrack writes manifest and drafts
-  -> Beancount worker consumes draft
+  -> Beancount worker validates draft
   -> ready_for_approval
   -> FinTrack approve or reject
   -> Beancount worker applies decision
   -> merged, rejected, or failed
 ```
 
-常见状态含义：
+`merged` 表示 worker 已提升 handoff 且 validation 通过。它不一定表示已经创建 Git commit，也不一定表示已经发布 Fava artifact。
 
-| 状态 | 含义 |
-| --- | --- |
-| No status | FinTrack 已写入文件，但 worker 尚未消费。 |
-| `ready_for_approval` | Worker 已校验 draft，正在等待 approve/reject 决定。 |
-| `rejected` | 用户从 FinTrack 拒绝了 handoff。 |
-| `failed` | Worker 无法消费或应用 handoff。重试前请阅读 worker error。 |
-| `merged` | Worker 已将 handoff 提升到 Beancount，且校验通过。 |
-
-`merged` 不一定表示已经创建 Git commit，也不一定表示已经发布 Fava artifact。
-
-## 15. Beancount Preflight
-
-准备月度导出时，打开 Beancount 页面。
-
-选择月份并刷新。
-
-Preflight checks 可能报告：
-
-- 缺失分类或 review 分类
-- 未匹配转账
-- 可能重复的已有 postings
-- 未打开的账户
-- Balance assertion 问题
-
-写入 handoff 之前请先修复 blockers。
-
-### Preflight blockers
-
-常见 blockers：
-
-- 交易仍使用 review category。
-- 转账尚未匹配或显式处理。
-- 交易似乎与已有 Beancount posting 重复。
-- Beancount account 在交易日期尚未打开。
-- Draft 无法安全渲染。
-
-正确修复通常在 FinTrack 中完成：
-
-- 给交易分类，或取消交易。
-- 确认、合并或忽略转账。
-- 选择有效的 Beancount account。
-- 复核重复交易，并在导出前取消真正的重复项。
-
-## 16. 写入 Beancount Handoff
-
-Preflight 通过后，点击 Write handoff。
-
-FinTrack 会写入文件到：
-
-```text
-FINTRACK_HANDOFF_ROOT/YYYY-MM/fintrack/
-```
-
-FinTrack 不会写入 Beancount repository。
-
-写入前，FinTrack 会先运行外部 Beancount validation。默认命令是 `bean-check`。如果 validator 存在且返回失败，handoff 不会写入，也不会创建 export run。若环境中没有安装 validator，默认会记录为 unavailable 并继续；可以设置 `FINTRACK_BEANCOUNT_VALIDATION=required` 让缺失 validator 也阻止导出。
-
-写入后，UI 会显示 handoff path 和文件列表。此时 Beancount worker 不一定已经处理这些文件。
-
-如果该 handoff 之前失败或被拒绝，再次写入可能会替换该期间已知的 handoff 文件。FinTrack 不应该覆盖已经 merged 的 handoff。
-
-## 17. 运行 Beancount Worker
+## 16. 运行和批准 Worker
 
 Beancount worker 是单独进程。典型命令：
 
 ```bash
 make fintrack-handoff-worker HANDOFF_ROOT=/handoff
-```
-
-Worker 扫描：
-
-```text
-HANDOFF_ROOT/*/fintrack/manifest.json
 ```
 
 对于新的 handoff，worker 会：
@@ -401,45 +284,13 @@ HANDOFF_ROOT/*/fintrack/manifest.json
 4. 写入 `status.json`。
 5. 停在 `ready_for_approval`。
 
-Worker 报告 `ready_for_approval` 后，回到 FinTrack 并刷新 Beancount 页面。
+回到 `导出中心`，复核 manifest、draft、交易数量、投资活动数量、转账数量、warnings 和期间。只有 draft 正确时才批准。
 
-## 18. 批准 Handoff
+批准后再次运行 worker。Worker 会读取 `decision.json`，重新运行检查，把 draft 提升到 Beancount，运行 validation，并写入最终状态。
 
-Worker 状态为 `ready_for_approval` 时，复核：
+## 17. `merged` 之后
 
-- Manifest。
-- Draft。
-- 交易数量。
-- 转账数量。
-- 所有 warnings。
-- 目标月份。
-
-如果 draft 正确，点击 Approve。
-
-FinTrack 会写入：
-
-```text
-decision.json
-```
-
-Decision 写入后，worker 必须再次运行。
-
-下一次运行时，worker 会：
-
-1. 读取 `decision.json`。
-2. 验证 handoff 仍然处于 ready for approval。
-3. 重新运行 review checks。
-4. 把已复核 draft 提升到 Beancount。
-5. 运行 Beancount validation。
-6. 写入最终状态。
-
-如果校验通过，状态变为 `merged`。
-
-## 19. `merged` 之后
-
-当 FinTrack 显示 handoff 已成功写入 Beancount 并通过检查时，说明 Beancount ledger 已由 worker 更新。
-
-生产环境 Beancount/Fava 工作流通常还会有额外步骤：
+生产环境 Beancount/Fava 流程通常仍需要 FinTrack 外部步骤：
 
 ```text
 Review Beancount git diff
@@ -451,187 +302,45 @@ Review Beancount git diff
   -> reload Fava
 ```
 
-这些步骤应该属于 Beancount deployment workflow，而不是 FinTrack。
+这些步骤属于 Beancount 部署流程，不属于 FinTrack。Fava 应只读取已检查 artifact，不应挂载 FinTrack data、raw imports、handoff drafts 或可写 Beancount checkout。
 
-`merged` 后建议 operator 检查：
+## 18. 故障排查
 
-```bash
-git status --short
-git diff -- main.bean book/
-make ledger-check
-```
+### 应用打开时没有密码
 
-然后按你的 Beancount/Fava 流程提交和发布。
+`FINTRACK_PASSWORD` 可能为空。设置后重建容器。
 
-## 20. 拒绝 Handoff
+### CSV 导入有 validation errors
 
-以下情况应拒绝 handoff：
+检查必需列映射、来源账户映射、日期格式、金额方向，以及该文件是否是应走投资审核而非现金提升的投资 CSV。
 
-- Draft 看起来不正确。
-- 分类错误。
-- 转账错误。
-- 期间错误。
-- Worker 报告需要复核的 warnings。
-- 输出不应该被提升。
+### Fidelity Brokerage 导入没有提升现金记录
 
-拒绝后：
+这是预期行为。Brokerage 投资导入应完成来源账户、证券、持仓和投资活动审核，然后运行 Beancount 预检。
 
-1. 在 FinTrack 中修复根因。
-2. 写入新的 handoff。
-3. 再次运行 Beancount worker。
+### Promote 按钮被阻止
 
-## 21. 失败的 Handoffs
+检查缺失必需字段、未映射来源账户、已有 validation errors，以及 promotion-time Beancount validation。`required` 模式下 validator 必须已安装且通过。
 
-Failed handoff 通常表示 Beancount worker 拒绝了 draft，或 validation 失败。
+### Beancount accounts 没有显示
 
-推荐恢复流程：
+检查 `BEANCOUNT_ROOT`、只读挂载、挂载目录是否包含 `main.bean`，以及 container user 是否能读取文件。
 
-1. 在 Beancount 页面阅读 worker error。
-2. 检查 `status.json`。
-3. 检查 Beancount worker logs。
-4. 修复根因。
-5. 从 FinTrack 写入新的 handoff。
-6. 再次运行 worker。
+### Write handoff 不可用
 
-示例：
-
-| Error type | Typical fix |
-| --- | --- |
-| Duplicate existing posting | 在 FinTrack 中取消真正的重复项，或修正日期、账户、分类。 |
-| Unmatched transfer | 匹配转账，选择外部账户，或重新分类。 |
-| Account not open | 选择已打开账户，或更新 Beancount account lifecycle。 |
-| Ledger check failed | 重试前先修复会计问题。 |
-
-除非你理解会计影响，否则不要为了绕过 failed handoff 而手动编辑 Beancount production files。
-
-## 22. 端到端 Handoff Runbook 示例
-
-这是一个完整的月度 operator runbook。
-
-在 FinTrack 中：
-
-1. 同步交易。
-2. 复核该月份所有交易。
-3. 解决转账匹配。
-4. 打开 Beancount。
-5. 选择目标月份。
-6. 刷新 preflight。
-7. 修复 blockers，直到 preflight 通过。
-8. 点击 Write handoff。
-
-在 Beancount worker 环境中：
-
-```bash
-make fintrack-handoff-worker HANDOFF_ROOT=/handoff
-```
-
-回到 FinTrack：
-
-1. 刷新状态。
-2. 确认 worker 显示 `ready_for_approval`。
-3. 复核 manifest 和 draft。
-4. 点击 Approve。
-
-再次运行 worker：
-
-```bash
-make fintrack-handoff-worker HANDOFF_ROOT=/handoff
-```
-
-在 FinTrack 中确认：
-
-```text
-merged
-```
-
-在 Beancount repo 中：
-
-```bash
-git status --short
-git diff -- main.bean book/
-make ledger-check
-git add main.bean book/
-git commit -m "Import FinTrack YYYY-MM handoff"
-```
-
-如果使用 Fava：
-
-```bash
-make ledger-fava-artifact-timestamped
-make ledger-fava-check LEDGER_ARTIFACT=dist/fava-ledger-<timestamp>
-```
-
-按你的 Fava 部署流程发布已检查 artifact。
-
-## 23. Fava 边界
-
-Fava 应视为只读展示层。
-
-推荐 Fava 挂载：
-
-```text
-/ledger      read-only checked artifact
-```
-
-不要挂载：
-
-```text
-FinTrack data directory
-FinTrack handoff directory
-Beancount raw import directory
-Beancount staging directory
-Writable Beancount repo checkout
-```
-
-这样可以避免 Fava 看到 raw imports、handoff drafts、SQLite databases 和无关私有文件。
-
-## 24. Handoff 故障排查
-
-### Write handoff 按钮提示 handoff root is not configured
-
-设置：
-
-```text
-FINTRACK_HANDOFF_ROOT=/handoff
-```
-
-并把可写的宿主机目录挂载到 `/handoff`。
+检查 `FINTRACK_HANDOFF_ROOT`、handoff 挂载、目录权限和 Beancount preflight blockers。
 
 ### Worker status 不显示
 
 运行 Beancount worker。FinTrack 只读取 status files，不会运行 worker。
 
-### Approve 按钮不可用
-
-Worker 尚未达到 `ready_for_approval`，或者 decision 已经存在。
-
-### Worker 显示 handoff failed
-
-阅读错误信息。在 FinTrack 或 Beancount 中修复根因，然后写入新的 handoff。
-
 ### Fava 没有显示新月份
 
-`merged` 更新的是 worker 使用的 Beancount repo checkout。Fava 可能仍在读取旧 artifact。请从已提交的 Beancount ledger 构建并发布新的 Fava artifact。
+`merged` 更新的是 worker 使用的 Beancount checkout。请从已提交的 Beancount ledger 构建并发布已检查的 Fava artifact。
 
-## 25. 导入和导出
+## 19. 备份清单
 
-Import 页面可以预览并导入交易文件。
-
-应用也提供导出功能：
-
-- Transactions
-- Accounts
-- Net worth
-- Backups
-- Beancount drafts
-
-请把导出文件视为敏感财务数据。
-
-## 26. 备份
-
-定期备份 SQLite 数据库。
-
-推荐备份内容：
+备份：
 
 ```text
 data/fintrack.db
@@ -639,96 +348,34 @@ data/fintrack.db
 
 如果应用正在运行，SQLite 可能还有 WAL/SHM 文件。复制数据库前请停止容器，或使用 SQLite-aware backup 方法。
 
-建议计划：
+建议频率：
 
-- 每日本地备份
-- 每周离设备备份
-- 每月恢复测试
+- 每日本地备份。
+- 每周离设备备份。
+- 每月恢复测试。
 
-## 27. 更新 Docker 部署
-
-如果你从 GHCR 部署：
-
-1. 推送新的 commit 到 GitHub。
-2. 等待 Docker image workflow 发布。
-3. 在 NAS 上拉取 latest image。
-4. 重建容器。
-5. 检查应用健康状态。
-
-SQLite data directory 应保持挂载，并且更新期间不应被替换。
-
-## 28. 故障排查
-
-### 应用打开时没有密码
-
-`FINTRACK_PASSWORD` 可能为空。请在 compose environment 中设置它并重建容器。
-
-### Sync 没有导入交易
-
-检查：
-
-- SimpleFIN access URL
-- 容器网络访问
-- SimpleFIN account permissions
-- Sync logs
-- Lookback window 是否覆盖预期交易
-
-### 分类看起来不正确
-
-检查：
-
-- 手动规则
-- AI 分类结果
-- Beancount account import
-- 分类合并和重命名历史
-
-### Beancount handoff 被禁用
-
-检查：
-
-- `FINTRACK_HANDOFF_ROOT`
-- Handoff directory mount
-- Directory permissions
-
-### Beancount accounts 没有显示
-
-检查：
-
-- `BEANCOUNT_ROOT`
-- Read-only Beancount mount
-- 挂载目录是否包含 `main.bean`
-- Container user 是否能读取 account files
-
-### Docker 容器无法写入数据库
-
-检查：
-
-- 宿主机 data directory 是否存在
-- 宿主机 data directory 是否可由 container user 写入
-- Linux/NAS hosts 上 UID/GID `1001` 是否有写权限或等效 ACL 权限
-- Volume 是否挂载到 `/app/data`
-- `DB_PATH=/app/data/fintrack.db`
-
-## 29. 运维检查清单
+## 20. 运维检查清单
 
 每日：
 
-- Sync。
-- 复核新交易。
-- 检查 transfers。
+- 同步或导入新数据。
+- 复核新的导入批次。
+- 处理紧急 Ledger 准备项。
 
 每周：
 
-- 复核 reports。
-- 应用 rules。
+- 应用规则。
+- 复核转账。
+- 完成来源账户映射。
 - 备份数据库。
 
 每月：
 
-- 完成交易复核。
-- 运行 Beancount preflight。
-- 写入 handoff。
+- 完成现金交易复核。
+- 完成投资活动和证券审核。
+- 运行 Beancount 预检。
+- 下载已检查草稿或写入 handoff。
 - 运行 Beancount worker。
-- Approve 或 reject。
-- 确认 worker result。
+- 批准或拒绝。
+- 确认最终 worker 状态。
 - 如果使用 Beancount/Fava 工作流，提交并发布 Beancount/Fava artifacts。
