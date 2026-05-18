@@ -12,6 +12,10 @@ interface ReviewTransaction {
   accountName: string
   category: string | null
   suggestedCat: string | null
+  ledgerAccount: string | null
+  reviewStatus: string | null
+  suggestedLedgerAccount: string | null
+  splitCount: number
 }
 
 interface ReviewGroup {
@@ -29,6 +33,8 @@ interface ReviewGroup {
   minAbs: number
   maxAbs: number
   latestPosted: number
+  splitTransactionCount: number
+  splitPostingCount: number
   accounts: string[]
   currentCategories: Array<{ category: string; count: number }>
   suggestedCategories: Array<{ category: string; count: number }>
@@ -58,7 +64,7 @@ function formatCurrency(value: number): string {
 }
 
 function formatDate(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString('en-US', {
+  return new Date(ts * 1000).toLocaleDateString('zh-CN', {
     month: 'short',
     day: 'numeric',
   })
@@ -74,15 +80,15 @@ function formatSignedAmount(amount: string): { text: string; positive: boolean }
 }
 
 function reasonLabel(reason: ReviewGroup['reason']): string {
-  if (reason === 'uncategorized') return 'Uncategorized'
-  if (reason === 'review_category') return 'Review category'
-  return 'Mixed'
+  if (reason === 'uncategorized') return '缺少 Ledger 账户'
+  if (reason === 'review_category') return '标记待审核'
+  return '混合'
 }
 
 function directionLabel(direction: ReviewGroup['direction']): string {
-  if (direction === 'spending') return 'Spending'
-  if (direction === 'income') return 'Income'
-  return 'Zero amount'
+  if (direction === 'spending') return '流出'
+  if (direction === 'income') return '流入'
+  return '零金额'
 }
 
 function defaultForm(group: ReviewGroup): ApplyForm {
@@ -97,21 +103,27 @@ function defaultForm(group: ReviewGroup): ApplyForm {
 export default function ReviewPage() {
   const [payload, setPayload] = useState<ReviewPayload | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [scope, setScope] = useState<Scope>('all')
   const [forms, setForms] = useState<Record<string, ApplyForm>>({})
   const [saving, setSaving] = useState<Record<string, boolean>>({})
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const loadReview = useCallback(async () => {
-    setLoading(true)
-    const res = await fetch('/api/review')
-    const data = (await res.json()) as ReviewPayload
-    setPayload(data)
-    setLoading(false)
+  const loadReview = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true)
+    else setRefreshing(true)
+    try {
+      const res = await fetch('/api/review')
+      const data = (await res.json()) as ReviewPayload
+      setPayload(data)
+    } finally {
+      if (showLoading) setLoading(false)
+      setRefreshing(false)
+    }
   }, [])
 
-  useEffect(() => { loadReview() }, [loadReview])
+  useEffect(() => { loadReview(true) }, [loadReview])
 
   const groups = useMemo(() => {
     const all = payload?.groups ?? []
@@ -156,18 +168,18 @@ export default function ReviewPage() {
       })
       const data = (await res.json()) as { changed?: number; ruleCreated?: boolean; error?: string }
       if (!res.ok) {
-        setError(data.error ?? 'Update failed')
+        setError(data.error ?? '更新失败')
         return
       }
       setMessage(
-        `Categorized ${data.changed ?? 0} transactions${data.ruleCreated ? ' and saved a rule' : ''}`,
+        `已分配 ${data.changed ?? 0} 条交易${data.ruleCreated ? '，并保存规则' : ''}`,
       )
       setForms(prev => {
         const next = { ...prev }
         delete next[group.key]
         return next
       })
-      await loadReview()
+      await loadReview(false)
     } finally {
       setSaving(prev => ({ ...prev, [group.key]: false }))
     }
@@ -179,33 +191,36 @@ export default function ReviewPage() {
     <div className="space-y-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-xl font-bold">Category Review</h1>
+          <h1 className="text-xl font-bold">Ledger 准备</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            在 Beancount 导出前处理 Ledger 账户缺口和审核标记。
+          </p>
         </div>
         <button
-          onClick={loadReview}
-          disabled={loading}
+          onClick={() => loadReview(false)}
+          disabled={loading || refreshing}
           className="self-start rounded-md border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-60"
         >
-          {loading ? 'Refreshing...' : 'Refresh'}
+          {loading || refreshing ? '刷新中...' : '刷新'}
         </button>
       </div>
 
       {summary && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Transactions to review</p>
+            <p className="text-xs text-slate-400">需准备交易</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-amber-300">{summary.transactions}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Groups</p>
+            <p className="text-xs text-slate-400">准备分组</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-blue-300">{summary.groups}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Uncategorized</p>
+            <p className="text-xs text-slate-400">缺少 Ledger 账户</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-red-300">{summary.uncategorized}</p>
           </div>
           <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
-            <p className="text-xs text-slate-400">Review category</p>
+            <p className="text-xs text-slate-400">审核标记</p>
             <p className="mt-1 text-2xl font-bold tabular-nums text-violet-300">{summary.reviewCategory}</p>
           </div>
         </div>
@@ -213,11 +228,11 @@ export default function ReviewPage() {
 
       <div className="flex flex-wrap gap-2">
         {[
-          ['all', 'All'],
-          ['spending', 'Spending'],
-          ['income', 'Income'],
-          ['uncategorized', 'Uncategorized'],
-          ['review', 'Review category'],
+          ['all', '全部'],
+          ['spending', '流出'],
+          ['income', '流入'],
+          ['uncategorized', '缺少 Ledger 账户'],
+          ['review', '标记待审核'],
         ].map(([value, label]) => (
           <button
             key={value}
@@ -245,10 +260,10 @@ export default function ReviewPage() {
       )}
 
       {loading ? (
-        <div className="py-12 text-center text-slate-500">Loading...</div>
+        <div className="py-12 text-center text-slate-500">加载中...</div>
       ) : groups.length === 0 ? (
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-10 text-center text-slate-400">
-          No transactions need review for the current filter
+          当前筛选下没有 Ledger 准备项目
         </div>
       ) : (
         <div className="space-y-3">
@@ -274,7 +289,12 @@ export default function ReviewPage() {
                         <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-300">
                           {reasonLabel(group.reason)}
                         </span>
-                        <span className="text-xs text-slate-500">Latest {formatDate(group.latestPosted)}</span>
+                        <span className="text-xs text-slate-500">最近 {formatDate(group.latestPosted)}</span>
+                        {group.splitTransactionCount > 0 && (
+                          <span className="rounded-full bg-cyan-950 px-2 py-0.5 text-xs text-cyan-300">
+                            {group.splitTransactionCount} 笔拆分，{group.splitPostingCount} 条分录
+                          </span>
+                        )}
                       </div>
                       <h2 className="mt-2 truncate text-base font-semibold text-slate-100">
                         {group.sampleDescription}
@@ -283,17 +303,17 @@ export default function ReviewPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-right text-xs lg:min-w-72">
                       <div>
-                        <p className="text-slate-500">Count</p>
+                        <p className="text-slate-500">笔数</p>
                         <p className="mt-1 text-sm font-semibold tabular-nums text-slate-200">{group.count}</p>
                       </div>
                       <div>
-                        <p className="text-slate-500">Total</p>
+                        <p className="text-slate-500">合计</p>
                         <p className="mt-1 text-sm font-semibold tabular-nums text-slate-200">
                           {formatCurrency(group.totalAbs)}
                         </p>
                       </div>
                       <div>
-                        <p className="text-slate-500">Range</p>
+                        <p className="text-slate-500">范围</p>
                         <p className="mt-1 text-sm font-semibold tabular-nums text-slate-200">
                           {formatCurrency(group.minAbs)}-{formatCurrency(group.maxAbs)}
                         </p>
@@ -323,7 +343,7 @@ export default function ReviewPage() {
                         onClick={() => updateForm(group, { category: item.category })}
                         className="rounded-full bg-blue-950 px-2 py-0.5 text-xs text-blue-300 hover:bg-blue-900"
                       >
-                        Suggested {item.category} x {item.count}
+                        建议 {item.category} x {item.count}
                       </button>
                     ))}
                   </div>
@@ -333,7 +353,7 @@ export default function ReviewPage() {
                   <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
                     <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_minmax(260px,1fr)]">
                       <div>
-                        <label className="mb-1 block text-xs text-slate-400">Target category</label>
+                        <label className="mb-1 block text-xs text-slate-400">目标 Ledger 账户</label>
                         <CategorySelect
                           value={form.category}
                           onChange={category => updateForm(group, { category })}
@@ -343,7 +363,7 @@ export default function ReviewPage() {
                       </div>
                       <div>
                         <div className="mb-1 flex items-center justify-between gap-2">
-                          <label className="text-xs text-slate-400">Rule pattern</label>
+                          <label className="text-xs text-slate-400">规则模式</label>
                           <label className="flex items-center gap-1.5 text-xs text-slate-400">
                             <input
                               type="checkbox"
@@ -351,7 +371,7 @@ export default function ReviewPage() {
                               onChange={event => updateForm(group, { createRule: event.target.checked })}
                               className="rounded"
                             />
-                            Save rule
+                            保存规则
                           </label>
                         </div>
                         <input
@@ -368,13 +388,13 @@ export default function ReviewPage() {
                       disabled={!form.category || isSaving}
                       className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
                     >
-                      {isSaving ? 'Applying...' : `Apply to ${group.count}`}
+                      {isSaving ? '应用中...' : `应用到 ${group.count} 条`}
                     </button>
                   </div>
 
                   <details className="rounded-lg border border-slate-700 bg-slate-900/40">
                     <summary className="cursor-pointer px-3 py-2 text-xs text-slate-400 hover:text-slate-200">
-                      View sample transactions, up to 20
+                      查看示例交易，最多 20 条
                     </summary>
                     <div className="divide-y divide-slate-800 border-t border-slate-700">
                       {group.transactions.map(txn => {
@@ -385,6 +405,11 @@ export default function ReviewPage() {
                             <span className="min-w-0 truncate text-slate-300">
                               {txn.description}
                               <span className="ml-2 text-slate-500">{txn.accountName}</span>
+                              {txn.splitCount > 0 && (
+                                <span className="ml-2 rounded-full bg-cyan-950 px-1.5 py-0.5 text-[11px] text-cyan-300">
+                                  拆分 x{txn.splitCount}
+                                </span>
+                              )}
                             </span>
                             <span className={`font-medium tabular-nums ${
                               amount.positive ? 'text-emerald-300' : 'text-red-300'

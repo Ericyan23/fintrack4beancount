@@ -6,6 +6,7 @@ import {
 } from '@/lib/export/beancount-ledger'
 import { currentPeriod, runBeancountPreflight } from '@/lib/export/preflight'
 import { runBalanceAssertionPreflight } from '@/lib/export/balance-assertions'
+import type { BeancountValidationSummary } from '@/lib/export/beancount-validation'
 
 export interface BeancountHandoffManifest {
   schemaVersion: 1
@@ -42,6 +43,7 @@ export interface BeancountHandoffManifest {
     transactionsOk: boolean
     balanceAssertionsOk: boolean
   }
+  validation: BeancountValidationSummary | null
   sourceIds: string[]
 }
 
@@ -53,19 +55,27 @@ export function buildBeancountHandoffManifest(options: {
   period?: string
   generatedAt?: Date
   beancountRoot?: string
+  excludeExported?: boolean
 } = {}): BeancountHandoffManifest {
   const period = options.period ?? currentPeriod()
   const generatedAt = options.generatedAt ?? new Date()
   const beancountRoot = options.beancountRoot ?? defaultBeancountRoot()
-  const transactionPreflight = runBeancountPreflight({ period, beancountRoot })
-  const balancePreflight = runBalanceAssertionPreflight({ period, beancountRoot })
+  const transactionPreflight = runBeancountPreflight({
+    period,
+    beancountRoot,
+    excludeExported: options.excludeExported,
+  })
+  const balancePreflight = runBalanceAssertionPreflight({
+    period,
+    beancountRoot,
+    excludeExported: options.excludeExported,
+  })
   const snapshot = loadLedgerSnapshot(beancountRoot)
   const directory = path.posix.join(period, 'fintrack')
-  const transactionSourceIds = [
-    ...transactionPreflight.exportableTransactions.map(txn => txn.sourceId),
-    ...transactionPreflight.mergedTransfers.map(transfer => transfer.sourceId),
-  ]
-  const balanceSourceIds = balancePreflight.exportableAssertions.map(assertion => assertion.sourceId)
+  const transactionSourceIds = transactionPreflight.exportableIntents.map(intent => intent.sourceId)
+  const balanceSourceIds = balancePreflight.exportableCandidates.map(candidate => candidate.sourceId)
+  const transactionIntents = transactionPreflight.exportableIntents.filter(intent => intent.kind !== 'confirmed_transfer')
+  const transferIntents = transactionPreflight.exportableIntents.filter(intent => intent.kind === 'confirmed_transfer')
 
   return {
     schemaVersion: 1,
@@ -89,9 +99,9 @@ export function buildBeancountHandoffManifest(options: {
       balanceAssertionDraftFile: path.posix.join(directory, `${period}-balances.bean`),
     },
     counts: {
-      transactions: transactionPreflight.exportableTransactions.length,
-      transfers: transactionPreflight.mergedTransfers.length,
-      balanceAssertions: balancePreflight.exportableAssertions.length,
+      transactions: transactionIntents.length,
+      transfers: transferIntents.length,
+      balanceAssertions: balancePreflight.exportableCandidates.length,
       skipped: transactionPreflight.skipped.length,
       transactionBlockers: transactionPreflight.blockers.length,
       balanceAssertionBlockers: balancePreflight.blockers.length,
@@ -102,6 +112,7 @@ export function buildBeancountHandoffManifest(options: {
       transactionsOk: transactionPreflight.ok,
       balanceAssertionsOk: balancePreflight.ok,
     },
+    validation: null,
     sourceIds: uniqueSorted([...transactionSourceIds, ...balanceSourceIds]),
   }
 }

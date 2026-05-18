@@ -58,7 +58,7 @@ export function accountInstitution(
     account.orgName?.trim()
     || inferInstitutionName(account.name)
     || account.orgDomain?.trim()
-    || 'Unknown institution'
+    || '未知机构'
   )
 }
 
@@ -89,12 +89,12 @@ export function accountDisplayName(account: Pick<Account, 'name' | 'orgName' | '
 export function accountTypeLabel(type: AccountType): string {
   switch (type) {
     case 'credit':
-      return 'Credit Card'
+      return '信用卡'
     case 'loan':
-      return 'Loan'
+      return '贷款'
     case 'investment':
-      return 'Investment'
+      return '投资'
     case 'depository':
-      return 'Depository'
+      return '存款'
   }
 }

@@ -111,14 +111,20 @@ function TransactionsPageContent() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-bold">Transactions</h1>
+        <h1 className="text-xl font-bold">交易</h1>
         <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/transactions/new"
+            className="text-xs bg-blue-900/50 text-blue-300 border border-blue-800 px-2 py-1 rounded-md hover:bg-blue-900"
+          >
+            新建交易
+          </a>
           {reviewQueueTotal > 0 && (
             <a
               href="/review"
               className="text-xs bg-amber-900/50 text-amber-300 border border-amber-800 px-2 py-1 rounded-full hover:bg-amber-900"
             >
-              ⚠ {reviewQueueTotal} to review
+              ⚠ {reviewQueueTotal} 条待审核
             </a>
           )}
           {unclassifiedTotal > 0 && (
@@ -126,7 +132,7 @@ function TransactionsPageContent() {
               href="/transactions?unclassified=true"
               className="text-xs bg-red-900/50 text-red-300 border border-red-800 px-2 py-1 rounded-full hover:bg-red-900"
             >
-              {unclassifiedTotal} uncategorized
+              {unclassifiedTotal} 条缺少 Ledger 账户
             </a>
           )}
           {reviewCategoryTotal > 0 && (
@@ -134,14 +140,14 @@ function TransactionsPageContent() {
               href="/transactions?review=true"
               className="text-xs bg-violet-900/50 text-violet-300 border border-violet-800 px-2 py-1 rounded-full hover:bg-violet-900"
             >
-              {reviewCategoryTotal} review categories
+              {reviewCategoryTotal} 个审核标记
             </a>
           )}
           <a
             href={exportHref}
             className="text-xs bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:border-slate-500 px-2 py-1 rounded-md"
           >
-            Export CSV
+            导出 CSV
           </a>
         </div>
       </div>
@@ -150,12 +156,12 @@ function TransactionsPageContent() {
       <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 space-y-3">
         {categoryGroup && !category && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-900/60 bg-blue-950/30 px-3 py-2">
-            <span className="text-xs text-blue-200">Current group: {categoryGroup}</span>
+            <span className="text-xs text-blue-200">当前分组：{categoryGroup}</span>
             <button
               onClick={() => setCategoryGroup('')}
               className="text-xs text-blue-200 hover:text-white"
             >
-              Clear
+              清除
             </button>
           </div>
         )}
@@ -165,7 +171,7 @@ function TransactionsPageContent() {
             onChange={e => setAccountId(e.target.value)}
             className="bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
           >
-            <option value="">All accounts</option>
+            <option value="">全部账户</option>
             {accounts.map(a => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
@@ -177,7 +183,7 @@ function TransactionsPageContent() {
               setCategory(value)
               if (value) setCategoryGroup('')
             }}
-            placeholder="All categories"
+            placeholder="全部 Ledger 账户"
             className="w-full py-2"
           />
 
@@ -186,9 +192,9 @@ function TransactionsPageContent() {
             onChange={e => setType(e.target.value)}
             className="bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
           >
-            <option value="">All cash flow</option>
-            <option value="spending">Spending only</option>
-            <option value="income">Income only</option>
+            <option value="">全部现金流</option>
+            <option value="spending">仅支出</option>
+            <option value="income">仅收入</option>
           </select>
 
           <select
@@ -196,11 +202,11 @@ function TransactionsPageContent() {
             onChange={e => setStatus(e.target.value)}
             className="bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
           >
-            <option value="">Default status</option>
-            <option value="posted">Posted</option>
-            <option value="pending">Pending</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="all">All statuses</option>
+            <option value="">默认状态</option>
+            <option value="posted">已入账</option>
+            <option value="pending">待处理</option>
+            <option value="cancelled">已取消</option>
+            <option value="all">全部状态</option>
           </select>
 
           <input
@@ -208,7 +214,7 @@ function TransactionsPageContent() {
             value={startDate}
             onChange={e => setStartDate(e.target.value)}
             className="bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
-            placeholder="Start date"
+            placeholder="开始日期"
           />
 
           <input
@@ -216,14 +222,14 @@ function TransactionsPageContent() {
             value={endDate}
             onChange={e => setEndDate(e.target.value)}
             className="bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100"
-            placeholder="End date"
+            placeholder="结束日期"
           />
         </div>
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
           <input
             type="text"
-            placeholder="Search descriptions..."
+            placeholder="搜索描述..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
@@ -238,7 +244,7 @@ function TransactionsPageContent() {
               }}
               className="rounded"
             />
-            Uncategorized only
+            仅缺少 Ledger 账户
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
             <input
@@ -250,14 +256,14 @@ function TransactionsPageContent() {
               }}
               className="rounded"
             />
-            Review categories only
+            仅需审核
           </label>
         </div>
       </div>
 
       {/* Transaction list */}
       {loading ? (
-        <div className="text-center py-12 text-slate-500">Loading...</div>
+        <div className="text-center py-12 text-slate-500">加载中...</div>
       ) : (
         <>
           <TransactionList
@@ -276,7 +282,7 @@ function TransactionsPageContent() {
                 disabled={loadingMore}
                 className="px-6 py-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-60 disabled:hover:bg-slate-700 text-slate-300 text-sm rounded-md"
               >
-                {loadingMore ? 'Loading...' : `Load more (${txns.length}/${total})`}
+                {loadingMore ? '加载中...' : `加载更多 (${txns.length}/${total})`}
               </button>
             </div>
           )}
@@ -288,7 +294,7 @@ function TransactionsPageContent() {
 
 export default function TransactionsPage() {
   return (
-    <Suspense fallback={<div className="text-center py-12 text-slate-500">Loading...</div>}>
+    <Suspense fallback={<div className="text-center py-12 text-slate-500">加载中...</div>}>
       <TransactionsPageContent />
     </Suspense>
   )

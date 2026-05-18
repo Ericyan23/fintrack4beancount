@@ -10,30 +10,198 @@ interface AccountInfo {
   name: string
 }
 
+interface TransactionSplitFormRow {
+  localId: string
+  id?: string
+  amount: string
+  currency?: string
+  ledgerAccount: string
+  memo: string
+  notes: string
+}
+
+type SplitField = 'amount' | 'ledgerAccount' | 'memo' | 'notes'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function formString(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value === null || value === undefined) return ''
+  return String(value)
+}
+
+function newLocalId(): string {
+  return `split-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function blankSplitRow(): TransactionSplitFormRow {
+  return {
+    localId: newLocalId(),
+    amount: '',
+    ledgerAccount: '',
+    memo: '',
+    notes: '',
+  }
+}
+
+function splitRowsFromResponse(data: unknown): TransactionSplitFormRow[] {
+  const rows = Array.isArray(data)
+    ? data
+    : isRecord(data) && Array.isArray(data.splits)
+      ? data.splits
+      : []
+
+  return rows.map((row): TransactionSplitFormRow => {
+    const record = isRecord(row) ? row : {}
+    const id = formString(record.id)
+    const currency = formString(record.currency)
+
+    return {
+      localId: id || newLocalId(),
+      id: id || undefined,
+      amount: formString(record.amount),
+      currency: currency || undefined,
+      ledgerAccount: formString(record.ledgerAccount ?? record.ledger_account),
+      memo: formString(record.memo),
+      notes: formString(record.notes),
+    }
+  })
+}
+
+function nullableText(value: string): string | null {
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+
+function apiErrorMessage(data: unknown, fallback: string): string {
+  if (!isRecord(data)) return fallback
+
+  if (typeof data.error === 'string' && data.error.trim()) {
+    return data.error
+  }
+
+  if (Array.isArray(data.validationErrors)) {
+    const messages = data.validationErrors.filter((error): error is string => typeof error === 'string')
+    if (messages.length > 0) return messages.join(', ')
+  }
+
+  if (Array.isArray(data.errors)) {
+    const messages = data.errors
+      .map(error => {
+        if (typeof error === 'string') return error
+        if (isRecord(error) && typeof error.error === 'string') return error.error
+        return null
+      })
+      .filter((error): error is string => Boolean(error))
+    if (messages.length > 0) return messages.join(', ')
+  }
+
+  return fallback
+}
+
 export default function TransactionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const [txn, setTxn] = useState<Transaction | null>(null)
   const [account, setAccount] = useState<AccountInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [category, setCategory] = useState('')
+  const [ledgerAccount, setLedgerAccount] = useState('')
   const [notes, setNotes] = useState('')
+  const [splits, setSplits] = useState<TransactionSplitFormRow[]>([])
+  const [splitLoading, setSplitLoading] = useState(true)
+  const [splitSaving, setSplitSaving] = useState(false)
+  const [splitClearing, setSplitClearing] = useState(false)
+  const [splitError, setSplitError] = useState<string | null>(null)
+  const [hasPersistedSplits, setHasPersistedSplits] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
-    params.then(({ id }) => {
-      fetch(`/api/transactions/${encodeURIComponent(id)}`)
-        .then(res => res.json())
-        .then(async (data: Transaction) => {
-          setTxn(data)
-          setCategory(data.category ?? '')
-          setNotes(data.notes ?? '')
-          const accountsRes = await fetch('/api/accounts')
-          const accountsData = (await accountsRes.json()) as { accounts?: AccountInfo[] }
-          setAccount(accountsData.accounts?.find(a => a.id === data.accountId) ?? null)
+    let cancelled = false
+
+    params.then(async ({ id }) => {
+      setLoading(true)
+      setSplitLoading(true)
+      setSplitError(null)
+
+      try {
+        const encodedId = encodeURIComponent(id)
+        const txnRes = await fetch(`/api/transactions/${encodedId}`)
+        const data = await readJson(txnRes)
+        if (!txnRes.ok || !isRecord(data)) {
+          if (!cancelled) {
+            setTxn(null)
+            setSplits([])
+            setHasPersistedSplits(false)
+          }
+          return
+        }
+
+        const transaction = data as Transaction
+        if (cancelled) return
+
+        setTxn(transaction)
+        setLedgerAccount(transaction.ledgerAccount ?? transaction.category ?? '')
+        setNotes(transaction.notes ?? '')
+
+        const [accountsResult, splitsResult] = await Promise.allSettled([
+          fetch('/api/accounts'),
+          fetch(`/api/transactions/${encodedId}/splits`),
+        ])
+
+        if (cancelled) return
+
+        if (accountsResult.status === 'fulfilled' && accountsResult.value.ok) {
+          const accountsRes = accountsResult.value
+          const accountsData = (await readJson(accountsRes)) as { accounts?: AccountInfo[] } | null
+          setAccount(accountsData?.accounts?.find(a => a.id === transaction.accountId) ?? null)
+        } else {
+          setAccount(null)
+        }
+
+        if (splitsResult.status !== 'fulfilled') {
+          setSplits([])
+          setHasPersistedSplits(false)
+          setSplitError('无法加载拆分分录。')
+          return
+        }
+
+        const splitsRes = splitsResult.value
+        const splitsData = await readJson(splitsRes)
+        if (splitsRes.ok) {
+          const nextSplits = splitRowsFromResponse(splitsData)
+          setSplits(nextSplits)
+          setHasPersistedSplits(nextSplits.length > 0)
+        } else {
+          setSplits([])
+          setHasPersistedSplits(false)
+          setSplitError(apiErrorMessage(splitsData, '无法加载拆分分录。'))
+        }
+      } catch {
+        if (!cancelled) {
+          setTxn(null)
+          setSplits([])
+          setHasPersistedSplits(false)
+        }
+      } finally {
+        if (!cancelled) {
+          setSplitLoading(false)
           setLoading(false)
-        })
-        .catch(() => setLoading(false))
+        }
+      }
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [params])
 
   const save = useCallback(async () => {
@@ -43,23 +211,128 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        category: category || null,
+        ledgerAccount: ledgerAccount || null,
         notes: notes || null,
       }),
     })
     setSaving(false)
     router.back()
-  }, [txn, category, notes, router])
+  }, [txn, ledgerAccount, notes, router])
+
+  const updateSplit = useCallback((index: number, field: SplitField, value: string) => {
+    setSplits(current => current.map((split, splitIndex) => (
+      splitIndex === index ? { ...split, [field]: value } : split
+    )))
+    setSplitError(null)
+  }, [])
+
+  const addSplitRow = useCallback(() => {
+    setSplits(current => [...current, blankSplitRow()])
+    setSplitError(null)
+  }, [])
+
+  const removeSplitRow = useCallback((index: number) => {
+    setSplits(current => current.filter((_, splitIndex) => splitIndex !== index))
+    setSplitError(null)
+  }, [])
+
+  const seedSplitRows = useCallback(() => {
+    if (!txn) return
+
+    setSplits([
+      {
+        localId: newLocalId(),
+        amount: txn.amount,
+        ledgerAccount: ledgerAccount
+          || txn.ledgerAccount
+          || txn.category
+          || txn.suggestedLedgerAccount
+          || txn.suggestedCat
+          || '',
+        memo: '',
+        notes: '',
+      },
+      blankSplitRow(),
+    ])
+    setSplitError(null)
+  }, [txn, ledgerAccount])
+
+  const saveSplits = useCallback(async () => {
+    if (!txn) return
+
+    setSplitSaving(true)
+    setSplitError(null)
+
+    try {
+      const res = await fetch(`/api/transactions/${encodeURIComponent(txn.id)}/splits`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          splits: splits.map(split => ({
+            amount: split.amount.trim(),
+            ...(split.currency ? { currency: split.currency.trim() } : {}),
+            ledgerAccount: split.ledgerAccount.trim(),
+            memo: nullableText(split.memo),
+            notes: nullableText(split.notes),
+          })),
+        }),
+      })
+      const data = await readJson(res)
+
+      if (!res.ok) {
+        setSplitError(apiErrorMessage(data, '无法保存拆分分录。'))
+        return
+      }
+
+      const nextSplits = splitRowsFromResponse(data)
+      if (nextSplits.length > 0) {
+        setSplits(nextSplits)
+      }
+      setHasPersistedSplits(true)
+    } catch {
+      setSplitError('无法保存拆分分录。')
+    } finally {
+      setSplitSaving(false)
+    }
+  }, [txn, splits])
+
+  const clearSplits = useCallback(async () => {
+    if (!txn || !hasPersistedSplits) return
+
+    setSplitClearing(true)
+    setSplitError(null)
+
+    try {
+      const res = await fetch(`/api/transactions/${encodeURIComponent(txn.id)}/splits`, {
+        method: 'DELETE',
+      })
+      const data = await readJson(res)
+
+      if (!res.ok) {
+        setSplitError(apiErrorMessage(data, '无法清除拆分分录。'))
+        return
+      }
+
+      setSplits([])
+      setHasPersistedSplits(false)
+    } catch {
+      setSplitError('无法清除拆分分录。')
+    } finally {
+      setSplitClearing(false)
+    }
+  }, [txn, hasPersistedSplits])
 
   if (loading) {
-    return <div className="text-center py-12 text-slate-500">Loading...</div>
+    return <div className="text-center py-12 text-slate-500">加载中...</div>
   }
   if (!txn) {
-    return <div className="text-center py-12 text-slate-500">Transaction not found</div>
+    return <div className="text-center py-12 text-slate-500">未找到交易</div>
   }
 
   const amount = parseFloat(txn.amount)
   const isPositive = amount > 0
+  const currentLedgerAccount = txn.ledgerAccount ?? txn.category ?? null
+  const suggestedLedgerAccount = txn.suggestedLedgerAccount ?? txn.suggestedCat ?? null
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -67,7 +340,7 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
         onClick={() => router.back()}
         className="text-sm text-slate-400 hover:text-slate-300"
       >
-        ← Back
+        ← 返回
       </button>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
@@ -79,40 +352,41 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
           {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)}
         </p>
         <div className="mt-3 space-y-1 text-sm text-slate-400">
-          <p>Date: {new Date(txn.posted * 1000).toLocaleDateString('en-US')}</p>
+          <p>日期：{new Date(txn.posted * 1000).toLocaleDateString('zh-CN')}</p>
           {txn.transactedAt && (
-            <p>Transaction time: {new Date(txn.transactedAt * 1000).toLocaleDateString('en-US')}</p>
+            <p>交易时间：{new Date(txn.transactedAt * 1000).toLocaleDateString('zh-CN')}</p>
           )}
-          <p>Account: {account?.name ?? txn.accountId}</p>
-          {txn.status === 'pending' && <p className="text-amber-400">⚠ Pending</p>}
-          {txn.status === 'cancelled' && <p className="text-slate-500">✕ Cancelled</p>}
-          <p>Source: {txn.source}</p>
+          <p>账户：{account?.name ?? txn.accountId}</p>
+          {txn.status === 'pending' && <p className="text-amber-400">⚠ 待处理</p>}
+          {txn.status === 'cancelled' && <p className="text-slate-500">✕ 已取消</p>}
+          <p>来源：{txn.source}</p>
+          {txn.updatedBy && <p>最后编辑人：{txn.updatedBy}</p>}
         </div>
       </div>
 
       <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
-        <h2 className="text-sm font-medium text-slate-300">Edit details</h2>
+        <h2 className="text-sm font-medium text-slate-300">编辑详情</h2>
 
         <div>
-          <label className="text-xs text-slate-400 block mb-1">Category</label>
-          {txn.suggestedCat && !txn.category && (
-            <p className="text-xs text-blue-400 mb-1">AI suggestion: {txn.suggestedCat}</p>
+          <label className="text-xs text-slate-400 block mb-1">Ledger 账户</label>
+          {suggestedLedgerAccount && !currentLedgerAccount && (
+            <p className="text-xs text-blue-400 mb-1">AI 建议：{suggestedLedgerAccount}</p>
           )}
           <CategorySelect
-            value={category}
-            onChange={setCategory}
-            placeholder="-- Uncategorized --"
+            value={ledgerAccount}
+            onChange={setLedgerAccount}
+            placeholder="-- 未分配 --"
             className="w-full py-2"
           />
         </div>
 
         <div>
-          <label className="text-xs text-slate-400 block mb-1">Notes</label>
+          <label className="text-xs text-slate-400 block mb-1">备注</label>
           <textarea
             value={notes}
             onChange={e => setNotes(e.target.value)}
             rows={3}
-            placeholder="Add notes..."
+            placeholder="添加备注..."
             className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500 resize-none"
           />
         </div>
@@ -122,8 +396,140 @@ export default function TransactionDetailPage({ params }: { params: Promise<{ id
           disabled={saving}
           className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium rounded-md"
         >
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? '保存中...' : '保存'}
         </button>
+      </div>
+
+      <div className="bg-slate-800 rounded-xl p-5 border border-slate-700 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-sm font-medium text-slate-300">拆分分录</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              这些 Ledger 分录绑定到当前父交易，不会创建新的来源交易。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {hasPersistedSplits && (
+              <button
+                type="button"
+                onClick={clearSplits}
+                disabled={splitSaving || splitClearing}
+                className="rounded-md border border-red-900/70 px-2 py-1 text-xs text-red-300 hover:bg-red-950/40 disabled:opacity-50"
+              >
+                {splitClearing ? '清除中...' : '清除拆分'}
+              </button>
+            )}
+            {splits.length === 0 && (
+              <button
+                type="button"
+                onClick={seedSplitRows}
+                disabled={splitLoading}
+                className="rounded-md border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+              >
+                生成拆分
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={addSplitRow}
+              disabled={splitLoading}
+              className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-100 hover:bg-slate-600 disabled:opacity-50"
+            >
+              添加分录
+            </button>
+          </div>
+        </div>
+
+        {splitError && (
+          <div className="rounded-md border border-red-900/70 bg-red-950/30 px-3 py-2 text-xs text-red-200">
+            {splitError}
+          </div>
+        )}
+
+        {splitLoading ? (
+          <div className="rounded-md border border-slate-700 bg-slate-900/30 px-3 py-3 text-xs text-slate-500">
+            正在加载拆分分录...
+          </div>
+        ) : splits.length === 0 ? (
+          <div className="rounded-md border border-dashed border-slate-700 px-3 py-4 text-xs text-slate-500">
+            此交易尚未保存拆分分录。
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {splits.map((split, index) => (
+              <div
+                key={split.localId}
+                className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/40 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-medium text-slate-400">分录 {index + 1}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeSplitRow(index)}
+                    className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-700 hover:text-slate-200"
+                  >
+                    移除
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">金额</label>
+                    <input
+                      value={split.amount}
+                      onChange={e => updateSplit(index, 'amount', e.target.value)}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-2 text-sm text-slate-100 placeholder-slate-500"
+                    />
+                  </div>
+
+                  <div className="min-w-0">
+                    <label className="mb-1 block text-xs text-slate-500">Ledger 账户</label>
+                    <CategorySelect
+                      value={split.ledgerAccount}
+                      onChange={value => updateSplit(index, 'ledgerAccount', value)}
+                      placeholder="Ledger 账户"
+                      searchable
+                      className="py-2"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">摘要</label>
+                    <input
+                      value={split.memo}
+                      onChange={e => updateSplit(index, 'memo', e.target.value)}
+                      placeholder="可选摘要"
+                      className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-2 text-sm text-slate-100 placeholder-slate-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">备注</label>
+                    <input
+                      value={split.notes}
+                      onChange={e => updateSplit(index, 'notes', e.target.value)}
+                      placeholder="可选备注"
+                      className="w-full rounded border border-slate-600 bg-slate-700 px-2 py-2 text-sm text-slate-100 placeholder-slate-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={saveSplits}
+              disabled={splitSaving || splitClearing || splits.length === 0}
+              className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            >
+              {splitSaving ? '保存分录中...' : '保存拆分分录'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

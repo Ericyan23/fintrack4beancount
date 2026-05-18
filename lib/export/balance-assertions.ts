@@ -7,6 +7,11 @@ import {
   type LedgerBalanceDirective,
   type LedgerSnapshot,
 } from '@/lib/export/beancount-ledger'
+import {
+  exportCandidateFromBalanceAssertion,
+  type ExportCandidateBalanceAssertion,
+} from '@/lib/export/ledger-intents'
+import { loadPreviouslyExportedSourceIds } from '@/lib/export/export-runs'
 
 export type BalanceAssertionSeverity = 'blocker' | 'review'
 
@@ -47,19 +52,43 @@ export interface BalanceAssertionPreflightResult {
   summary: {
     assertionsScanned: number
     exportableAssertions: number
+    positionAssertionsScanned?: number
+    exportablePositionAssertions?: number
     blockers: number
     reviewItems: number
     duplicateCandidates: number
+    previouslyExported?: number
   }
   blockers: BalanceAssertionIssue[]
   reviewItems: BalanceAssertionIssue[]
   duplicateCandidates: BalanceAssertionIssue[]
   exportableAssertions: PreflightBalanceAssertion[]
+  exportableCandidates: ExportCandidateBalanceAssertion[]
 }
 
 interface PeriodRange {
   start: string
   end: string
+}
+
+interface InvestmentPositionRow {
+  id: string
+  sourceConnectionId: string | null
+  sourceAccountId: string | null
+  sourceItemKey: string | null
+  accountId: string | null
+  accountName: string | null
+  beancountAccount: string | null
+  securityId: string | null
+  sourceSymbol: string | null
+  beancountCommodity: string | null
+  asOfDate: string
+  quantity: string
+  marketValue: string | null
+  currency: string | null
+  status: string
+  validationErrors: string | null
+  rawPayload: string | null
 }
 
 function parsePeriod(period: string): PeriodRange {
@@ -100,6 +129,154 @@ function loadDraftBalanceAssertions(range: PeriodRange): PreflightBalanceAsserti
   `).all(range.start, range.end) as PreflightBalanceAssertion[]
 }
 
+function loadInvestmentPositionRows(range: PeriodRange): InvestmentPositionRow[] {
+  return sqlite.prepare(`
+    SELECT
+      p.id,
+      p.source_connection_id AS sourceConnectionId,
+      p.source_account_id AS sourceAccountId,
+      p.source_item_key AS sourceItemKey,
+      p.account_id AS accountId,
+      accounts.name AS accountName,
+      accounts.beancount_account AS beancountAccount,
+      p.security_id AS securityId,
+      securities.source_symbol AS sourceSymbol,
+      securities.beancount_commodity AS beancountCommodity,
+      p.as_of_date AS asOfDate,
+      p.quantity,
+      p.market_value AS marketValue,
+      p.currency,
+      p.status,
+      p.validation_errors AS validationErrors,
+      p.raw_payload AS rawPayload
+    FROM investment_positions p
+    LEFT JOIN accounts
+      ON accounts.id = p.account_id
+    LEFT JOIN securities
+      ON securities.id = p.security_id
+    WHERE p.as_of_date BETWEEN ? AND ?
+    ORDER BY p.as_of_date ASC, p.id ASC
+  `).all(range.start, range.end) as InvestmentPositionRow[]
+}
+
+function sourceIdForInvestmentPosition(
+  position: Pick<InvestmentPositionRow, 'id' | 'sourceConnectionId' | 'sourceAccountId' | 'sourceItemKey'>,
+): string {
+  if (position.sourceConnectionId && position.sourceAccountId && position.sourceItemKey) {
+    return [
+      'fintrack',
+      'position-source',
+      encodeURIComponent(position.sourceConnectionId),
+      encodeURIComponent(position.sourceAccountId),
+      encodeURIComponent(position.sourceItemKey),
+    ].join(':')
+  }
+
+  return `fintrack:position:${position.id}`
+}
+
+function toPositionBalanceAssertion(position: InvestmentPositionRow): PreflightBalanceAssertion {
+  const label = position.sourceSymbol ?? position.securityId ?? position.id
+  const marketValue = position.marketValue && position.currency
+    ? `; market value ${position.marketValue} ${position.currency}`
+    : ''
+
+  return {
+    id: `position:${position.id}`,
+    fintrackAccountId: position.accountId,
+    fintrackAccountName: position.accountName,
+    beancountAccount: position.beancountAccount ?? '',
+    assertionDate: position.asOfDate,
+    amount: position.quantity,
+    currency: position.beancountCommodity ?? '',
+    sourceId: sourceIdForInvestmentPosition(position),
+    status: 'draft',
+    note: `Investment position ${label}${marketValue}`,
+  }
+}
+
+function validatePositionProvenance(
+  position: InvestmentPositionRow,
+  assertion: PreflightBalanceAssertion,
+  blockers: BalanceAssertionIssue[],
+): boolean {
+  const missing: string[] = []
+  if (!position.sourceConnectionId) missing.push('source_connection_id')
+  if (!position.sourceAccountId) missing.push('source_account_id')
+  if (!position.sourceItemKey) missing.push('source_item_key')
+  if (!position.rawPayload || position.rawPayload.trim() === '') missing.push('raw_payload')
+
+  if (missing.length === 0) return true
+
+  addIssue(blockers, {
+    code: 'missing_position_provenance',
+    balanceAssertionId: assertion.id,
+    account: assertion.beancountAccount,
+    sourceId: assertion.sourceId,
+    message: `Investment position is missing source provenance: ${missing.join(', ')}`,
+  }, 'blocker')
+  return false
+}
+
+function parsePositionValidationErrors(value: string | null): string[] {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : ['Invalid validation_errors payload']
+  } catch {
+    return ['Invalid validation_errors payload']
+  }
+}
+
+function validatePositionStatus(
+  position: InvestmentPositionRow,
+  assertion: PreflightBalanceAssertion,
+  blockers: BalanceAssertionIssue[],
+  reviewItems: BalanceAssertionIssue[],
+): boolean {
+  if (position.status === 'reviewed') return true
+
+  const issue = {
+    code: position.status === 'ignored'
+      ? 'ignored_position_assertion'
+      : 'unreviewed_position_assertion',
+    balanceAssertionId: assertion.id,
+    account: assertion.beancountAccount,
+    sourceId: assertion.sourceId,
+    message: position.status === 'ignored'
+      ? 'Investment position is ignored and will not be exported'
+      : `Investment position must be reviewed before export; current status is ${position.status}`,
+  }
+
+  if (position.status === 'ignored') {
+    addIssue(reviewItems, issue, 'review')
+    return false
+  }
+
+  addIssue(blockers, issue, 'blocker')
+  return false
+}
+
+function validatePositionValidationErrors(
+  position: InvestmentPositionRow,
+  assertion: PreflightBalanceAssertion,
+  blockers: BalanceAssertionIssue[],
+): boolean {
+  const errors = parsePositionValidationErrors(position.validationErrors)
+  if (errors.length === 0) return true
+
+  addIssue(blockers, {
+    code: 'position_validation_errors',
+    balanceAssertionId: assertion.id,
+    account: assertion.beancountAccount,
+    sourceId: assertion.sourceId,
+    message: `Investment position has validation errors: ${errors.join('; ')}`,
+  }, 'blocker')
+  return false
+}
+
 function addIssue(
   target: BalanceAssertionIssue[],
   issue: Omit<BalanceAssertionIssue, 'severity'>,
@@ -109,15 +286,21 @@ function addIssue(
 }
 
 function parseAmount(amount: string): number | null {
-  const value = Number.parseFloat(amount.replace(/,/g, ''))
+  const normalized = amount.replace(/,/g, '').trim()
+  if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) return null
+  const value = Number.parseFloat(normalized)
   return Number.isFinite(value) ? value : null
 }
 
-function amountsMatch(a: string, b: string): boolean {
+function amountsMatch(a: string, b: string, tolerance = 0.005): boolean {
   const left = parseAmount(a)
   const right = parseAmount(b)
   if (left === null || right === null) return false
-  return Math.abs(left - right) < 0.005
+  return Math.abs(left - right) < tolerance
+}
+
+function amountTolerance(assertion: PreflightBalanceAssertion): number {
+  return assertion.id.startsWith('position:') ? 0.0000005 : 0.005
 }
 
 function balanceKey(assertion: Pick<PreflightBalanceAssertion, 'assertionDate' | 'beancountAccount' | 'currency'>): string {
@@ -135,6 +318,25 @@ function validateAmount(
     account: assertion.beancountAccount,
     sourceId: assertion.sourceId,
     message: `${assertion.amount} is not a valid balance assertion amount`,
+  }, 'blocker')
+  return false
+}
+
+function validateCurrency(
+  assertion: PreflightBalanceAssertion,
+  blockers: BalanceAssertionIssue[],
+): boolean {
+  if (/^[A-Z][A-Z0-9._-]*$/.test(assertion.currency)) return true
+  addIssue(blockers, {
+    code: assertion.id.startsWith('position:')
+      ? 'missing_position_commodity_mapping'
+      : 'invalid_balance_currency',
+    balanceAssertionId: assertion.id,
+    account: assertion.beancountAccount,
+    sourceId: assertion.sourceId,
+    message: assertion.id.startsWith('position:')
+      ? 'Investment position is missing Beancount commodity mapping'
+      : `${assertion.currency} is not a valid balance assertion currency or commodity`,
   }, 'blocker')
   return false
 }
@@ -203,8 +405,9 @@ function validateExistingBalance(
   const existing = findExistingBalances(snapshot, assertion)
   if (existing.length === 0) return true
 
-  const sameAmount = existing.some(balance => amountsMatch(balance.amount, assertion.amount))
-  const balance = sameAmount ? existing.find(item => amountsMatch(item.amount, assertion.amount)) ?? existing[0] : existing[0]
+  const tolerance = amountTolerance(assertion)
+  const sameAmount = existing.some(balance => amountsMatch(balance.amount, assertion.amount, tolerance))
+  const balance = sameAmount ? existing.find(item => amountsMatch(item.amount, assertion.amount, tolerance)) ?? existing[0] : existing[0]
   const code = sameAmount ? 'duplicate_existing_balance' : 'conflicting_existing_balance'
   const issue = {
     code,
@@ -236,7 +439,8 @@ function markDraftDuplicates(
 
   for (const group of groupByBalanceKey(candidates).values()) {
     if (group.length < 2) continue
-    const allSameAmount = group.every(assertion => amountsMatch(assertion.amount, group[0].amount))
+    const tolerance = Math.min(...group.map(amountTolerance))
+    const allSameAmount = group.every(assertion => amountsMatch(assertion.amount, group[0].amount, tolerance))
     const code = allSameAmount ? 'duplicate_draft_balance' : 'conflicting_draft_balance'
 
     for (const assertion of group) {
@@ -259,20 +463,43 @@ function markDraftDuplicates(
 export function runBalanceAssertionPreflight(options: {
   period?: string
   beancountRoot?: string
+  excludeExported?: boolean
 } = {}): BalanceAssertionPreflightResult {
   const period = options.period ?? currentBalanceAssertionPeriod()
   const range = parsePeriod(period)
   const beancountRoot = options.beancountRoot ?? defaultBeancountRoot()
   const snapshot = loadLedgerSnapshot(beancountRoot)
-  const rows = loadDraftBalanceAssertions(range)
+  const manualRows = loadDraftBalanceAssertions(range)
+  const positionRows = loadInvestmentPositionRows(range)
+  const positionAssertions = positionRows.map(toPositionBalanceAssertion)
+  const positionRowsByAssertion = new Map(
+    positionRows.map((position, index) => [positionAssertions[index], position]),
+  )
+  const rows = [...manualRows, ...positionAssertions]
   const blockers: BalanceAssertionIssue[] = []
   const reviewItems: BalanceAssertionIssue[] = []
   const duplicateCandidates: BalanceAssertionIssue[] = []
   const validCandidates: PreflightBalanceAssertion[] = []
+  const previouslyExportedSourceIds = options.excludeExported
+    ? loadPreviouslyExportedSourceIds({ exportTarget: 'beancount_handoff' })
+    : new Set<string>()
+  let previouslyExported = 0
 
   for (const assertion of rows) {
+    if (previouslyExportedSourceIds.has(assertion.sourceId)) {
+      previouslyExported += 1
+      continue
+    }
+
     let valid = true
+    const positionRow = positionRowsByAssertion.get(assertion)
+    if (positionRow) {
+      if (!validatePositionStatus(positionRow, assertion, blockers, reviewItems)) continue
+      valid = validatePositionValidationErrors(positionRow, assertion, blockers) && valid
+      valid = validatePositionProvenance(positionRow, assertion, blockers) && valid
+    }
     valid = validateAmount(assertion, blockers) && valid
+    valid = validateCurrency(assertion, blockers) && valid
     valid = validateLedgerAccount(snapshot, assertion, blockers) && valid
     valid = validateDuplicateSourceId(snapshot, assertion, blockers, duplicateCandidates) && valid
     valid = validateExistingBalance(snapshot, assertion, blockers, duplicateCandidates) && valid
@@ -281,6 +508,7 @@ export function runBalanceAssertionPreflight(options: {
 
   const blockedDraftIds = markDraftDuplicates(validCandidates, blockers, duplicateCandidates)
   const exportableAssertions = validCandidates.filter(assertion => !blockedDraftIds.has(assertion.id))
+  const exportableCandidates = exportableAssertions.map(exportCandidateFromBalanceAssertion)
   const proposedStaging = path.join('staging', period, 'fintrack', 'draft', `${period}-balances.bean`)
 
   return {
@@ -298,14 +526,18 @@ export function runBalanceAssertionPreflight(options: {
     summary: {
       assertionsScanned: rows.length,
       exportableAssertions: exportableAssertions.length,
+      positionAssertionsScanned: positionAssertions.length,
+      exportablePositionAssertions: exportableAssertions.filter(assertion => assertion.id.startsWith('position:')).length,
       blockers: blockers.length,
       reviewItems: reviewItems.length,
       duplicateCandidates: duplicateCandidates.length,
+      previouslyExported,
     },
     blockers,
     reviewItems,
     duplicateCandidates,
     exportableAssertions,
+    exportableCandidates,
   }
 }
 
@@ -320,8 +552,11 @@ function escapeBeancountString(value: string): string {
 function formatBalanceAmount(value: string): string {
   const amount = parseAmount(value)
   if (amount === null) throw new Error(`Invalid balance assertion amount: ${value}`)
-  const normalized = Math.abs(amount) < 0.005 ? 0 : amount
-  return normalized.toFixed(2)
+  const normalized = value.replace(/,/g, '').trim()
+  if (Object.is(amount, -0) || /^-0+(?:\.0+)?$/.test(normalized)) {
+    return normalized.slice(1)
+  }
+  return normalized
 }
 
 function balanceLine(assertion: PreflightBalanceAssertion): string {

@@ -107,7 +107,7 @@ function BreakdownTable({
         <h2 className="text-sm font-medium text-slate-300">{title}</h2>
       </div>
       {rows.length === 0 ? (
-        <div className="px-4 py-8 text-center text-sm text-slate-500">No data yet</div>
+        <div className="px-4 py-8 text-center text-sm text-slate-500">暂无数据</div>
       ) : (
         <div className="divide-y divide-slate-700">
           {rows.map(row => {
@@ -130,7 +130,7 @@ function BreakdownTable({
               >
                 <div className="min-w-0">
                   <p className="text-sm text-slate-100 truncate">{row.label}</p>
-                  <p className="text-xs text-slate-500">{row.transactionCount} transactions</p>
+                  <p className="text-xs text-slate-500">{row.transactionCount} 条交易</p>
                 </div>
                 <p className="text-sm font-semibold text-slate-100 shrink-0">{formatCurrency(row.amount)}</p>
               </Link>
@@ -190,15 +190,28 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-5">
+      <div className="rounded-md border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm text-slate-400">
+        <strong className="font-medium text-slate-300">已归档 - 旧版视图。</strong>
+        {' '}报表在 v2 中已冻结。请用{' '}
+        <Link href="/" className="text-blue-400 hover:text-blue-300">控制中心</Link>
+        {' '}查看流程状态，或用{' '}
+        <Link href="/beancount" className="text-blue-400 hover:text-blue-300">导出中心</Link>
+        {' '}生成 Beancount 输出。
+      </div>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">Reports</h1>
+        <div>
+          <h1 className="text-xl font-bold text-slate-400">交易诊断</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            主要 Ledger 准备流程之外保留的已入账交易临时视图。
+          </p>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-[220px_180px] lg:grid-cols-[240px_180px_150px_150px] gap-2">
           <select
             value={accountId}
             onChange={e => setAccountId(e.target.value)}
             className="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100"
           >
-            <option value="">All accounts</option>
+            <option value="">全部账户</option>
             {accounts.map(account => (
               <option key={account.id} value={account.id}>{account.name}</option>
             ))}
@@ -232,14 +245,14 @@ export default function ReportsPage() {
       </div>
 
       <div className="text-xs text-slate-500">
-        Range: {dateRangeLabel} · Basis: posted transactions, excluding cancelled
+        范围：{dateRangeLabel} · 口径：已入账交易，不含已取消
       </div>
 
       <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1 w-full md:w-fit">
         {([
-          ['cashflow', 'Cash Flow'],
-          ['spending', 'Spending'],
-          ['income', 'Income'],
+          ['cashflow', '现金流'],
+          ['spending', '支出'],
+          ['income', '收入'],
         ] as const).map(([value, label]) => (
           <button
             key={value}
@@ -254,7 +267,7 @@ export default function ReportsPage() {
       </div>
 
       {loading || !data ? (
-        <div className="text-center py-12 text-slate-500">Loading...</div>
+        <div className="text-center py-12 text-slate-500">加载中...</div>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -262,24 +275,24 @@ export default function ReportsPage() {
               href={transactionHref({ startDate, endDate, type: 'income', accountId })}
               className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-slate-500"
             >
-              <p className="text-xs text-slate-400">Income</p>
+              <p className="text-xs text-slate-400">收入</p>
               <p className="text-xl font-bold text-emerald-400 mt-1">{formatCurrency(data.summary.income)}</p>
             </Link>
             <Link
               href={transactionHref({ startDate, endDate, type: 'spending', accountId })}
               className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-slate-500"
             >
-              <p className="text-xs text-slate-400">Spending</p>
+              <p className="text-xs text-slate-400">支出</p>
               <p className="text-xl font-bold text-red-400 mt-1">{formatCurrency(data.summary.spending)}</p>
             </Link>
             <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <p className="text-xs text-slate-400">Net cash flow</p>
+              <p className="text-xs text-slate-400">净现金流</p>
               <p className={`text-xl font-bold mt-1 ${data.summary.net >= 0 ? 'text-blue-400' : 'text-red-400'}`}>
                 {formatSigned(data.summary.net)}
               </p>
             </div>
             <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-              <p className="text-xs text-slate-400">Transactions</p>
+              <p className="text-xs text-slate-400">交易</p>
               <p className="text-xl font-bold text-slate-100 mt-1">{data.summary.transactionCount}</p>
             </div>
           </div>
@@ -287,7 +300,7 @@ export default function ReportsPage() {
           {tab === 'cashflow' && (
             <div className="space-y-4">
               <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <h2 className="text-sm font-medium text-slate-300 mb-3">Monthly cash flow</h2>
+                <h2 className="text-sm font-medium text-slate-300 mb-3">月度现金流</h2>
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -298,20 +311,20 @@ export default function ReportsPage() {
                       contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
                       labelStyle={{ color: '#f8fafc' }}
                     />
-                    <Bar dataKey="income" name="Income" fill="#22c55e" radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="spending" name="Spending" fill="#ef4444" radius={[3, 3, 0, 0]} />
-                    <Bar dataKey="net" name="Net cash flow" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="income" name="收入" fill="#22c55e" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="spending" name="支出" fill="#ef4444" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="net" name="净现金流" fill="#3b82f6" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
 
               <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
                 <div className="grid grid-cols-[1fr_1fr_1fr_1fr_80px] gap-3 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
-                  <span>Month</span>
-                  <span>Income</span>
-                  <span>Spending</span>
-                  <span>Net</span>
-                  <span>Transactions</span>
+                  <span>月份</span>
+                  <span>收入</span>
+                  <span>支出</span>
+                  <span>净额</span>
+                  <span>交易</span>
                 </div>
                 {chartData.map(row => (
                   <div key={row.period} className="grid grid-cols-[1fr_1fr_1fr_1fr_80px] gap-3 px-4 py-2 text-sm border-b border-slate-700 last:border-b-0">
@@ -333,7 +346,7 @@ export default function ReportsPage() {
           {(tab === 'spending' || tab === 'income') && activeBreakdowns && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <BreakdownTable
-                title="By category group"
+                title="按分类组"
                 rows={activeBreakdowns.byCategoryGroup}
                 type={tab}
                 startDate={startDate}
@@ -341,7 +354,7 @@ export default function ReportsPage() {
                 accountId={accountId}
               />
               <BreakdownTable
-                title="By full category"
+                title="按完整分类"
                 rows={activeBreakdowns.byCategory}
                 type={tab}
                 startDate={startDate}
@@ -349,7 +362,7 @@ export default function ReportsPage() {
                 accountId={accountId}
               />
               <BreakdownTable
-                title="By account"
+                title="按账户"
                 rows={activeBreakdowns.byAccount}
                 type={tab}
                 startDate={startDate}
@@ -357,7 +370,7 @@ export default function ReportsPage() {
                 accountId={accountId}
               />
               <BreakdownTable
-                title="Top merchants/descriptions"
+                title="主要商户/描述"
                 rows={activeBreakdowns.byMerchant}
                 type={tab}
                 startDate={startDate}

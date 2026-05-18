@@ -7,6 +7,7 @@ import { detectAccountType } from '../accounts'
 import {
   DEFAULT_CLASSIFICATION_RULES,
   LEGACY_CATEGORY_MAP,
+  REVIEW_CATEGORY_NAMES,
   loadDefaultCategoryNames,
 } from '../classify/defaults'
 
@@ -55,12 +56,19 @@ const sqlite: Database.Database =
         transacted_at INTEGER,
         amount TEXT NOT NULL,
         description TEXT NOT NULL,
-        pending INTEGER NOT NULL DEFAULT 0,
-        category TEXT,
-        suggested_cat TEXT,
-        notes TEXT,
-        tags TEXT,
-        created_at INTEGER NOT NULL
+      pending INTEGER NOT NULL DEFAULT 0,
+      category TEXT,
+      suggested_cat TEXT,
+      ledger_account TEXT,
+      review_status TEXT,
+      suggested_ledger_account TEXT,
+      classifier TEXT,
+      confidence INTEGER,
+      suggested_at INTEGER,
+      notes TEXT,
+      tags TEXT,
+      created_at INTEGER NOT NULL,
+      updated_by TEXT
       );
 
       CREATE TABLE IF NOT EXISTS transfer_matches (
@@ -132,23 +140,743 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Migrations — run after singleton is resolved so they execute even on HMR reuse
-function addColumnIfMissing(sql: string): void {
-  try {
-    sqlite.exec(sql)
-  } catch {
-    // column already exists
+function sqlIdentifier(name: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error(`Unsafe SQL identifier: ${name}`)
   }
+  return `"${name}"`
 }
 
-try {
-  sqlite.exec(`ALTER TABLE transactions ADD COLUMN status TEXT NOT NULL DEFAULT 'posted'`)
-  sqlite.exec(`UPDATE transactions SET status = 'pending' WHERE pending = 1`)
-} catch { /* column already exists */ }
+function columnExists(tableName: string, columnName: string): boolean {
+  const table = sqlIdentifier(tableName)
+  const rows = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  return rows.some(row => row.name === columnName)
+}
 
-addColumnIfMissing(`ALTER TABLE accounts ADD COLUMN org_name TEXT`)
-addColumnIfMissing(`ALTER TABLE accounts ADD COLUMN org_domain TEXT`)
-addColumnIfMissing(`ALTER TABLE accounts ADD COLUMN account_type_override TEXT`)
-addColumnIfMissing(`ALTER TABLE accounts ADD COLUMN beancount_account TEXT`)
+function addColumnIfMissing(tableName: string, columnName: string, columnSql: string): boolean {
+  if (columnExists(tableName, columnName)) return false
+  try {
+    sqlite.exec(`ALTER TABLE ${sqlIdentifier(tableName)} ADD COLUMN ${columnSql}`)
+  } catch (error) {
+    if (error instanceof Error && /duplicate column name/i.test(error.message)) return false
+    throw error
+  }
+  return true
+}
+
+if (addColumnIfMissing('transactions', 'status', `status TEXT NOT NULL DEFAULT 'posted'`)) {
+  sqlite.exec(`UPDATE transactions SET status = 'pending' WHERE pending = 1`)
+}
+
+addColumnIfMissing('accounts', 'org_name', `org_name TEXT`)
+addColumnIfMissing('accounts', 'org_domain', `org_domain TEXT`)
+addColumnIfMissing('accounts', 'account_type_override', `account_type_override TEXT`)
+addColumnIfMissing('accounts', 'beancount_account', `beancount_account TEXT`)
+
+function backfillLegacyIngestionSources(): void {
+  const timestamp = Math.floor(Date.now() / 1000)
+  const insertSource = sqlite.prepare(`
+    INSERT OR IGNORE INTO sources
+      (id, kind, name, status, metadata, created_at, updated_at)
+    VALUES (?, ?, ?, 'active', NULL, ?, ?)
+  `)
+
+  sqlite.transaction(() => {
+    insertSource.run('simplefin', 'simplefin', 'SimpleFIN', timestamp, timestamp)
+    insertSource.run('csv', 'csv', 'CSV Import', timestamp, timestamp)
+
+    sqlite.prepare(`
+      INSERT OR IGNORE INTO sources
+        (id, kind, name, status, metadata, created_at, updated_at)
+      SELECT DISTINCT source, 'legacy', source, 'active', NULL, ?, ?
+      FROM transactions
+      WHERE source IS NOT NULL
+        AND source != ''
+        AND source NOT IN ('simplefin', 'csv')
+    `).run(timestamp, timestamp)
+
+    sqlite.prepare(`
+      INSERT OR IGNORE INTO source_connections
+        (id, source_id, name, status, config, created_at, updated_at)
+      VALUES ('legacy:csv', 'csv', 'Legacy CSV Imports', 'active', NULL, ?, ?)
+    `).run(timestamp, timestamp)
+
+    sqlite.prepare(`
+      INSERT OR IGNORE INTO source_connections
+        (id, source_id, name, status, config, created_at, updated_at)
+      SELECT DISTINCT
+        'legacy:simplefin:' || conn_id,
+        'simplefin',
+        CASE
+          WHEN org_name IS NOT NULL AND org_name != '' THEN org_name
+          ELSE conn_id
+        END,
+        'active',
+        NULL,
+        ?,
+        ?
+      FROM accounts
+      WHERE conn_id IS NOT NULL
+        AND conn_id != ''
+    `).run(timestamp, timestamp)
+
+    sqlite.prepare(`
+      INSERT OR IGNORE INTO source_accounts
+        (id, source_connection_id, fintrack_account_id, external_account_id,
+         name, currency, status, raw_payload, created_at, updated_at)
+      SELECT
+        'legacy:simplefin:' || conn_id || ':' || id,
+        'legacy:simplefin:' || conn_id,
+        id,
+        id,
+        name,
+        currency,
+        'active',
+        NULL,
+        ?,
+        ?
+      FROM accounts
+      WHERE conn_id IS NOT NULL
+        AND conn_id != ''
+    `).run(timestamp, timestamp)
+
+    sqlite.prepare(`
+      INSERT OR IGNORE INTO source_accounts
+        (id, source_connection_id, fintrack_account_id, external_account_id,
+         name, currency, status, raw_payload, created_at, updated_at)
+      SELECT
+        'legacy:csv:' || id,
+        'legacy:csv',
+        id,
+        id,
+        name,
+        currency,
+        'active',
+        NULL,
+        ?,
+        ?
+      FROM accounts
+    `).run(timestamp, timestamp)
+
+    sqlite.prepare(`
+      UPDATE transactions
+      SET
+        source_connection_id = COALESCE(
+          source_connection_id,
+          (SELECT 'legacy:simplefin:' || accounts.conn_id FROM accounts WHERE accounts.id = transactions.account_id)
+        ),
+        source_account_id = COALESCE(
+          source_account_id,
+          (SELECT 'legacy:simplefin:' || accounts.conn_id || ':' || accounts.id FROM accounts WHERE accounts.id = transactions.account_id)
+        ),
+        external_id = COALESCE(external_id, id),
+        source_item_key = COALESCE(source_item_key, account_id || ':' || id),
+        normalizer_version = COALESCE(normalizer_version, 'legacy-simplefin-v1'),
+        updated_at = COALESCE(updated_at, created_at, ?)
+      WHERE source = 'simplefin'
+        AND EXISTS (
+          SELECT 1
+          FROM accounts
+          WHERE accounts.id = transactions.account_id
+            AND accounts.conn_id IS NOT NULL
+            AND accounts.conn_id != ''
+        )
+        AND (
+          source_connection_id IS NULL
+          OR source_account_id IS NULL
+          OR external_id IS NULL
+          OR source_item_key IS NULL
+          OR normalizer_version IS NULL
+          OR updated_at IS NULL
+        )
+    `).run(timestamp)
+
+    sqlite.prepare(`
+      UPDATE transactions
+      SET
+        source_connection_id = COALESCE(source_connection_id, 'legacy:csv'),
+        source_account_id = COALESCE(source_account_id, 'legacy:csv:' || account_id),
+        external_id = COALESCE(external_id, id),
+        source_item_key = COALESCE(source_item_key, account_id || ':' || id),
+        normalizer_version = COALESCE(normalizer_version, 'legacy-csv-v1'),
+        updated_at = COALESCE(updated_at, created_at, ?)
+      WHERE source = 'csv'
+        AND EXISTS (
+          SELECT 1
+          FROM accounts
+          WHERE accounts.id = transactions.account_id
+        )
+        AND (
+          source_connection_id IS NULL
+          OR source_account_id IS NULL
+          OR external_id IS NULL
+          OR source_item_key IS NULL
+          OR normalizer_version IS NULL
+          OR updated_at IS NULL
+        )
+    `).run(timestamp)
+  })()
+}
+
+function ensureIngestionSchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS sources (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      metadata TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS import_profiles (
+      id TEXT PRIMARY KEY,
+      source_id TEXT REFERENCES sources(id),
+      kind TEXT NOT NULL DEFAULT 'csv',
+      name TEXT NOT NULL,
+      config TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS source_connections (
+      id TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL REFERENCES sources(id),
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      config TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS source_accounts (
+      id TEXT PRIMARY KEY,
+      source_connection_id TEXT NOT NULL REFERENCES source_connections(id),
+      fintrack_account_id TEXT REFERENCES accounts(id),
+      external_account_id TEXT NOT NULL,
+      name TEXT,
+      currency TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      raw_payload TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS import_runs (
+      id TEXT PRIMARY KEY,
+      source_connection_id TEXT REFERENCES source_connections(id),
+      import_profile_id TEXT REFERENCES import_profiles(id),
+      status TEXT NOT NULL DEFAULT 'pending',
+      started_at INTEGER,
+      finished_at INTEGER,
+      item_count INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS raw_import_items (
+      id TEXT PRIMARY KEY,
+      import_run_id TEXT NOT NULL REFERENCES import_runs(id),
+      source_account_id TEXT REFERENCES source_accounts(id),
+      external_id TEXT,
+      source_item_key TEXT NOT NULL,
+      raw_payload TEXT NOT NULL,
+      content_hash TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      received_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS staged_transactions (
+      id TEXT PRIMARY KEY,
+      import_run_id TEXT REFERENCES import_runs(id),
+      raw_item_id TEXT REFERENCES raw_import_items(id),
+      source_connection_id TEXT REFERENCES source_connections(id),
+      source_account_id TEXT REFERENCES source_accounts(id),
+      account_id TEXT REFERENCES accounts(id),
+      transaction_id TEXT REFERENCES transactions(id),
+      external_id TEXT,
+      source_item_key TEXT,
+      posted INTEGER,
+      transacted_at INTEGER,
+      amount TEXT,
+      currency TEXT,
+      description TEXT,
+      pending INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'staged',
+      category TEXT,
+      notes TEXT,
+      tags TEXT,
+      normalized_payload TEXT,
+      validation_errors TEXT,
+      normalizer_version TEXT,
+      reconciliation_status TEXT,
+      reconciliation_transaction_id TEXT REFERENCES transactions(id),
+      reconciliation_reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS import_profile_mappings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      import_profile_id TEXT NOT NULL REFERENCES import_profiles(id),
+      target_field TEXT NOT NULL,
+      source_field TEXT,
+      transform TEXT,
+      default_value TEXT,
+      required INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS securities (
+      id TEXT PRIMARY KEY,
+      source_connection_id TEXT REFERENCES source_connections(id),
+      source_symbol TEXT NOT NULL,
+      name TEXT,
+      instrument_type TEXT NOT NULL DEFAULT 'unknown',
+      underlying_symbol TEXT,
+      contract_symbol TEXT,
+      option_type TEXT,
+      expiration_date TEXT,
+      strike_price TEXT,
+      beancount_commodity TEXT,
+      raw_payload TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS investment_activities (
+      id TEXT PRIMARY KEY,
+      import_run_id TEXT REFERENCES import_runs(id),
+      raw_item_id TEXT REFERENCES raw_import_items(id),
+      staged_transaction_id TEXT REFERENCES staged_transactions(id),
+      source_connection_id TEXT REFERENCES source_connections(id),
+      source_account_id TEXT REFERENCES source_accounts(id),
+      account_id TEXT REFERENCES accounts(id),
+      security_id TEXT REFERENCES securities(id),
+      external_id TEXT,
+      source_item_key TEXT,
+      trade_date INTEGER,
+      settlement_date TEXT,
+      activity_type TEXT NOT NULL,
+      instrument_type TEXT NOT NULL DEFAULT 'unknown',
+      position_effect TEXT NOT NULL DEFAULT 'unknown',
+      option_type TEXT,
+      quantity TEXT,
+      price TEXT,
+      amount TEXT,
+      currency TEXT,
+      commission TEXT,
+      fees TEXT,
+      accrued_interest TEXT,
+      cash_balance TEXT,
+      action TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'blocked',
+      validation_errors TEXT,
+      normalized_payload TEXT,
+      normalizer_version TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS investment_positions (
+      id TEXT PRIMARY KEY,
+      source_connection_id TEXT REFERENCES source_connections(id),
+      source_account_id TEXT REFERENCES source_accounts(id),
+      import_run_id TEXT REFERENCES import_runs(id),
+      raw_item_id TEXT REFERENCES raw_import_items(id),
+      account_id TEXT REFERENCES accounts(id),
+      security_id TEXT REFERENCES securities(id),
+      external_id TEXT,
+      source_item_key TEXT,
+      as_of_date TEXT NOT NULL,
+      quantity TEXT NOT NULL,
+      market_value TEXT,
+      price TEXT,
+      currency TEXT,
+      status TEXT NOT NULL DEFAULT 'needs_review',
+      validation_errors TEXT NOT NULL DEFAULT '[]',
+      raw_payload TEXT,
+      normalizer_version TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `)
+
+  addColumnIfMissing(
+    'transactions',
+    'source_connection_id',
+    `source_connection_id TEXT REFERENCES source_connections(id)`,
+  )
+  addColumnIfMissing(
+    'transactions',
+    'source_account_id',
+    `source_account_id TEXT REFERENCES source_accounts(id)`,
+  )
+  addColumnIfMissing('transactions', 'external_id', `external_id TEXT`)
+  addColumnIfMissing('transactions', 'source_item_key', `source_item_key TEXT`)
+  addColumnIfMissing('transactions', 'import_run_id', `import_run_id TEXT REFERENCES import_runs(id)`)
+  addColumnIfMissing('transactions', 'raw_item_id', `raw_item_id TEXT REFERENCES raw_import_items(id)`)
+  addColumnIfMissing('transactions', 'normalizer_version', `normalizer_version TEXT`)
+  addColumnIfMissing('transactions', 'updated_at', `updated_at INTEGER`)
+  addColumnIfMissing('transactions', 'ledger_account', `ledger_account TEXT`)
+  addColumnIfMissing('transactions', 'review_status', `review_status TEXT`)
+  addColumnIfMissing('transactions', 'suggested_ledger_account', `suggested_ledger_account TEXT`)
+  addColumnIfMissing('transactions', 'classifier', `classifier TEXT`)
+  addColumnIfMissing('transactions', 'confidence', `confidence INTEGER`)
+  addColumnIfMissing('transactions', 'suggested_at', `suggested_at INTEGER`)
+  addColumnIfMissing('transactions', 'updated_by', `updated_by TEXT`)
+  addColumnIfMissing('staged_transactions', 'reconciliation_status', `reconciliation_status TEXT`)
+  addColumnIfMissing(
+    'staged_transactions',
+    'reconciliation_transaction_id',
+    `reconciliation_transaction_id TEXT REFERENCES transactions(id)`,
+  )
+  addColumnIfMissing('staged_transactions', 'reconciliation_reason', `reconciliation_reason TEXT`)
+  addColumnIfMissing('investment_positions', 'import_run_id', `import_run_id TEXT REFERENCES import_runs(id)`)
+  addColumnIfMissing('investment_positions', 'raw_item_id', `raw_item_id TEXT REFERENCES raw_import_items(id)`)
+  addColumnIfMissing('investment_positions', 'external_id', `external_id TEXT`)
+  addColumnIfMissing('investment_positions', 'source_item_key', `source_item_key TEXT`)
+  addColumnIfMissing('investment_positions', 'status', `status TEXT NOT NULL DEFAULT 'needs_review'`)
+  addColumnIfMissing('investment_positions', 'validation_errors', `validation_errors TEXT NOT NULL DEFAULT '[]'`)
+  addColumnIfMissing('investment_positions', 'normalizer_version', `normalizer_version TEXT`)
+
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS import_profiles_source_idx
+    ON import_profiles(source_id);
+
+    CREATE INDEX IF NOT EXISTS source_connections_source_idx
+    ON source_connections(source_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS source_accounts_connection_external_idx
+    ON source_accounts(source_connection_id, external_account_id);
+
+    CREATE INDEX IF NOT EXISTS source_accounts_fintrack_account_idx
+    ON source_accounts(fintrack_account_id);
+
+    CREATE INDEX IF NOT EXISTS import_runs_connection_idx
+    ON import_runs(source_connection_id);
+
+    CREATE INDEX IF NOT EXISTS import_runs_profile_idx
+    ON import_runs(import_profile_id);
+
+    CREATE INDEX IF NOT EXISTS import_runs_status_idx
+    ON import_runs(status);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS raw_import_items_run_key_idx
+    ON raw_import_items(import_run_id, source_item_key);
+
+    CREATE INDEX IF NOT EXISTS raw_import_items_source_account_idx
+    ON raw_import_items(source_account_id);
+
+    CREATE INDEX IF NOT EXISTS raw_import_items_status_idx
+    ON raw_import_items(status);
+
+    CREATE INDEX IF NOT EXISTS staged_transactions_import_run_idx
+    ON staged_transactions(import_run_id);
+
+    CREATE INDEX IF NOT EXISTS staged_transactions_raw_item_idx
+    ON staged_transactions(raw_item_id);
+
+    CREATE INDEX IF NOT EXISTS staged_transactions_status_idx
+    ON staged_transactions(status);
+
+    CREATE INDEX IF NOT EXISTS staged_transactions_account_idx
+    ON staged_transactions(account_id);
+
+    CREATE INDEX IF NOT EXISTS staged_transactions_reconciliation_idx
+    ON staged_transactions(reconciliation_status);
+
+    CREATE INDEX IF NOT EXISTS import_profile_mappings_profile_idx
+    ON import_profile_mappings(import_profile_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS import_profile_mappings_target_idx
+    ON import_profile_mappings(import_profile_id, target_field);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS securities_connection_symbol_idx
+    ON securities(source_connection_id, source_symbol);
+
+    CREATE INDEX IF NOT EXISTS securities_symbol_idx
+    ON securities(source_symbol);
+
+    CREATE INDEX IF NOT EXISTS securities_instrument_idx
+    ON securities(instrument_type);
+
+    CREATE INDEX IF NOT EXISTS securities_commodity_idx
+    ON securities(beancount_commodity);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS investment_activities_connection_item_key_idx
+    ON investment_activities(source_connection_id, source_item_key);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_import_run_idx
+    ON investment_activities(import_run_id);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_staged_idx
+    ON investment_activities(staged_transaction_id);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_security_idx
+    ON investment_activities(security_id);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_status_idx
+    ON investment_activities(status);
+
+    CREATE INDEX IF NOT EXISTS investment_activities_type_idx
+    ON investment_activities(activity_type, instrument_type);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS investment_positions_account_security_date_idx
+    ON investment_positions(source_account_id, security_id, as_of_date);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS investment_positions_connection_item_key_idx
+    ON investment_positions(source_connection_id, source_item_key);
+
+    CREATE INDEX IF NOT EXISTS investment_positions_account_idx
+    ON investment_positions(account_id);
+
+    CREATE INDEX IF NOT EXISTS investment_positions_security_idx
+    ON investment_positions(security_id);
+
+    CREATE INDEX IF NOT EXISTS investment_positions_status_idx
+    ON investment_positions(status);
+
+    CREATE INDEX IF NOT EXISTS investment_positions_source_item_key_idx
+    ON investment_positions(source_item_key);
+
+    CREATE INDEX IF NOT EXISTS transactions_source_connection_idx
+    ON transactions(source_connection_id);
+
+    CREATE INDEX IF NOT EXISTS transactions_source_account_idx
+    ON transactions(source_account_id);
+
+    CREATE INDEX IF NOT EXISTS transactions_import_run_idx
+    ON transactions(import_run_id);
+
+    CREATE INDEX IF NOT EXISTS transactions_raw_item_idx
+    ON transactions(raw_item_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS transactions_source_connection_item_key_idx
+    ON transactions(source_connection_id, source_item_key);
+
+    CREATE INDEX IF NOT EXISTS transactions_source_item_key_idx
+    ON transactions(source_item_key);
+
+    CREATE INDEX IF NOT EXISTS transactions_ledger_account_status_idx
+    ON transactions(ledger_account, status);
+
+    CREATE INDEX IF NOT EXISTS transactions_review_status_idx
+    ON transactions(review_status);
+
+    CREATE INDEX IF NOT EXISTS transactions_suggested_ledger_status_idx
+    ON transactions(suggested_ledger_account, status);
+  `)
+
+  backfillLegacyIngestionSources()
+}
+
+function backfillLedgerPrepSemantics(): void {
+  const reviewPlaceholders = REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')
+
+  sqlite.prepare(`
+    UPDATE transactions
+    SET ledger_account = category
+    WHERE ledger_account IS NULL
+      AND category IS NOT NULL
+      AND category != ''
+      AND category NOT IN (${reviewPlaceholders})
+  `).run(...REVIEW_CATEGORY_NAMES)
+
+  sqlite.prepare(`
+    UPDATE transactions
+    SET suggested_ledger_account = suggested_cat
+    WHERE suggested_ledger_account IS NULL
+      AND suggested_cat IS NOT NULL
+      AND suggested_cat != ''
+      AND suggested_cat NOT IN (${reviewPlaceholders})
+  `).run(...REVIEW_CATEGORY_NAMES)
+
+  sqlite.prepare(`
+    UPDATE transactions
+    SET review_status = CASE
+      WHEN COALESCE(ledger_account, '') != '' THEN 'reviewed'
+      WHEN category IS NOT NULL
+        AND category != ''
+        AND category NOT IN (${reviewPlaceholders}) THEN 'reviewed'
+      ELSE 'needs_review'
+    END
+    WHERE review_status IS NULL
+  `).run(...REVIEW_CATEGORY_NAMES)
+}
+
+function ensureTransactionEditHistorySchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS transaction_edit_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+      actor TEXT NOT NULL,
+      reason TEXT,
+      fields TEXT NOT NULL,
+      before_values TEXT NOT NULL,
+      after_values TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `)
+
+  addColumnIfMissing(
+    'transaction_edit_history',
+    'transaction_id',
+    `transaction_id TEXT REFERENCES transactions(id) ON DELETE CASCADE`,
+  )
+  addColumnIfMissing('transaction_edit_history', 'actor', `actor TEXT NOT NULL DEFAULT 'local'`)
+  addColumnIfMissing('transaction_edit_history', 'reason', `reason TEXT`)
+  addColumnIfMissing('transaction_edit_history', 'fields', `fields TEXT NOT NULL DEFAULT '[]'`)
+  addColumnIfMissing('transaction_edit_history', 'before_values', `before_values TEXT NOT NULL DEFAULT '{}'`)
+  addColumnIfMissing('transaction_edit_history', 'after_values', `after_values TEXT NOT NULL DEFAULT '{}'`)
+  addColumnIfMissing('transaction_edit_history', 'created_at', `created_at INTEGER NOT NULL DEFAULT 0`)
+
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS transaction_edit_history_transaction_idx
+    ON transaction_edit_history(transaction_id);
+
+    CREATE INDEX IF NOT EXISTS transaction_edit_history_created_idx
+    ON transaction_edit_history(created_at);
+  `)
+}
+
+function ensureAuditLogSchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      reason TEXT,
+      before_values TEXT NOT NULL,
+      after_values TEXT NOT NULL,
+      metadata TEXT,
+      created_at INTEGER NOT NULL
+    );
+  `)
+
+  addColumnIfMissing('audit_log', 'entity_type', `entity_type TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('audit_log', 'entity_id', `entity_id TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('audit_log', 'action', `action TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('audit_log', 'actor', `actor TEXT NOT NULL DEFAULT 'local'`)
+  addColumnIfMissing('audit_log', 'reason', `reason TEXT`)
+  addColumnIfMissing('audit_log', 'before_values', `before_values TEXT NOT NULL DEFAULT '{}'`)
+  addColumnIfMissing('audit_log', 'after_values', `after_values TEXT NOT NULL DEFAULT '{}'`)
+  addColumnIfMissing('audit_log', 'metadata', `metadata TEXT`)
+  addColumnIfMissing('audit_log', 'created_at', `created_at INTEGER NOT NULL DEFAULT 0`)
+
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS audit_log_entity_idx
+    ON audit_log(entity_type, entity_id);
+
+    CREATE INDEX IF NOT EXISTS audit_log_action_created_idx
+    ON audit_log(action, created_at);
+
+    CREATE INDEX IF NOT EXISTS audit_log_created_idx
+    ON audit_log(created_at);
+  `)
+}
+
+function ensureTransactionSplitSchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS transaction_splits (
+      id TEXT PRIMARY KEY,
+      parent_transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+      split_group_id TEXT NOT NULL,
+      amount TEXT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      ledger_account TEXT NOT NULL,
+      memo TEXT,
+      notes TEXT,
+      sort_order INTEGER NOT NULL,
+      created_from TEXT NOT NULL DEFAULT 'manual_split',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `)
+
+  addColumnIfMissing(
+    'transaction_splits',
+    'parent_transaction_id',
+    `parent_transaction_id TEXT REFERENCES transactions(id) ON DELETE CASCADE`,
+  )
+  addColumnIfMissing('transaction_splits', 'split_group_id', `split_group_id TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('transaction_splits', 'amount', `amount TEXT NOT NULL DEFAULT '0'`)
+  addColumnIfMissing('transaction_splits', 'currency', `currency TEXT NOT NULL DEFAULT 'USD'`)
+  addColumnIfMissing('transaction_splits', 'ledger_account', `ledger_account TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('transaction_splits', 'memo', `memo TEXT`)
+  addColumnIfMissing('transaction_splits', 'notes', `notes TEXT`)
+  addColumnIfMissing('transaction_splits', 'sort_order', `sort_order INTEGER NOT NULL DEFAULT 0`)
+  addColumnIfMissing('transaction_splits', 'created_from', `created_from TEXT NOT NULL DEFAULT 'manual_split'`)
+  addColumnIfMissing('transaction_splits', 'created_at', `created_at INTEGER NOT NULL DEFAULT 0`)
+  addColumnIfMissing('transaction_splits', 'updated_at', `updated_at INTEGER NOT NULL DEFAULT 0`)
+
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS transaction_splits_parent_idx
+    ON transaction_splits(parent_transaction_id);
+
+    CREATE INDEX IF NOT EXISTS transaction_splits_group_idx
+    ON transaction_splits(split_group_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS transaction_splits_parent_sort_idx
+    ON transaction_splits(parent_transaction_id, sort_order);
+  `)
+}
+
+function ensureExportRunSchema(): void {
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS export_runs (
+      id TEXT PRIMARY KEY,
+      period TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'created',
+      export_range_start TEXT,
+      export_range_end TEXT,
+      generated_file_names TEXT NOT NULL DEFAULT '[]',
+      manifest_path TEXT,
+      ledger_revision TEXT,
+      exported_source_ids TEXT NOT NULL DEFAULT '[]',
+      export_target TEXT NOT NULL,
+      metadata TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `)
+
+  addColumnIfMissing('export_runs', 'period', `period TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('export_runs', 'status', `status TEXT NOT NULL DEFAULT 'created'`)
+  addColumnIfMissing('export_runs', 'export_range_start', `export_range_start TEXT`)
+  addColumnIfMissing('export_runs', 'export_range_end', `export_range_end TEXT`)
+  addColumnIfMissing('export_runs', 'generated_file_names', `generated_file_names TEXT NOT NULL DEFAULT '[]'`)
+  addColumnIfMissing('export_runs', 'manifest_path', `manifest_path TEXT`)
+  addColumnIfMissing('export_runs', 'ledger_revision', `ledger_revision TEXT`)
+  addColumnIfMissing('export_runs', 'exported_source_ids', `exported_source_ids TEXT NOT NULL DEFAULT '[]'`)
+  addColumnIfMissing('export_runs', 'export_target', `export_target TEXT NOT NULL DEFAULT ''`)
+  addColumnIfMissing('export_runs', 'metadata', `metadata TEXT`)
+  addColumnIfMissing('export_runs', 'created_at', `created_at INTEGER NOT NULL DEFAULT 0`)
+  addColumnIfMissing('export_runs', 'updated_at', `updated_at INTEGER NOT NULL DEFAULT 0`)
+
+  sqlite.exec(`
+    CREATE INDEX IF NOT EXISTS export_runs_period_idx
+    ON export_runs(period);
+
+    CREATE INDEX IF NOT EXISTS export_runs_status_idx
+    ON export_runs(status);
+
+    CREATE INDEX IF NOT EXISTS export_runs_created_idx
+    ON export_runs(created_at);
+
+    CREATE INDEX IF NOT EXISTS export_runs_target_period_idx
+    ON export_runs(export_target, period);
+  `)
+}
 
 function ensurePerformanceIndexes(): void {
   sqlite.exec(`
@@ -169,6 +897,15 @@ function ensurePerformanceIndexes(): void {
 
     CREATE INDEX IF NOT EXISTS transactions_suggested_status_idx
     ON transactions(suggested_cat, status);
+
+    CREATE INDEX IF NOT EXISTS transactions_ledger_account_status_idx
+    ON transactions(ledger_account, status);
+
+    CREATE INDEX IF NOT EXISTS transactions_review_status_idx
+    ON transactions(review_status);
+
+    CREATE INDEX IF NOT EXISTS transactions_suggested_ledger_status_idx
+    ON transactions(suggested_ledger_account, status);
 
     CREATE INDEX IF NOT EXISTS transactions_pending_cleanup_idx
     ON transactions(account_id, status, created_at);
@@ -233,6 +970,11 @@ sqlite.exec(`
   ON balance_assertions(assertion_date);
 `)
 
+ensureIngestionSchema()
+ensureTransactionEditHistorySchema()
+ensureAuditLogSchema()
+ensureTransactionSplitSchema()
+ensureExportRunSchema()
 ensurePerformanceIndexes()
 
 const accountTypeRows = sqlite.prepare(`
@@ -273,19 +1015,33 @@ for (const name of legacyCategoryTargets) seedStmt.run(name)
 
 const updateTransactionCategory = sqlite.prepare('UPDATE transactions SET category = ? WHERE category = ?')
 const updateTransactionSuggestion = sqlite.prepare('UPDATE transactions SET suggested_cat = ? WHERE suggested_cat = ?')
+const updateTransactionLedgerAccount = sqlite.prepare('UPDATE transactions SET ledger_account = ? WHERE ledger_account = ?')
+const updateTransactionLedgerSuggestion = sqlite.prepare(`
+  UPDATE transactions SET suggested_ledger_account = ? WHERE suggested_ledger_account = ?
+`)
 const updateRuleCategory = sqlite.prepare('UPDATE rules SET category = ? WHERE category = ?')
 const deleteUnusedCategory = sqlite.prepare(`
   DELETE FROM categories
   WHERE name = ?
-    AND NOT EXISTS (SELECT 1 FROM transactions WHERE category = ? OR suggested_cat = ?)
+    AND NOT EXISTS (
+      SELECT 1 FROM transactions
+      WHERE category = ?
+        OR suggested_cat = ?
+        OR ledger_account = ?
+        OR suggested_ledger_account = ?
+    )
     AND NOT EXISTS (SELECT 1 FROM rules WHERE category = ?)
 `)
 for (const [legacyName, targetName] of Object.entries(LEGACY_CATEGORY_MAP)) {
   updateTransactionCategory.run(targetName, legacyName)
   updateTransactionSuggestion.run(targetName, legacyName)
+  updateTransactionLedgerAccount.run(targetName, legacyName)
+  updateTransactionLedgerSuggestion.run(targetName, legacyName)
   updateRuleCategory.run(targetName, legacyName)
-  deleteUnusedCategory.run(legacyName, legacyName, legacyName, legacyName)
+  deleteUnusedCategory.run(legacyName, legacyName, legacyName, legacyName, legacyName, legacyName)
 }
+
+backfillLedgerPrepSemantics()
 
 // Migrate custom categories from old settings JSON blob (one-time)
 const oldCustomRaw = sqlite.prepare(`SELECT value FROM settings WHERE key = 'user_categories'`).get() as { value: string } | undefined

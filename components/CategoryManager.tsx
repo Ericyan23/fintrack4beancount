@@ -24,7 +24,7 @@ interface Props {
 }
 
 function categoryGroup(name: string): string {
-  if (name === 'Uncategorized') return 'System'
+  if (name === 'Uncategorized') return '系统'
   return categoryGroupName(name)
 }
 
@@ -33,23 +33,23 @@ function impactTotal(cat: CategoryStat): number {
 }
 
 function impactLabel(cat: CategoryStat): string {
-  return `${cat.transactions} transactions · ${cat.suggestions} suggestions · ${cat.rules} rules`
+  return `${cat.transactions} 条交易 · ${cat.suggestions} 条建议 · ${cat.rules} 条规则`
 }
 
 function beancountStatusLabel(cat: CategoryStat): string {
   switch (cat.beancount_status) {
     case 'open':
-      return 'Open'
+      return '已开放'
     case 'missing':
-      return 'Missing'
+      return '缺失'
     case 'not_yet_open':
-      return `Opens ${cat.beancount_open_date ?? ''}`.trim()
+      return `${cat.beancount_open_date ?? ''} 后开放`.trim()
     case 'closed':
-      return `Closed ${cat.beancount_close_date ?? ''}`.trim()
+      return `已关闭 ${cat.beancount_close_date ?? ''}`.trim()
     case 'unavailable':
-      return 'Ledger unavailable'
+      return 'Ledger 不可用'
     case 'not_applicable':
-      return 'Local'
+      return '本地'
   }
 }
 
@@ -149,7 +149,7 @@ export default function CategoryManager({ initialStats }: Props) {
 
     const cat = stats.find(item => item.name === from)
     if (cat && impactTotal(cat) > 0) {
-      const confirmed = window.confirm(`Rename "${from}" to "${to}" and update ${impactLabel(cat)}?`)
+      const confirmed = window.confirm(`将 "${from}" 重命名为 "${to}" 并更新 ${impactLabel(cat)}？`)
       if (!confirmed) return
     }
 
@@ -178,8 +178,8 @@ export default function CategoryManager({ initialStats }: Props) {
     if (!mergeTarget) return
 
     const cat = stats.find(item => item.name === source)
-    const summary = cat ? impactLabel(cat) : 'related records'
-    const confirmed = window.confirm(`Merge "${source}" into "${mergeTarget}" and migrate ${summary}?`)
+    const summary = cat ? impactLabel(cat) : '相关记录'
+    const confirmed = window.confirm(`将 "${source}" 合并到 "${mergeTarget}" 并迁移 ${summary}？`)
     if (!confirmed) return
 
     setLoading(true)
@@ -204,7 +204,7 @@ export default function CategoryManager({ initialStats }: Props) {
   }
 
   async function doDelete(cat: CategoryStat) {
-    const confirmed = window.confirm(`Delete "${cat.name}"?`)
+    const confirmed = window.confirm(`删除 "${cat.name}"？`)
     if (!confirmed) return
 
     setLoading(true)
@@ -230,35 +230,35 @@ export default function CategoryManager({ initialStats }: Props) {
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <p className="text-xs text-slate-400">Categories</p>
+          <p className="text-xs text-slate-400">Ledger 账户</p>
           <p className="text-xl font-semibold text-slate-100">{stats.length}</p>
         </div>
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <p className="text-xs text-slate-400">Custom</p>
+          <p className="text-xs text-slate-400">自定义</p>
           <p className="text-xl font-semibold text-blue-400">{customCount}</p>
         </div>
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <p className="text-xs text-slate-400">Transaction refs</p>
+          <p className="text-xs text-slate-400">交易引用</p>
           <p className="text-xl font-semibold text-emerald-400">{totalTransactions}</p>
         </div>
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <p className="text-xs text-slate-400">Groups</p>
+          <p className="text-xs text-slate-400">分组</p>
           <p className="text-xl font-semibold text-amber-400">{groups.length}</p>
         </div>
         <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
           <p className="text-xs text-slate-400">Beancount</p>
           <p className="text-xl font-semibold text-emerald-400">{beancountOpenCount}</p>
-          <p className="mt-0.5 text-[11px] text-slate-500">{beancountNeedsWorkCount} need attention</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">{beancountNeedsWorkCount} 个需处理</p>
         </div>
       </div>
 
       <form onSubmit={doAdd} className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-        <label className="text-xs text-slate-400 block mb-2">Create category</label>
+        <label className="text-xs text-slate-400 block mb-2">创建 Ledger 账户</label>
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             value={newName}
             onChange={e => setNewName(e.target.value)}
-            placeholder="Example: Food:Coffee"
+            placeholder="例如：Food:Coffee"
             className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
           />
           <button
@@ -266,7 +266,7 @@ export default function CategoryManager({ initialStats }: Props) {
             disabled={loading || !newName.trim()}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded-md"
           >
-            Create
+            创建
           </button>
         </div>
       </form>
@@ -275,7 +275,7 @@ export default function CategoryManager({ initialStats }: Props) {
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
-          placeholder="Search categories"
+          placeholder="搜索 Ledger 账户"
           className="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100 placeholder-slate-500"
         />
         <select
@@ -283,7 +283,7 @@ export default function CategoryManager({ initialStats }: Props) {
           onChange={e => setGroupFilter(e.target.value)}
           className="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-sm text-slate-100"
         >
-          <option value="">All groups</option>
+          <option value="">全部分组</option>
           {groups.map(group => (
             <option key={group} value={group}>{group}</option>
           ))}
@@ -292,25 +292,25 @@ export default function CategoryManager({ initialStats }: Props) {
 
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <div className="hidden lg:grid grid-cols-[1.3fr_120px_160px_120px_140px_240px] gap-4 px-4 py-2 text-xs text-slate-500 border-b border-slate-700">
-          <span>Category</span>
-          <span>Group</span>
-          <span>Impact</span>
-          <span>Type</span>
+          <span>Ledger 账户</span>
+          <span>分组</span>
+          <span>影响</span>
+          <span>类型</span>
           <span>Beancount</span>
-          <span>Actions</span>
+          <span>操作</span>
         </div>
 
         {filteredStats.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-slate-500">No matching categories</div>
+          <div className="px-4 py-8 text-center text-sm text-slate-500">没有匹配的 Ledger 账户</div>
         ) : (
           filteredStats.map((cat, i) => {
             const protectedCategory = Boolean(cat.is_required || cat.is_virtual)
             const canDelete = !protectedCategory && impactTotal(cat) === 0
             const usageTitle = protectedCategory
-              ? 'System categories cannot use this action'
+              ? '系统 Ledger 账户不能使用此操作'
               : impactTotal(cat) > 0
-              ? 'Referenced by records; merge first'
-              : 'Delete'
+              ? '已有记录引用，请先合并'
+              : '删除'
 
             return (
               <div
@@ -322,12 +322,12 @@ export default function CategoryManager({ initialStats }: Props) {
                     <Link href={transactionHref(cat.name)} className="text-sm text-slate-100 font-mono hover:text-blue-300 break-all">
                       {cat.name}
                     </Link>
-                    {cat.is_virtual ? <p className="text-xs text-slate-500 mt-1">Virtual category</p> : null}
+                    {cat.is_virtual ? <p className="text-xs text-slate-500 mt-1">虚拟 Ledger 账户</p> : null}
                   </div>
                   <span className="text-xs text-slate-400">{categoryGroup(cat.name)}</span>
                   <span className="text-xs text-slate-400">{impactLabel(cat)}</span>
                   <span className={`text-xs ${cat.is_default ? 'text-slate-500' : 'text-blue-400'}`}>
-                    {cat.is_required ? 'System' : cat.is_default ? 'Default' : 'Custom'}
+                    {cat.is_required ? '系统' : cat.is_default ? '默认' : '自定义'}
                   </span>
                   <span
                     title={cat.beancount_error ?? undefined}
@@ -344,10 +344,10 @@ export default function CategoryManager({ initialStats }: Props) {
                         setError(null)
                       }}
                       disabled={loading || protectedCategory}
-                      title={protectedCategory ? 'System categories cannot be renamed' : 'Rename'}
+                      title={protectedCategory ? '系统 Ledger 账户不能重命名' : '重命名'}
                       className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed rounded"
                     >
-                      Rename
+                      重命名
                     </button>
                     <button
                       onClick={() => {
@@ -357,10 +357,10 @@ export default function CategoryManager({ initialStats }: Props) {
                         setError(null)
                       }}
                       disabled={loading || protectedCategory}
-                      title={protectedCategory ? 'System categories cannot be merged' : 'Merge into another category'}
+                      title={protectedCategory ? '系统 Ledger 账户不能合并' : '合并到另一个 Ledger 账户'}
                       className="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed rounded"
                     >
-                      Merge
+                      合并
                     </button>
                     <button
                       onClick={() => doDelete(cat)}
@@ -368,14 +368,14 @@ export default function CategoryManager({ initialStats }: Props) {
                       title={usageTitle}
                       className="text-xs px-2 py-1 bg-red-900/40 hover:bg-red-900/70 text-red-400 disabled:opacity-30 disabled:cursor-not-allowed rounded"
                     >
-                      Delete
+                      删除
                     </button>
                   </div>
                 </div>
 
                 {renamingFrom === cat.name && (
                   <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                    <span className="text-xs text-slate-500 shrink-0">Rename to</span>
+                    <span className="text-xs text-slate-500 shrink-0">重命名为</span>
                     <input
                       autoFocus
                       value={renameTo}
@@ -384,7 +384,7 @@ export default function CategoryManager({ initialStats }: Props) {
                         if (e.key === 'Enter') doRename(cat.name)
                         if (e.key === 'Escape') setRenamingFrom(null)
                       }}
-                      placeholder="New category name"
+                      placeholder="新的 Ledger 账户名"
                       className="flex-1 bg-slate-700 border border-blue-500 rounded px-2 py-1 text-xs text-slate-100 placeholder-slate-500"
                     />
                     <button
@@ -392,24 +392,24 @@ export default function CategoryManager({ initialStats }: Props) {
                       disabled={loading || !renameTo.trim()}
                       className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded"
                     >
-                      Confirm
+                      确认
                     </button>
                     <button onClick={() => setRenamingFrom(null)} className="text-xs px-3 py-1 bg-slate-600 text-white rounded">
-                      Cancel
+                      取消
                     </button>
                   </div>
                 )}
 
                 {mergingFrom === cat.name && (
                   <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                    <span className="text-xs text-slate-500 shrink-0">Merge into</span>
+                    <span className="text-xs text-slate-500 shrink-0">合并到</span>
                     <select
                       autoFocus
                       value={mergeTarget}
                       onChange={e => setMergeTarget(e.target.value)}
                       className="flex-1 bg-slate-700 border border-amber-500 rounded px-2 py-1 text-xs text-slate-100"
                     >
-                      <option value="">Select target category</option>
+                      <option value="">选择目标 Ledger 账户</option>
                       {targetNames.filter(name => name !== cat.name && name !== 'Uncategorized').map(name => (
                         <option key={name} value={name}>{name}</option>
                       ))}
@@ -419,10 +419,10 @@ export default function CategoryManager({ initialStats }: Props) {
                       disabled={loading || !mergeTarget}
                       className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded"
                     >
-                      Merge
+                      合并
                     </button>
                     <button onClick={() => setMergingFrom(null)} className="text-xs px-3 py-1 bg-slate-600 text-white rounded">
-                      Cancel
+                      取消
                     </button>
                   </div>
                 )}

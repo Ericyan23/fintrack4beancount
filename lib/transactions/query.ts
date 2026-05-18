@@ -19,7 +19,11 @@ export interface TransactionFilters {
   amountMax?: number
 }
 
-export interface TransactionExportRow extends Transaction {
+export interface TransactionWithSplitSummary extends Transaction {
+  splitCount?: number
+}
+
+export interface TransactionExportRow extends TransactionWithSplitSummary {
   accountName: string | null
 }
 
@@ -35,10 +39,18 @@ interface RawTransactionRow {
   status: string
   category: string | null
   suggestedCat: string | null
+  ledgerAccount: string | null
+  reviewStatus: string | null
+  suggestedLedgerAccount: string | null
+  classifier: string | null
+  confidence: number | null
+  suggestedAt: number | null
   notes: string | null
   tags: string | null
   createdAt: number
+  updatedBy: string | null
   accountName?: string | null
+  splitCount?: number | null
 }
 
 export function parseTransactionFilters(searchParams: URLSearchParams): TransactionFilters {
@@ -86,20 +98,38 @@ export function buildTransactionWhere(
     params.push(filters.accountId)
   }
   if (filters.category) {
-    clauses.push(`${alias}.category = ?`)
+    clauses.push(`COALESCE(NULLIF(${alias}.ledger_account, ''), ${alias}.category) = ?`)
     params.push(filters.category)
   }
   if (filters.categoryGroup) {
-    clauses.push(`(${alias}.category = ? OR ${alias}.category LIKE ?)`)
+    clauses.push(`(
+      COALESCE(NULLIF(${alias}.ledger_account, ''), ${alias}.category) = ?
+      OR COALESCE(NULLIF(${alias}.ledger_account, ''), ${alias}.category) LIKE ?
+    )`)
     params.push(filters.categoryGroup, `${filters.categoryGroup}:%`)
   }
   if (filters.unclassified && filters.reviewOnly) {
-    clauses.push(`((${alias}.category IS NULL OR ${alias}.category = '') OR ${alias}.category IN (${REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')}))`)
+    clauses.push(`(
+      ${alias}.ledger_account IS NULL
+      OR ${alias}.ledger_account = ''
+      OR ${alias}.review_status = 'needs_review'
+      OR (
+        ${alias}.review_status IS NULL
+        AND (
+          ${alias}.category IS NULL
+          OR ${alias}.category = ''
+          OR ${alias}.category IN (${REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')})
+        )
+      )
+    )`)
     params.push(...REVIEW_CATEGORY_NAMES)
   } else if (filters.unclassified) {
-    clauses.push(`(${alias}.category IS NULL OR ${alias}.category = '')`)
+    clauses.push(`(${alias}.ledger_account IS NULL OR ${alias}.ledger_account = '')`)
   } else if (filters.reviewOnly) {
-    clauses.push(`${alias}.category IN (${REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')})`)
+    clauses.push(`(
+      ${alias}.review_status = 'needs_review'
+      OR ${alias}.category IN (${REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')})
+    )`)
     params.push(...REVIEW_CATEGORY_NAMES)
   }
   if (filters.startDate) {
@@ -116,11 +146,17 @@ export function buildTransactionWhere(
   }
   if (filters.type === 'income') {
     clauses.push(`CAST(${alias}.amount AS REAL) > 0`)
-    clauses.push(`(${alias}.category IS NULL OR ${alias}.category NOT LIKE 'Transfer:%')`)
+    clauses.push(`(
+      COALESCE(NULLIF(${alias}.ledger_account, ''), ${alias}.category) IS NULL
+      OR COALESCE(NULLIF(${alias}.ledger_account, ''), ${alias}.category) NOT LIKE 'Transfer:%'
+    )`)
   }
   if (filters.type === 'spending') {
     clauses.push(`CAST(${alias}.amount AS REAL) < 0`)
-    clauses.push(`(${alias}.category IS NULL OR ${alias}.category NOT LIKE 'Transfer:%')`)
+    clauses.push(`(
+      COALESCE(NULLIF(${alias}.ledger_account, ''), ${alias}.category) IS NULL
+      OR COALESCE(NULLIF(${alias}.ledger_account, ''), ${alias}.category) NOT LIKE 'Transfer:%'
+    )`)
   }
   if (filters.amountMin !== undefined) {
     clauses.push(`CAST(${alias}.amount AS REAL) >= ?`)
@@ -144,7 +180,9 @@ function parseTags(value: string | null): string[] {
   }
 }
 
-export function mapTransactionRow(row: RawTransactionRow): Transaction {
+export function mapTransactionRow(row: RawTransactionRow): TransactionWithSplitSummary {
+  const splitCount = row.splitCount ?? 0
+
   return {
     id: row.id,
     accountId: row.accountId,
@@ -157,9 +195,17 @@ export function mapTransactionRow(row: RawTransactionRow): Transaction {
     status: row.status,
     category: row.category,
     suggestedCat: row.suggestedCat,
+    ledgerAccount: row.ledgerAccount,
+    reviewStatus: row.reviewStatus,
+    suggestedLedgerAccount: row.suggestedLedgerAccount,
+    classifier: row.classifier,
+    confidence: row.confidence,
+    suggestedAt: row.suggestedAt,
     notes: row.notes,
     tags: parseTags(row.tags),
     createdAt: row.createdAt,
+    updatedBy: row.updatedBy,
+    ...(splitCount > 0 ? { splitCount } : {}),
   }
 }
 
@@ -173,22 +219,40 @@ const SELECT_TRANSACTION_FIELDS = `
   t.description,
   t.pending,
   t.status,
-  t.category,
-  t.suggested_cat AS suggestedCat,
+  COALESCE(NULLIF(t.ledger_account, ''), t.category) AS category,
+  COALESCE(NULLIF(t.suggested_ledger_account, ''), t.suggested_cat) AS suggestedCat,
+  t.ledger_account AS ledgerAccount,
+  t.review_status AS reviewStatus,
+  t.suggested_ledger_account AS suggestedLedgerAccount,
+  t.classifier,
+  t.confidence,
+  t.suggested_at AS suggestedAt,
   t.notes,
   t.tags,
-  t.created_at AS createdAt
+  t.created_at AS createdAt,
+  t.updated_by AS updatedBy,
+  COALESCE(split_counts.splitCount, 0) AS splitCount
+`
+
+const SPLIT_COUNT_JOIN = `
+  LEFT JOIN (
+    SELECT parent_transaction_id,
+           COUNT(*) AS splitCount
+    FROM transaction_splits
+    GROUP BY parent_transaction_id
+  ) split_counts ON split_counts.parent_transaction_id = t.id
 `
 
 export function listTransactions(
   filters: TransactionFilters,
   limit: number,
   offset: number,
-): { transactions: Transaction[]; total: number; hasMore: boolean } {
+): { transactions: TransactionWithSplitSummary[]; total: number; hasMore: boolean } {
   const { where, params } = buildTransactionWhere(filters)
   const rows = sqlite.prepare(`
     SELECT ${SELECT_TRANSACTION_FIELDS}
     FROM transactions t
+    ${SPLIT_COUNT_JOIN}
     WHERE ${where}
     ORDER BY t.posted DESC
     LIMIT ? OFFSET ?
@@ -213,6 +277,7 @@ export function listTransactionsForExport(filters: TransactionFilters): Transact
   const rows = sqlite.prepare(`
     SELECT ${SELECT_TRANSACTION_FIELDS}, a.name AS accountName
     FROM transactions t
+    ${SPLIT_COUNT_JOIN}
     LEFT JOIN accounts a ON a.id = t.account_id
     WHERE ${where}
     ORDER BY t.posted DESC
@@ -228,7 +293,7 @@ export function countActiveUnclassified(): number {
   const row = sqlite.prepare(`
     SELECT COUNT(*) AS total
     FROM transactions
-    WHERE (category IS NULL OR category = '') AND status != 'cancelled'
+    WHERE (ledger_account IS NULL OR ledger_account = '') AND status != 'cancelled'
   `).get() as { total: number }
   return row.total
 }
@@ -237,7 +302,10 @@ export function countActiveReviewCategory(): number {
   const row = sqlite.prepare(`
     SELECT COUNT(*) AS total
     FROM transactions
-    WHERE category IN (${REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')})
+    WHERE (
+        review_status = 'needs_review'
+        OR category IN (${REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')})
+      )
       AND status != 'cancelled'
   `).get(...REVIEW_CATEGORY_NAMES) as { total: number }
   return row.total

@@ -3,19 +3,17 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import LanguageSwitcher from './LanguageSwitcher'
-import SyncButton from './SyncButton'
 
 const tabs = [
-  { href: '/', label: 'Home', icon: '🏠' },
-  { href: '/review', label: 'Review', icon: '✓' },
-  { href: '/transactions', label: 'Transactions', icon: '💳' },
-  { href: '/transfers', label: 'Transfers', icon: '↔' },
-  { href: '/reports', label: 'Reports', icon: '📊' },
-  { href: '/beancount', label: 'Ledger', icon: 'B' },
-  { href: '/categories', label: 'Categories', icon: '🏷️' },
-  { href: '/accounts', label: 'Accounts', icon: '🏦' },
-  { href: '/rules', label: 'Rules', icon: '📋' },
-  { href: '/settings', label: 'Settings', icon: '⚙️' },
+  { href: '/', label: '控制中心', icon: '🏠' },
+  { href: '/import', label: '导入', icon: '↓' },
+  { href: '/review', label: 'Ledger 准备', icon: '✓' },
+  { href: '/transactions', label: '交易', icon: '💳' },
+  { href: '/transfers', label: '转账审核', icon: '↔' },
+  { href: '/beancount', label: '导出中心', icon: 'B' },
+  { href: '/accounts', label: '账户映射', icon: '🏦' },
+  { href: '/rules', label: '规则', icon: '📋' },
+  { href: '/settings', label: '设置', icon: '⚙️' },
 ]
 
 export default function NavBar() {
@@ -45,7 +43,6 @@ export default function NavBar() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <LanguageSwitcher />
-          <SyncButton />
         </div>
       </nav>
 
@@ -55,14 +52,14 @@ export default function NavBar() {
           <Link
             key={tab.href}
             href={tab.href}
-            className={`flex min-h-14 min-w-16 shrink-0 flex-col items-center justify-center px-2 py-2 text-xs font-medium transition-colors ${
+            className={`flex min-h-14 min-w-20 shrink-0 flex-col items-center justify-center px-2 py-2 text-xs font-medium transition-colors ${
               pathname === tab.href
                 ? 'text-blue-400'
                 : 'text-slate-400'
             }`}
           >
             <span className="text-lg">{tab.icon}</span>
-            {tab.label}
+            <span className="text-center leading-tight">{tab.label}</span>
           </Link>
         ))}
       </nav>
@@ -72,7 +69,6 @@ export default function NavBar() {
         <span className="font-bold text-lg text-blue-400">FinTrack</span>
         <div className="flex items-center gap-2">
           <LanguageSwitcher />
-          <SyncButton />
         </div>
       </div>
     </>

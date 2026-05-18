@@ -6,14 +6,13 @@ function countUnclassified() {
   const row = sqlite.prepare(`
     SELECT COUNT(*) AS total
     FROM transactions
-    WHERE category IS NULL AND status = 'posted'
+    WHERE ledger_account IS NULL AND status = 'posted'
   `).get() as { total: number }
   return row.total
 }
 
 export async function POST(): Promise<NextResponse> {
-  const before = countUnclassified()
-  await reclassifyUnmatched()
+  const applied = reclassifyUnmatched()
   const after = countUnclassified()
-  return NextResponse.json({ applied: before - after, remaining: after })
+  return NextResponse.json({ applied, remaining: after })
 }

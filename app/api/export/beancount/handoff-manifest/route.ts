@@ -4,9 +4,10 @@ import { currentPeriod } from '@/lib/export/preflight'
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const period = req.nextUrl.searchParams.get('period') ?? currentPeriod()
+  const excludeExported = req.nextUrl.searchParams.get('excludeExported') === '1'
 
   try {
-    return NextResponse.json(buildBeancountHandoffManifest({ period }), {
+    return NextResponse.json(buildBeancountHandoffManifest({ period, excludeExported }), {
       headers: {
         'Cache-Control': 'no-store',
       },

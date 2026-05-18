@@ -1,0 +1,4 @@
+Date,Description,Amount,Account,Category,Notes,Tags,Status,External ID
+2026-04-01,"Coffee Shop ""Downtown""",-4.75,Main Checking,Expenses:Food:Coffee,Morning coffee,coffee;work,posted,bank-csv-001
+2026-04-02,Payroll,1250.00,Main Checking,Income:Salary,,paycheck,posted,bank-csv-002
+2026-04-03,Fuel Stop,-42.10,Main Checking,Expenses:Auto:Fuel,,fuel,pending,bank-csv-003

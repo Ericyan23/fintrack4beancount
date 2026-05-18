@@ -21,16 +21,16 @@ export interface DateRangeOption {
 }
 
 export const DATE_RANGE_OPTIONS: DateRangeOption[] = [
-  { value: 'this_month', label: 'This month' },
-  { value: 'last_month', label: 'Last month' },
-  { value: 'last_30_days', label: 'Last 30 days' },
-  { value: 'last_3_months', label: 'Last 3 months' },
-  { value: 'last_6_months', label: 'Last 6 months' },
-  { value: 'last_12_months', label: 'Last 12 months' },
-  { value: 'ytd', label: 'YTD' },
-  { value: 'last_year', label: 'Last year' },
-  { value: 'all_time', label: 'All time' },
-  { value: 'custom', label: 'Custom' },
+  { value: 'this_month', label: '本月' },
+  { value: 'last_month', label: '上月' },
+  { value: 'last_30_days', label: '最近 30 天' },
+  { value: 'last_3_months', label: '最近 3 个月' },
+  { value: 'last_6_months', label: '最近 6 个月' },
+  { value: 'last_12_months', label: '最近 12 个月' },
+  { value: 'ytd', label: '今年至今' },
+  { value: 'last_year', label: '去年' },
+  { value: 'all_time', label: '全部时间' },
+  { value: 'custom', label: '自定义' },
 ]
 
 function pad(value: number): string {
@@ -95,8 +95,8 @@ export function getDateRangeForPreset(
 }
 
 export function formatDateRangeLabel(startDate: string, endDate: string): string {
-  if (!startDate && !endDate) return 'All time'
-  if (!startDate) return `Through ${endDate}`
-  if (!endDate) return `After ${startDate}`
+  if (!startDate && !endDate) return '全部时间'
+  if (!startDate) return `截至 ${endDate}`
+  if (!endDate) return `${startDate} 之后`
   return `${startDate} - ${endDate}`
 }

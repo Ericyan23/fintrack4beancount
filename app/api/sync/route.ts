@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server'
-import { syncSimpleFin } from '@/lib/sync/simplefin'
+import { SimpleFinStageError, stageConfiguredSimpleFin } from '@/lib/sync/simplefin-stage'
 
 export async function POST(): Promise<NextResponse> {
   try {
-    const result = await syncSimpleFin()
-    if (result.error) {
-      return NextResponse.json({ success: false, error: result.error }, { status: 500 })
-    }
-    return NextResponse.json({ success: true, newCount: result.newCount })
+    const result = await stageConfiguredSimpleFin()
+    return NextResponse.json({
+      success: true,
+      newCount: result.staged,
+      compatibilityMode: 'staged',
+      promoted: false,
+      ...result,
+    })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ success: false, error: message }, { status: 500 })
+    if (err instanceof SimpleFinStageError) {
+      return NextResponse.json({ success: false, error: err.message }, { status: err.status })
+    }
+    return NextResponse.json({ success: false, error: 'SimpleFIN stage import failed' }, { status: 500 })
   }
 }

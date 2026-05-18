@@ -1,0 +1,27 @@
+{
+  "accounts": [
+    {
+      "id": "simplefin-checking-001",
+      "name": "Pending Checking",
+      "currency": "USD",
+      "balance": "100.00",
+      "balance-date": 1777939200,
+      "org": {
+        "domain": "examplebank.test",
+        "name": "Example Bank"
+      },
+      "transactions": [
+        {
+          "id": "posted-final-001",
+          "posted": 1777766400,
+          "transacted-at": 1777593600,
+          "amount": "-42.10",
+          "description": "Gas Station",
+          "pending": false
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "errlist": []
+}

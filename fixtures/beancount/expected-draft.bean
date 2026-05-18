@@ -1,0 +1,20 @@
+; Generated: 2026-05-13T12:00:00.000Z
+; Period: 2026-04
+; Source: FinTrack
+; Warning: draft only; review before committing to Beancount.
+; Proposed staging: staging/2026-04/fintrack/draft/2026-04.bean
+
+2026-04-01 * "Coffee Shop \"Downtown\""
+  source_id: "fintrack:acct-checking:csv:bank-csv-001"
+  Assets:US:Banks:MainChecking                    -4.75 USD
+  Expenses:Food:Coffee                            4.75 USD
+
+2026-04-02 * "Payroll"
+  source_id: "fintrack:acct-checking:csv:bank-csv-002"
+  Assets:US:Banks:MainChecking                    1250.00 USD
+  Income:Salary                                   -1250.00 USD
+
+2026-04-03 * "Transfer"
+  source_id: "fintrack:pair:test-transfer"
+  Assets:US:Banks:MainChecking                    -120.00 USD
+  Liabilities:US:CreditCard                       120.00 USD

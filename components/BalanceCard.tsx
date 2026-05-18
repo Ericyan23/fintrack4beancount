@@ -23,10 +23,10 @@ function formatBalance(balance: string, currency: string): string {
 
 function formatTimeAgo(ts: number): string {
   const diff = Date.now() / 1000 - ts
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)} minutes ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`
-  return `${Math.floor(diff / 86400)} days ago`
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
+  return `${Math.floor(diff / 86400)} 天前`
 }
 
 export default function BalanceCard({ account }: Props) {
@@ -60,7 +60,7 @@ export default function BalanceCard({ account }: Props) {
       </p>
 
       <p className="text-slate-500 text-xs mt-2">
-        Updated {formatTimeAgo(account.balanceDate)}
+        更新于 {formatTimeAgo(account.balanceDate)}
       </p>
     </div>
   )

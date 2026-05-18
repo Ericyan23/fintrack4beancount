@@ -1,0 +1,33 @@
+{
+  "accounts": [
+    {
+      "id": "simplefin-checking-001",
+      "name": "Main Checking",
+      "currency": "USD",
+      "balance": "1024.50",
+      "balance-date": 1775001600,
+      "org": {
+        "domain": "examplebank.test",
+        "name": "Example Bank"
+      },
+      "transactions": [
+        {
+          "id": "sf-txn-posted-001",
+          "posted": 1775001600,
+          "transacted-at": 1774915200,
+          "amount": "-4.75",
+          "description": "Coffee Shop",
+          "pending": false
+        },
+        {
+          "id": "sf-txn-pending-001",
+          "posted": 0,
+          "transacted-at": 1775088000,
+          "amount": "-42.10",
+          "description": "Fuel Stop",
+          "pending": true
+        }
+      ]
+    }
+  ]
+}

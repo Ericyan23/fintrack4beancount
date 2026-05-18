@@ -1,6 +1,6 @@
 import cron from 'node-cron'
 import { getSetting } from '@/lib/db'
-import { syncSimpleFin } from './simplefin'
+import { SimpleFinStageError, stageConfiguredSimpleFin } from './simplefin-stage'
 
 let scheduled = false
 
@@ -23,18 +23,18 @@ export function startScheduler(): void {
     const hour = getConfiguredSyncHour()
     if (new Date().getHours() !== hour) return
 
-    console.log('[cron] Starting daily SimpleFIN sync')
+    console.log('[cron] Starting daily SimpleFIN staging')
     try {
-      const result = await syncSimpleFin()
-      if (result.error) {
-        console.error(`[cron] Sync error: ${result.error}`)
-      } else {
-        console.log(`[cron] Done: ${result.newCount} new transactions`)
-      }
+      const result = await stageConfiguredSimpleFin()
+      console.log(`[cron] Done: staged ${result.staged} transactions in import run ${result.importRunId}`)
     } catch (err) {
+      if (err instanceof SimpleFinStageError) {
+        console.error(`[cron] SimpleFIN staging error: ${err.message}`)
+        return
+      }
       console.error('[cron] Unexpected error:', err)
     }
   })
 
-  console.log('[cron] Scheduled hourly SimpleFIN sync check')
+  console.log('[cron] Scheduled hourly SimpleFIN staging check')
 }

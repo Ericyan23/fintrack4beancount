@@ -10,6 +10,10 @@ export interface ReviewTransaction {
   accountName: string
   category: string | null
   suggestedCat: string | null
+  ledgerAccount: string | null
+  reviewStatus: string | null
+  suggestedLedgerAccount: string | null
+  splitCount: number
 }
 
 export interface ReviewGroup {
@@ -27,6 +31,8 @@ export interface ReviewGroup {
   minAbs: number
   maxAbs: number
   latestPosted: number
+  splitTransactionCount: number
+  splitPostingCount: number
   accounts: string[]
   currentCategories: Array<{ category: string; count: number }>
   suggestedCategories: Array<{ category: string; count: number }>
@@ -65,6 +71,8 @@ const GENERIC_RULE_TOKENS = new Set([
   'RECURRING',
   'TST',
 ])
+
+const REVIEW_CATEGORY_SET = new Set(REVIEW_CATEGORY_NAMES)
 
 function reviewCategoryPlaceholders(): string {
   return REVIEW_CATEGORY_NAMES.map(() => '?').join(', ')
@@ -113,6 +121,25 @@ function sortedCounts(counts: Map<string, number>): Array<{ category: string; co
     .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category))
 }
 
+function legacyLedgerAccount(category: string | null): string | null {
+  if (!category || REVIEW_CATEGORY_SET.has(category)) return null
+  return category
+}
+
+function effectiveLedgerAccount(row: ReviewRow): string | null {
+  return row.ledgerAccount ?? legacyLedgerAccount(row.category)
+}
+
+function effectiveSuggestedLedgerAccount(row: ReviewRow): string | null {
+  return row.suggestedLedgerAccount ?? legacyLedgerAccount(row.suggestedCat)
+}
+
+function effectiveReviewStatus(row: ReviewRow): 'needs_review' | 'reviewed' {
+  if (row.reviewStatus === 'reviewed') return 'reviewed'
+  if (row.reviewStatus === 'needs_review') return 'needs_review'
+  return effectiveLedgerAccount(row) ? 'reviewed' : 'needs_review'
+}
+
 export function loadReviewGroups(): ReviewPayload {
   const rows = sqlite.prepare(`
     SELECT
@@ -123,14 +150,33 @@ export function loadReviewGroups(): ReviewPayload {
       t.account_id AS accountId,
       t.category,
       t.suggested_cat AS suggestedCat,
-      a.name AS accountName
+      t.ledger_account AS ledgerAccount,
+      t.review_status AS reviewStatus,
+      t.suggested_ledger_account AS suggestedLedgerAccount,
+      a.name AS accountName,
+      COALESCE(split_counts.splitCount, 0) AS splitCount
     FROM transactions t
+    LEFT JOIN (
+      SELECT
+        parent_transaction_id,
+        COUNT(*) AS splitCount
+      FROM transaction_splits
+      GROUP BY parent_transaction_id
+    ) split_counts ON split_counts.parent_transaction_id = t.id
     LEFT JOIN accounts a ON a.id = t.account_id
     WHERE t.status != 'cancelled'
       AND (
-        t.category IS NULL
-        OR t.category = ''
-        OR t.category IN (${reviewCategoryPlaceholders()})
+        t.review_status = 'needs_review'
+        OR t.ledger_account IS NULL
+        OR t.ledger_account = ''
+        OR (
+          t.review_status IS NULL
+          AND (
+            t.category IS NULL
+            OR t.category = ''
+            OR t.category IN (${reviewCategoryPlaceholders()})
+          )
+        )
       )
     ORDER BY t.posted DESC, t.description
   `).all(...REVIEW_CATEGORY_NAMES) as ReviewRow[]
@@ -144,7 +190,15 @@ export function loadReviewGroups(): ReviewPayload {
     const direction = amountDirection(amount)
     const normalizedDescription = normalizeReviewDescription(row.description) || row.description.trim().toUpperCase()
     const key = `${direction}:${normalizedDescription}`
-    const reason = row.category ? 'review_category' : 'uncategorized'
+    const ledgerAccount = effectiveLedgerAccount(row)
+    const suggestedLedgerAccount = effectiveSuggestedLedgerAccount(row)
+    const reviewStatus = effectiveReviewStatus(row)
+    const legacyReviewMarker = row.category ? REVIEW_CATEGORY_SET.has(row.category) : false
+    const reason = ledgerAccount && reviewStatus === 'needs_review'
+      ? 'review_category'
+      : legacyReviewMarker
+        ? 'review_category'
+        : 'uncategorized'
 
     if (reason === 'uncategorized') uncategorized += 1
     else reviewCategory += 1
@@ -166,6 +220,8 @@ export function loadReviewGroups(): ReviewPayload {
         minAbs: Number.POSITIVE_INFINITY,
         maxAbs: 0,
         latestPosted: row.posted,
+        splitTransactionCount: 0,
+        splitPostingCount: 0,
         accounts: new Set<string>(),
         currentCategories: new Map<string, number>(),
         suggestedCategories: new Map<string, number>(),
@@ -180,6 +236,10 @@ export function loadReviewGroups(): ReviewPayload {
       group.transactions.push({
         ...row,
         accountName: row.accountName ?? 'Unknown account',
+        ledgerAccount,
+        reviewStatus,
+        suggestedLedgerAccount,
+        splitCount: row.splitCount ?? 0,
       })
     }
     group.count += 1
@@ -188,13 +248,20 @@ export function loadReviewGroups(): ReviewPayload {
     group.minAbs = Math.min(group.minAbs, abs)
     group.maxAbs = Math.max(group.maxAbs, abs)
     group.latestPosted = Math.max(group.latestPosted, row.posted)
+    if (row.splitCount > 0) {
+      group.splitTransactionCount += 1
+      group.splitPostingCount += row.splitCount
+    }
     group.accounts.add(row.accountName ?? 'Unknown account')
     group.reasonSet.add(reason)
-    if (row.category) {
-      group.currentCategories.set(row.category, (group.currentCategories.get(row.category) ?? 0) + 1)
+    if (ledgerAccount) {
+      group.currentCategories.set(ledgerAccount, (group.currentCategories.get(ledgerAccount) ?? 0) + 1)
     }
-    if (row.suggestedCat) {
-      group.suggestedCategories.set(row.suggestedCat, (group.suggestedCategories.get(row.suggestedCat) ?? 0) + 1)
+    if (suggestedLedgerAccount) {
+      group.suggestedCategories.set(
+        suggestedLedgerAccount,
+        (group.suggestedCategories.get(suggestedLedgerAccount) ?? 0) + 1,
+      )
     }
   }
 

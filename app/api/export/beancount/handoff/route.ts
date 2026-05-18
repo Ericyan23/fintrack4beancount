@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   HandoffFileExistsError,
   HandoffPreflightError,
+  HandoffValidationError,
   writeBeancountHandoff,
 } from '@/lib/export/handoff-writer'
 import { currentPeriod } from '@/lib/export/preflight'
@@ -9,6 +10,9 @@ import { currentPeriod } from '@/lib/export/preflight'
 interface HandoffRequestBody {
   period?: string | null
   overwrite?: boolean | null
+  excludeExported?: boolean | null
+  actor?: string | null
+  reason?: string | null
 }
 
 async function readBody(req: NextRequest): Promise<HandoffRequestBody> {
@@ -20,9 +24,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = await readBody(req)
   const period = body.period?.trim() || currentPeriod()
   const overwrite = body.overwrite === true
+  const excludeExported = body.excludeExported === true
 
   try {
-    const result = writeBeancountHandoff({ period, overwrite })
+    const result = writeBeancountHandoff({
+      period,
+      overwrite,
+      excludeExported,
+      audit: {
+        actor: body.actor,
+        reason: body.reason,
+      },
+    })
     return NextResponse.json(result, {
       status: 201,
       headers: {
@@ -41,6 +54,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({
         error: err.message,
         file: err.file,
+      }, { status: 409 })
+    }
+
+    if (err instanceof HandoffValidationError) {
+      return NextResponse.json({
+        error: err.message,
+        manifest: err.manifest,
+        validation: err.validation,
       }, { status: 409 })
     }
 

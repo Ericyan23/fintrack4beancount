@@ -1,0 +1,3 @@
+Account Name,As of Date,Symbol,Description,Type,Quantity,Last Price ($),Current Value ($),Currency,Position ID
+Fidelity Brokerage,2026-04-30,FCT,Fictitious Corp,Stock,12.3456,40.00,493.824,USD,fake-position-fct-20260430
+Fidelity Brokerage,2026-04-30,FMFXX,Fictitious Money Market,Mutual Fund,100.0000,1.00,100.00,USD,fake-position-fmfxx-20260430

@@ -1,7 +1,7 @@
 import { db, getSetting, sqlite } from '@/lib/db'
 import { transactions } from '@/lib/db/schema'
 import { isNull, eq, and } from 'drizzle-orm'
-import { classifyByAI } from '@/lib/classify/ai'
+import { classifyByAI, recordAiLedgerAccountSuggestion } from '@/lib/classify/ai'
 import { loadCategories } from '@/lib/categories'
 
 const AI_BATCH_DELAY_MS = 6500
@@ -63,7 +63,9 @@ function countRemainingUnclassified(): number {
   const row = sqlite.prepare(`
     SELECT COUNT(*) AS total
     FROM transactions
-    WHERE category IS NULL AND status = 'posted'
+    WHERE ledger_account IS NULL
+      AND status = 'posted'
+      AND COALESCE(review_status, 'needs_review') != 'reviewed'
   `).get() as { total: number }
   return row.total
 }
@@ -82,7 +84,7 @@ export async function POST(): Promise<Response> {
 
       const cats = loadCategories()
       if (cats.length === 0) {
-        send(controller, { type: 'error', error: 'The category list is empty. Add categories first' })
+        send(controller, { type: 'error', error: 'The ledger account list is empty. Add ledger accounts first' })
         controller.close()
         return
       }
@@ -90,22 +92,22 @@ export async function POST(): Promise<Response> {
       const unclassified = db
         .select()
         .from(transactions)
-        .where(and(isNull(transactions.suggestedCat), eq(transactions.status, 'posted'), isNull(transactions.category)))
+        .where(and(
+          isNull(transactions.suggestedLedgerAccount),
+          eq(transactions.status, 'posted'),
+          isNull(transactions.ledgerAccount),
+        ))
         .all()
+        .filter(txn => txn.reviewStatus !== 'reviewed')
 
       if (unclassified.length === 0) {
         const remaining = countRemainingUnclassified()
-        send(controller, { type: 'done', suggested: 0, remaining, info: 'All uncategorized transactions already have AI suggestions' })
+        send(controller, { type: 'done', suggested: 0, remaining, info: 'All unassigned transactions already have AI suggestions' })
         controller.close()
         return
       }
 
       const groups = groupByDescription(unclassified)
-      const updateSuggestion = sqlite.prepare(`
-        UPDATE transactions
-        SET suggested_cat = ?
-        WHERE id = ? AND category IS NULL AND suggested_cat IS NULL
-      `)
 
       send(controller, {
         type: 'start',
@@ -120,8 +122,9 @@ export async function POST(): Promise<Response> {
         try {
           const cat = await classifyByAI(group.label, cats)
           if (cat) {
+            const timestamp = Math.floor(Date.now() / 1000)
             for (const txn of group.transactions) {
-              suggested += updateSuggestion.run(cat, txn.id).changes
+              suggested += recordAiLedgerAccountSuggestion(txn.id, cat, timestamp)
             }
           }
         } catch (err) {

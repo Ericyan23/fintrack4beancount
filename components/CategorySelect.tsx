@@ -30,6 +30,14 @@ interface BeancountAccountsResponse {
 
 const EXTERNAL_ACCOUNT_ROOTS = ['Assets', 'Liabilities'] as const
 
+interface CategoryOptionsCache {
+  categories: string[]
+  externalAccounts: string[]
+  categoryStats: Record<string, CategoryStat>
+}
+
+let categoryOptionsCache: CategoryOptionsCache | null = null
+
 function categoryStatsByName(stats: CategoryStat[], externalAccounts: string[]): Record<string, CategoryStat> {
   const byName = Object.fromEntries(stats.map(stat => [stat.name, stat]))
   for (const account of externalAccounts) {
@@ -53,18 +61,18 @@ function optionGroupName(category: string): string {
 function beancountStatusLabel(status: CategoryStat['beancount_status']): string {
   switch (status) {
     case 'open':
-      return 'open'
+      return '已开放'
     case 'missing':
-      return 'missing'
+      return '缺失'
     case 'not_yet_open':
-      return 'not yet open'
+      return '尚未开放'
     case 'closed':
-      return 'closed'
+      return '已关闭'
     case 'unavailable':
-      return 'unavailable'
+      return '不可用'
     case 'not_applicable':
     default:
-      return 'local'
+      return '本地'
   }
 }
 
@@ -86,12 +94,14 @@ function beancountStatusClass(status: CategoryStat['beancount_status']): string 
 }
 
 function CategorySelectInner({
-  value, onChange, placeholder = '-- Select category --',
+  value, onChange, placeholder = '-- 选择 Ledger 账户 --',
   className = '', autoFocus, onBlur, searchable = false,
 }: Props) {
-  const [categories, setCategories] = useState<string[]>([])
-  const [externalAccounts, setExternalAccounts] = useState<string[]>([])
-  const [categoryStats, setCategoryStats] = useState<Record<string, CategoryStat>>({})
+  const [categories, setCategories] = useState<string[]>(() => categoryOptionsCache?.categories ?? [])
+  const [externalAccounts, setExternalAccounts] = useState<string[]>(() => categoryOptionsCache?.externalAccounts ?? [])
+  const [categoryStats, setCategoryStats] = useState<Record<string, CategoryStat>>(
+    () => categoryOptionsCache?.categoryStats ?? {},
+  )
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [open, setOpen] = useState(false)
@@ -127,9 +137,15 @@ function CategorySelectInner({
           .map(account => account.account),
       )).sort((a, b) => a.localeCompare(b))
 
+      const nextStats = categoryStatsByName(categoryData.stats ?? [], accountNames)
+      categoryOptionsCache = {
+        categories: categoryData.categories,
+        externalAccounts: accountNames,
+        categoryStats: nextStats,
+      }
       setCategories(categoryData.categories)
       setExternalAccounts(accountNames)
-      setCategoryStats(categoryStatsByName(categoryData.stats ?? [], accountNames))
+      setCategoryStats(nextStats)
     }
 
     loadOptions().catch(() => {
@@ -162,8 +178,14 @@ function CategorySelectInner({
       body: JSON.stringify({ name: trimmed }),
     })
     const data = (await res.json()) as { categories: string[]; stats?: CategoryStat[] }
+    const nextStats = categoryStatsByName(data.stats ?? [], externalAccounts)
+    categoryOptionsCache = {
+      categories: data.categories,
+      externalAccounts,
+      categoryStats: nextStats,
+    }
     setCategories(data.categories)
-    setCategoryStats(categoryStatsByName(data.stats ?? [], externalAccounts))
+    setCategoryStats(nextStats)
     onChange(trimmed)
     setNewName('')
     setAdding(false)
@@ -183,7 +205,7 @@ function CategorySelectInner({
           placeholder="Expenses:Food:Restaurants"
           className="flex-1 bg-slate-700 border border-blue-500 rounded px-2 py-1 text-xs text-slate-100 placeholder-slate-500 min-w-0"
         />
-        <button onClick={addCategory} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded">Add</button>
+        <button onClick={addCategory} className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded">添加</button>
         <button onClick={() => setAdding(false)} className="px-2 py-1 bg-slate-600 hover:bg-slate-500 text-white text-xs rounded">✕</button>
       </div>
     )
@@ -230,7 +252,7 @@ function CategorySelectInner({
   const groups: Record<string, string[]> = {}
   for (const cat of searchable ? filteredCategories : optionNames) {
     const group = optionGroupName(cat)
-    const prefix = group || 'Other'
+    const prefix = group || '其他'
     if (!groups[prefix]) groups[prefix] = []
     groups[prefix].push(cat)
   }
@@ -316,7 +338,7 @@ function CategorySelectInner({
           >
             {filteredCategories.length === 0 ? (
               <div className="space-y-2 p-2">
-                <p className="px-2 py-1 text-xs text-slate-500">No matching categories</p>
+                <p className="px-2 py-1 text-xs text-slate-500">没有匹配的 Ledger 账户</p>
                 <button
                   type="button"
                   onMouseDown={event => event.preventDefault()}
@@ -327,7 +349,7 @@ function CategorySelectInner({
                   }}
                   className="w-full rounded px-2 py-2.5 text-left text-xs text-blue-300 hover:bg-slate-700"
                 >
-                  + Create {query.trim() || 'category'}
+                  + 创建 {query.trim() || 'Ledger 账户'}
                 </button>
               </div>
             ) : (
@@ -376,7 +398,7 @@ function CategorySelectInner({
                   }}
                   className="w-full border-t border-slate-700 px-3 py-2.5 text-left text-xs text-blue-300 hover:bg-slate-700"
                 >
-                  + Create category...
+                  + 创建 Ledger 账户...
                 </button>
               </>
             )}
@@ -403,7 +425,7 @@ function CategorySelectInner({
           {cats.map(c => <option key={c} value={c}>{c}</option>)}
         </optgroup>
       ))}
-      <option value="__add__">+ Create category...</option>
+      <option value="__add__">+ 创建 Ledger 账户...</option>
     </select>
   )
 }
@@ -420,7 +442,7 @@ export default function CategorySelect(props: Props) {
         onChange={() => {}}
         className={`bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100 ${props.className ?? ''}`}
       >
-        <option value="">{props.placeholder ?? '-- Select category --'}</option>
+        <option value="">{props.placeholder ?? '-- 选择 Ledger 账户 --'}</option>
       </select>
     )
   }

@@ -1,0 +1,12 @@
+﻿
+Run Date,Action,Symbol,Description,Type,Price ($),Quantity,Commission ($),Fees ($),Accrued Interest ($),Amount ($),Cash Balance ($),Settlement Date
+04/01/2025,"DIRECT DEPOSIT (PAYROLL)",,"No Description",Cash,,,,,, 2500.00,7500.00,04/01/2025
+04/03/2025,"YOU BOUGHT FICTCORP COM (FCT)",FCT,"FICTCORP COM",Margin,50.00,10,0.65,,,-500.00,7000.00,04/04/2025
+04/05/2025,"DIVIDEND RECEIVED FICTCORP",FCT,"",Cash,,,,,,12.50,7012.50,04/06/2025
+04/10/2025,"ELECTRONIC FUNDS TRANSFER PAID",,"No Description",Cash,,,,,,-200.00,6812.50,04/11/2025
+04/15/2025,"YOU SOLD FICTCORP COM (FCT)",FCT,"FICTCORP COM",Margin,55.00,10,0.65,,,549.35,7361.85,04/16/2025
+
+"The data in this spreadsheet is provided for informational purposes only."
+"Brokerage services provided by Fictitious Brokerage Services LLC."
+
+Date downloaded 04/15/2025 3:00 pm
