@@ -119,6 +119,20 @@ function writePromotionLedger(openAccounts: string[] = [
   process.env.BEANCOUNT_ROOT = beancountRoot
 }
 
+function writePassingValidator(): string {
+  const validator = path.join(tempDir, `passing-validator-${Date.now()}`)
+  fs.writeFileSync(
+    validator,
+    [
+      '#!/usr/bin/env node',
+      'process.exit(0)',
+      '',
+    ].join('\n'),
+  )
+  fs.chmodSync(validator, 0o755)
+  return validator
+}
+
 function seedAccount(): void {
   sqlite.prepare(`
     INSERT INTO accounts (
@@ -1338,6 +1352,125 @@ test('POST /api/import/runs/:id/promote delegates to promoteStagedTransactions',
   assert.equal(typeof payload.promoted, 'number')
   assert.equal(typeof payload.skipped, 'number')
   assert.ok(Array.isArray(payload.errors))
+  assert.equal('validation' in payload, false)
+})
+
+test('POST /api/import/runs/:id/promote blocks required Beancount validation failures before writing', { skip: skipPromoteTests }, async () => {
+  writePromotionLedger(['Assets:US:Banks:APIChecking'])
+  const { runId } = seedImportRun()
+  const promoteRoute = require('../app/api/import/runs/[id]/promote/route') as PromoteRoute
+  const response = await promoteRoute.POST(
+    request(`/api/import/runs/${runId}/promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ validationMode: 'required' }),
+    }),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    error?: string
+    validation?: {
+      ok: boolean
+      validation: { stage: string; summary: { blockers: number } }
+    }
+  }
+  const transactionCount = sqlite.prepare(`
+    SELECT COUNT(*) AS value
+    FROM transactions
+  `).get() as { value: number }
+  const mergedStagedCount = sqlite.prepare(`
+    SELECT COUNT(*) AS value
+    FROM staged_transactions
+    WHERE status = 'merged'
+      AND id IN ('staged-pending', 'staged-ready')
+  `).get() as { value: number }
+
+  assert.equal(response.status, 409)
+  assert.equal(payload.error, 'Beancount validation failed; promotion was not run')
+  assert.equal(payload.validation?.ok, false)
+  assert.equal(payload.validation?.validation.stage, 'preflight')
+  assert.equal((payload.validation?.validation.summary.blockers ?? 0) > 0, true)
+  assert.equal(transactionCount.value, 1)
+  assert.equal(mergedStagedCount.value, 0)
+})
+
+test('POST /api/import/runs/:id/promote runs after required Beancount validation passes', { skip: skipPromoteTests }, async () => {
+  writePromotionLedger()
+  process.env.FINTRACK_BEANCOUNT_VALIDATOR = writePassingValidator()
+  const { runId } = seedImportRun()
+  const promoteRoute = require('../app/api/import/runs/[id]/promote/route') as PromoteRoute
+  const response = await promoteRoute.POST(
+    request(`/api/import/runs/${runId}/promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ validationMode: 'required' }),
+    }),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    promoted: number
+    skipped: number
+    errors: unknown[]
+    validation?: { ok: boolean; validation: { checker: { status: string; mode: string } } }
+  }
+  const transactionCount = sqlite.prepare(`
+    SELECT COUNT(*) AS value
+    FROM transactions
+  `).get() as { value: number }
+  const mergedStagedCount = sqlite.prepare(`
+    SELECT COUNT(*) AS value
+    FROM staged_transactions
+    WHERE status = 'merged'
+      AND id IN ('staged-pending', 'staged-ready')
+  `).get() as { value: number }
+
+  assert.equal(response.status, 200)
+  assert.equal(payload.promoted, 2)
+  assert.equal(payload.skipped, 2)
+  assert.deepEqual(payload.errors, [])
+  assert.equal(payload.validation?.ok, true)
+  assert.equal(payload.validation?.validation.checker.status, 'passed')
+  assert.equal(payload.validation?.validation.checker.mode, 'required')
+  assert.equal(transactionCount.value, 3)
+  assert.equal(mergedStagedCount.value, 2)
+})
+
+test('POST /api/import/runs/:id/promote honors required env validation and sanitizes checker failures', { skip: skipPromoteTests }, async () => {
+  writePromotionLedger()
+  process.env.FINTRACK_BEANCOUNT_VALIDATION = 'required'
+  process.env.FINTRACK_BEANCOUNT_VALIDATOR = path.join(tempDir, 'missing-bean-check')
+  const { runId } = seedImportRun()
+  const promoteRoute = require('../app/api/import/runs/[id]/promote/route') as PromoteRoute
+  const response = await promoteRoute.POST(
+    request(`/api/import/runs/${runId}/promote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    }),
+    params(runId),
+  )
+  const payload = await response.json() as {
+    error?: string
+    validation?: {
+      ok: boolean
+      validation: { stage: string; checker: { status: string; message: string | null } }
+    }
+  }
+  const serialized = JSON.stringify(payload)
+  const transactionCount = sqlite.prepare(`
+    SELECT COUNT(*) AS value
+    FROM transactions
+  `).get() as { value: number }
+
+  assert.equal(response.status, 409)
+  assert.equal(payload.error, 'Beancount validation failed; promotion was not run')
+  assert.equal(payload.validation?.ok, false)
+  assert.equal(payload.validation?.validation.stage, 'external')
+  assert.equal(payload.validation?.validation.checker.status, 'failed')
+  assert.equal(payload.validation?.validation.checker.message, '[path] was not found')
+  assert.equal(serialized.includes(beancountRoot), false)
+  assert.equal(serialized.includes(tempDir), false)
+  assert.equal(transactionCount.value, 1)
 })
 
 test('POST /api/import/runs/:id/promote/validate returns 404 JSON for a missing run', { skip: skipPromoteTests }, async () => {
